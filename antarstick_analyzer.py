@@ -17,7 +17,7 @@ Area = float
 Height = float
 Ecc = float
 Label = int
-Centroid = (int, int)
+Centroid = Tuple[int, int]
 
 # not using the skimage rectange method for rectangle SE because it interprets
 # width as height and vice versa. It is a known issue that is still not resolved (https://github.com/scikit-image/scikit-image/issues/4125)
@@ -31,7 +31,7 @@ def stick_segmentation_preprocess(img):
     denoised = denoise(img)
 
     # Closing off the possible duct-tapes on sticks which would disconnect compenents in segmented image
-    closed = cv.morphologyExt(denoised, cv.MORPH_CLOSE, rect_se(19, 19))
+    closed = cv.morphologyEx(denoised, cv.MORPH_CLOSE, rect_se(19, 19))
 
     wth = cv.morphologyEx(closed, cv.MORPH_TOPHAT, rect_se(19, 19))
 
@@ -56,7 +56,7 @@ def detect_sticks(img: np.ndarray, image_scale: float):
     #n_labels, label_img, centroids, stats = cv.connectedComponentsWithStats(preprocessed, connectivity=4, ltype=cv.CV_32S)
     region_props = regionprops(label_img)
 
-    likely_labels_stats: List[Tuple(Label, Height, Area, Ecc, Centroid)] = get_likely_labels(preprocessed, region_props)
+    likely_labels_stats: List[Tuple[Label, Height, Area, Ecc, Centroid]] = get_likely_labels(preprocessed, region_props)
 
     likely_labels = {l[0] for l in likely_labels_stats}
 
@@ -96,7 +96,7 @@ def detect_sticks(img: np.ndarray, image_scale: float):
 
     return merged_lines * scale_factor
 
-def get_likely_labels(label_img, label_stats) -> List[Tuple(Label, Height, Area, Ecc, Centroid)]:
+def get_likely_labels(label_img, label_stats) -> List[Tuple[Label, Height, Area, Ecc, Centroid]]:
     label_stats = regionprops(label_img)
 
     # Retain labels that are elongated
