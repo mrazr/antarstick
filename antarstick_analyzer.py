@@ -19,10 +19,7 @@ Ecc = float
 Label = int
 Centroid = Tuple[int, int]
 
-# not using the skimage rectange method for rectangle SE because it interprets
-# width as height and vice versa. It is a known issue that is still not resolved (https://github.com/scikit-image/scikit-image/issues/4125)
 def rect_se(width, height):
-    #return np.ones((height, width), dtype=np.uint8)
     return cv.getStructuringElement(cv.MORPH_RECT, (width, height))
 
 def stick_segmentation_preprocess(img):
@@ -47,12 +44,12 @@ def denoise(img):
     down = cv.pyrDown(cv.pyrDown(img))
     return cv.pyrUp(cv.pyrUp(down))
     
-def detect_sticks(img: np.ndarray, image_scale: float):
+def detect_sticks(img: np.ndarray, image_scale: float, merge_lines: bool = True):
     # First preprocess the input image
     preprocessed = stick_segmentation_preprocess(img)
 
 
-    n_labels, label_img = cv.connectedComponents(preprocessed, connectivity=4, ltype=cv.CV_16S)
+    n_labels, label_img = cv.connectedComponents(preprocessed, connectivity=4, ltype=cv.CV_16U)
     #n_labels, label_img, centroids, stats = cv.connectedComponentsWithStats(preprocessed, connectivity=4, ltype=cv.CV_32S)
     region_props = regionprops(label_img)
 
@@ -60,52 +57,82 @@ def detect_sticks(img: np.ndarray, image_scale: float):
 
     likely_labels = {l[0] for l in likely_labels_stats}
 
-    with np.nditer(label_img, op_flags=['readwrite']) as it:
-        for label in it:
-            if likely_labels[label]:
-                label = 255
-            else:
-                label = 0
+
+    # Filter out labels which are not interesting
+    for r in range(preprocessed.shape[0]):
+        for c in range(preprocessed.shape[1]):
+            if label_img[r, c] not in likely_labels:
+                preprocessed[r, c] = 0
 
     height = likely_labels_stats[-1][1]
 
-    lines = cv.HoughLinesP(label_img, 1, np.pi / 180, 50, height, 15)
+    lines = cv.HoughLinesP(preprocessed, 1, np.pi / 180, 50, height, 15)
 
-    lines = list(map(lambda line: (line[2], line[3], line[0], line[1]) if line[1] > line[3] else line, lines))
+    # Transform the lines so they all have their first endpoint is the higher one
+    lines = list(map(lambda line: [line[0][2], line[0][3], line[0][0], line[0][1]] if line[0][1] > line[0][3] else list(line[0]), lines))
 
-    lines.sort(key=lambda line: line[0])
+    if not merge_lines:
+        return (np.array(lines) * (1.0 / image_scale)).astype(int)
 
-    merged_lines = np.array([[-1, preprocessed.shape[1] * 2, -1, -1]] * len(likely_labels_stats))
 
+    # Now we're onto merging multiple detected lines per label
+    close_lines = {l[0] : [] for l in likely_labels_stats}
+
+    # Assign each line the label whose bounding box contains that line, we get bins of lines that belong to the same bbox
     for line in lines:
-        dist = 2 * preprocessed.shape[1]
-        line_idx = 0
-        line_centroid = (0.5 * (line[0] + line[2]), 0.0)
-        for idx, l in enumerate(likely_labels_stats):
-            centroid_x = l.centroid[1]
+        line_mid_point = (int(0.5 * (line[0] + line[2])), int(0.5 * (line[1] + line[3])))
+        for l in likely_labels:
+            bbox = region_props[l-1].bbox
+            if bbox_contains(region_props[l-1].bbox, line_mid_point):
+                close_lines[l].append(line)
 
-            if line_centroid[0] - centroid_x < dist:
-                dist = line_centroid[0] - centroid_x 
-                line_idx = idx
-        
-        merged_line = merged_lines[line_idx]
-        if line[1] < merged_line[1]:
-            merged_line[:2] = line[:2]
-        if line[3] > merged_line[3]:
-            merged_line[2:] = line[2:]
+    merged_lines = []
+    scale_factor = 1.0 / image_scale
 
-    return merged_lines * scale_factor
+    # This is the actual "merging", from each line bin select the 2 lines that have the maximum and minumum y coordinate
+    # and create a new line combining the endpoints of the two lines
+    for lines in close_lines.values():
+        if len(lines) == 0:
+            continue
+        # Retrieve the highest endpoint
+        max_y_endpoint = max(lines, key=lambda line: line[3])[2:]
+        # Retrieve the lowest endpoint
+        min_y_endpoint = min(lines, key=lambda line: line[1])[:2]
+
+        max_y_endpoint[0] = int(max_y_endpoint[0] * scale_factor)
+        max_y_endpoint[1] = int(max_y_endpoint[1] * scale_factor)
+
+        min_y_endpoint[0] = int(min_y_endpoint[0] * scale_factor)
+        min_y_endpoint[1] = int(min_y_endpoint[1] * scale_factor)
+
+        merged_lines.append(min_y_endpoint + max_y_endpoint)
+
+    return merged_lines
+
 
 def get_likely_labels(label_img, label_stats) -> List[Tuple[Label, Height, Area, Ecc, Centroid]]:
-    label_stats = regionprops(label_img)
 
     # Retain labels that are elongated
-    likely_labels = filter(lambda l: l.eccentricity > 0.87)
+    likely_labels = list(filter(lambda l: l.eccentricity > 0.87, label_stats))
 
-    likely_labels = list(sorted(likely_labels, key=lambda l: l.height))
 
-    max_height = likely_labels[0].height
+    likely_labels = list(sorted(likely_labels, key=height_of_region, reverse=True))
 
-    likely_labels = filter(lambda l: l.height >= 0.4 * max_height, likely_labels)
+    max_height = height_of_region(likely_labels[0])
 
-    return list(map(lambda l: (l.label, l.height, l.area, l.eccentricity, l.centroid), likely_labels))
+
+    likely_labels = list(filter(lambda l: height_of_region(l) >= 0.4 * max_height, likely_labels))
+
+
+    return list(map(lambda l: (l.label, height_of_region(l), l.area, l.eccentricity, l.centroid), likely_labels))
+
+def height_of_region(region_prop):
+    return region_prop.bbox[2] - region_prop.bbox[0]
+
+
+def draw_lines_on_img(img, lines):
+    for line in lines:
+        cv.line(img, tuple(line[:2]), tuple(line[2:]), [255, 255, 0], 2)
+    
+def bbox_contains(bbox: Tuple[int, int, int, int], point: Tuple[int, int]) -> bool:
+    return point[0] >= bbox[1] and point[0] < bbox[3] and point[1] >= bbox[0] and point[1] < bbox[2]
