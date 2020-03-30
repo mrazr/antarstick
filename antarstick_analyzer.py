@@ -19,38 +19,91 @@ Ecc = float
 Label = int
 Centroid = Tuple[int, int]
 
-def rect_se(width, height):
+def rect_se(width: int, height: int) -> np.ndarray:
+    """Constructs a rectangular structuring element of a given width and height.
+
+    Parameters
+    ----------
+    width : int
+    height : int
+
+    Returns
+    -------
+    np.ndarray
+        a rectangular structuring element
+    """
+
     return cv.getStructuringElement(cv.MORPH_RECT, (width, height))
 
-def stick_segmentation_preprocess(img):
+def stick_segmentation_preprocess(img: np.ndarray) -> np.ndarray:
+    """Segments line-like structures out of a grayscale image.
+
+    Parameters
+    ----------
+    img : np.ndarray
+        a grayscale image
+    
+    Returns
+    -------
+    np.ndarray
+        a binary image of segmented line-like structures
+    """
+
     thresh_method = cv.ADAPTIVE_THRESH_GAUSSIAN_C
 
     denoised = denoise(img)
 
     # Closing off the possible duct-tapes on sticks which would disconnect compenents in segmented image
-    closed = cv.morphologyEx(denoised, cv.MORPH_CLOSE, rect_se(19, 19))
+    closed: np.ndarray = cv.morphologyEx(denoised, cv.MORPH_CLOSE, rect_se(19, 19))
 
-    wth = cv.morphologyEx(closed, cv.MORPH_TOPHAT, rect_se(19, 19))
+    wth: np.ndarray = cv.morphologyEx(closed, cv.MORPH_TOPHAT, rect_se(19, 19))
 
-    thresh = cv.adaptiveThreshold(wth, 255.0, thresh_method, cv.THRESH_BINARY, 23, -3)
+    thresh: np.ndarray = cv.adaptiveThreshold(wth, 255.0, thresh_method, cv.THRESH_BINARY, 23, -3)
 
     # close holes in our thresholded image
-    closed = cv.morphologyEx(thresh, cv.MORPH_CLOSE, rect_se(5, 13))
+    closed: np.ndarray = cv.morphologyEx(thresh, cv.MORPH_CLOSE, rect_se(5, 13))
 
     # This extracts and finally returns line-like structures
     return cv.morphologyEx(closed, cv.MORPH_OPEN, rect_se(1, 13))
 
-def denoise(img):
+def denoise(img: np.ndarray) -> np.ndarray:
+    """Denoises image by perfoming cv.pyrDown twice and then cv.pyrUp twice.
+
+    Parameters
+    ----------
+    img : np.ndarray
+        image
+    
+    Returns
+    -------
+    np.ndarray
+    """
+
     down = cv.pyrDown(cv.pyrDown(img))
     return cv.pyrUp(cv.pyrUp(down))
     
-def detect_sticks(img: np.ndarray, image_scale: float, merge_lines: bool = True):
+def detect_sticks(img: np.ndarray, scale_lines_by: float = 1.0, merge_lines: bool = True) -> List[List[int]]:
+    """Detects sticks in the given image.
+
+    Parameters
+    ----------
+    img : np.ndarray
+        the image to detect sticks in
+    scale_lines_by : float, optional
+        all detected lines will be scaled by this factor (default is 1.0)
+    merge_lines : bool, optional
+        debug parameter, whether to merge multiple lines belonging to the same stick (default is True)
+    
+    Returns
+    -------
+    List[List[int]]
+        list of detected lines, each line is a list of the following format: [x0, y0, x1, y1] where y0 < y1
+    """
     # First preprocess the input image
     preprocessed = stick_segmentation_preprocess(img)
 
 
     n_labels, label_img = cv.connectedComponents(preprocessed, connectivity=4, ltype=cv.CV_16U)
-    #n_labels, label_img, centroids, stats = cv.connectedComponentsWithStats(preprocessed, connectivity=4, ltype=cv.CV_32S)
     region_props = regionprops(label_img)
 
     likely_labels_stats: List[Tuple[Label, Height, Area, Ecc, Centroid]] = get_likely_labels(preprocessed, region_props)
@@ -72,7 +125,7 @@ def detect_sticks(img: np.ndarray, image_scale: float, merge_lines: bool = True)
     lines = list(map(lambda line: [line[0][2], line[0][3], line[0][0], line[0][1]] if line[0][1] > line[0][3] else list(line[0]), lines))
 
     if not merge_lines:
-        return (np.array(lines) * (1.0 / image_scale)).astype(int)
+        return (np.array(lines) * scale_lines_by).astype(int)
 
 
     # Now we're onto merging multiple detected lines per label
@@ -86,8 +139,7 @@ def detect_sticks(img: np.ndarray, image_scale: float, merge_lines: bool = True)
             if bbox_contains(region_props[l-1].bbox, line_mid_point):
                 close_lines[l].append(line)
 
-    merged_lines = []
-    scale_factor = 1.0 / image_scale
+    merged_lines: List[List[int]] = []
 
     # This is the actual "merging", from each line bin select the 2 lines that have the maximum and minumum y coordinate
     # and create a new line combining the endpoints of the two lines
@@ -99,18 +151,32 @@ def detect_sticks(img: np.ndarray, image_scale: float, merge_lines: bool = True)
         # Retrieve the lowest endpoint
         min_y_endpoint = min(lines, key=lambda line: line[1])[:2]
 
-        max_y_endpoint[0] = int(max_y_endpoint[0] * scale_factor)
-        max_y_endpoint[1] = int(max_y_endpoint[1] * scale_factor)
+        max_y_endpoint[0] = int(max_y_endpoint[0] * scale_lines_by)
+        max_y_endpoint[1] = int(max_y_endpoint[1] * scale_lines_by)
 
-        min_y_endpoint[0] = int(min_y_endpoint[0] * scale_factor)
-        min_y_endpoint[1] = int(min_y_endpoint[1] * scale_factor)
+        min_y_endpoint[0] = int(min_y_endpoint[0] * scale_lines_by)
+        min_y_endpoint[1] = int(min_y_endpoint[1] * scale_lines_by)
 
         merged_lines.append(min_y_endpoint + max_y_endpoint)
 
     return merged_lines
 
 
-def get_likely_labels(label_img, label_stats) -> List[Tuple[Label, Height, Area, Ecc, Centroid]]:
+def get_likely_labels(label_img: np.ndarray, label_stats) -> List[Tuple[Label, Height, Area, Ecc, Centroid]]:
+    """Returns labels that are most likely to represent regions of sticks.
+
+    Parameters
+    ----------
+    label_img : np.ndarray
+        image of labeled regions
+    label_stats : List[RegionProps]
+        list of scikit structure RegionProps containing various properties of labels of label_img
+    
+    Returns
+    -------
+    List[Tuple[int, int, int, float, Tuple[int, int]]]
+        a list of tuples of the most likely labels along with some properties: Label, Height, Area, Eccentricity, Centroid
+    """
 
     # Retain labels that are elongated
     likely_labels = list(filter(lambda l: l.eccentricity > 0.87, label_stats))
@@ -126,7 +192,7 @@ def get_likely_labels(label_img, label_stats) -> List[Tuple[Label, Height, Area,
 
     return list(map(lambda l: (l.label, height_of_region(l), l.area, l.eccentricity, l.centroid), likely_labels))
 
-def height_of_region(region_prop):
+def height_of_region(region_prop) -> int:
     return region_prop.bbox[2] - region_prop.bbox[0]
 
 
