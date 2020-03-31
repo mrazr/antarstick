@@ -6,12 +6,16 @@ Created on Thu Mar 26 12:20:07 2020
 @author: radoslav
 """
 
+import math
 from typing import Dict, List, Tuple
 
 import cv2 as cv
 import numpy as np
+import skimage as sk
 from skimage.measure import regionprops
 from skimage.morphology import rectangle, white_tophat
+
+from stick import Stick
 
 Area = float
 Height = float
@@ -207,3 +211,58 @@ def show_imgs_(images: List[np.ndarray], names: List[str]):
     for image, name in zip(images, names):
         cv.imshow(name, image)
     cv.waitKey(0)
+
+def measure_snow(img: np.ndarray, sticks: List[Stick]) -> Dict[int, float]:
+    """Measures the height of snow in the image `img` around the sticks in `sticks`
+
+    Parameters
+    ----------
+    img : np.ndarray
+        grayscale image
+    sticks : List[Stick]
+        list of sticks around which to measure the height of snow
+
+    Returns
+    -------
+    Dict[int, float]
+        dictionary of (Stick.id : snow_height_in_pixels)
+    """
+
+    blurred = cv.GaussianBlur(img, (0, 0), 2.5)
+    measurements = {}
+
+    for stick in sticks:
+        # Approximate thickness of the stick
+        thickness = int(math.ceil(0.03 * stick.length_px))
+
+        end1 = np.array([stick.top[1], stick.top[0]])
+        end2 = np.array([stick.bottom[1], stick.bottom[0]])
+
+        # Extract intesity profile underneath the line
+        line_profile = sk.measure.profile_line(img, end2, end1, mode='reflect')
+        
+        off_x = np.array([0, int(1.5 * thickness)])
+        # Now extract intensity profiles left of and right of the stick
+        left_neigh_profile = sk.measure.profile_line(img, end2 - off_x, end1 - off_x, mode='reflect')
+        right_neigh_profile = sk.measure.profile_line(img, end2 + off_x, end1 + off_x, mode='reflect')
+
+        # Compute the difference of the line profile and the average of the neighboring profiles
+        # the idea is that, if there is snow, all the three intensity profiles will be similar enough
+        diff = np.abs(line_profile - 0.5 * (left_neigh_profile + right_neigh_profile))
+
+        diff_norm = math.sqrt(np.inner(diff, diff))
+        diff_norm = 1.0 / diff_norm
+
+        diff = diff_norm * diff
+
+        # Find the indices where the normalized difference is greater than 0.01,
+        # this ideally indicates that after seeing snow, we arrived at the stick
+        height: np.ndarray = np.argwhere(diff > 0.01)
+
+        # TODO the mapping between the index from np.argwhere and the height isn't totally 1:1 probably, so probably adjust this
+        if height.shape[0] == 0:
+            measurements[stick.id] = stick.length_px
+        else:
+            measurements[stick.id] = height[0]
+
+    return measurements
