@@ -1,6 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+import numpy as np
 from numpy import ndarray
-from copy import deepcopy
+
 
 @dataclass
 class Stick:
@@ -19,6 +21,8 @@ class Stick:
         a (1, 2)-shaped numpy array representing top endpoint of the stick
     bottom : ndarray
         a (1, 2)-shaped numpy array representing bottom endpoint of the stick
+    length_px: float
+        length of the stick in pixels
     scale_ : float
         current scale of the stick. There might be situations when we want to
         down/upscale the stick for whatever reasons
@@ -30,10 +34,15 @@ class Stick:
     """
 
     id: int
-    label: str
     top: ndarray
     bottom: ndarray
+    length_px: float = field(init=False)
+    label: str = "stick"
     scale_: float = 1.0
+
+
+    def __post_init__(self):
+        self.length_px = np.linalg.norm(self.top - self.bottom)
 
     def scale(self, factor: float):
         """
@@ -47,9 +56,4 @@ class Stick:
         Stick
             a scaled version of the original stick
         """
-        stick2 = deepcopy(self)
-        stick2.top *= factor
-        stick2.bottom *= factor
-        stick2.scale_ = factor
-        return stick2
-    
+        return Stick(self.id, factor * self.top, factor * self.bottom)
