@@ -49,7 +49,7 @@ def stick_segmentation_preprocess(img: np.ndarray) -> np.ndarray:
         a binary image of segmented line-like structures
     """
 
-    thresh_method = cv.ADAPTIVE_THRESH_GAUSSIAN_C
+    thresh_method = cv.ADAPTIVE_THRESH_MEAN_C
 
     denoised = denoise(img)
 
@@ -58,7 +58,7 @@ def stick_segmentation_preprocess(img: np.ndarray) -> np.ndarray:
 
     wth: np.ndarray = cv.morphologyEx(closed, cv.MORPH_TOPHAT, rect_se(19, 19))
 
-    thresh: np.ndarray = cv.adaptiveThreshold(wth, 255.0, thresh_method, cv.THRESH_BINARY, 23, -3)
+    thresh: np.ndarray = cv.adaptiveThreshold(wth, 255.0, thresh_method, cv.THRESH_BINARY, 25, -3)
 
     # close holes in our thresholded image
     closed: np.ndarray = cv.morphologyEx(thresh, cv.MORPH_CLOSE, rect_se(5, 13))
@@ -79,8 +79,8 @@ def denoise(img: np.ndarray) -> np.ndarray:
     np.ndarray
     """
 
-    down = cv.pyrDown(cv.pyrDown(img))
-    return cv.pyrUp(cv.pyrUp(down))
+    down = cv.pyrDown(img)
+    return cv.pyrUp(down)
     
 def detect_sticks(img: np.ndarray, scale_lines_by: float = 1.0, merge_lines: bool = True) -> List[List[int]]:
     """Detects sticks in the given image.
@@ -187,7 +187,7 @@ def get_likely_labels(label_img: np.ndarray, label_stats) -> List[Tuple[Label, H
     max_height = height_of_region(likely_labels[0])
 
 
-    likely_labels = list(filter(lambda l: height_of_region(l) >= 0.4 * max_height, likely_labels))
+    likely_labels = list(filter(lambda l: height_of_region(l) >= 0.1 * max_height, likely_labels))
 
 
     return list(map(lambda l: (l.label, height_of_region(l), l.area, l.eccentricity, l.centroid), likely_labels))
@@ -202,3 +202,8 @@ def draw_lines_on_img(img, lines):
     
 def bbox_contains(bbox: Tuple[int, int, int, int], point: Tuple[int, int]) -> bool:
     return point[0] >= bbox[1] and point[0] < bbox[3] and point[1] >= bbox[0] and point[1] < bbox[2]
+
+def show_imgs_(images: List[np.ndarray], names: List[str]):
+    for image, name in zip(images, names):
+        cv.imshow(name, image)
+    cv.waitKey(0)
