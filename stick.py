@@ -14,7 +14,7 @@ class Stick:
     Attributes
     ----------
     id : int
-        a stick id unique only within a dataset folder
+        a stick id unique within a Dataset(meaning unique within a number of cameras)
     label : str
         custom label for displaying purposes
     top : ndarray
