@@ -77,7 +77,7 @@ class Dataset(QObject):
     def remove_camera(self, camera_id: int):
         old_camera_count = len(self.cameras)
         self.cameras = list(filter(lambda camera: camera.id != camera_id, self.cameras))
-        if old_camera_count < len(self.cameras):
+        if old_camera_count > len(self.cameras):
             self.camera_removed.emit(camera_id)
 
     def save(self) -> bool:
