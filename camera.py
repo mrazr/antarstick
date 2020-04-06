@@ -8,7 +8,34 @@ from stick import Stick
 
 
 class Camera:
-    def __init__(self, folder: Path, id: int, measurements_path: Path):
+    """Class for representing a particular photo folder
+    comprised of photos from one camera.
+
+    ...
+
+    Attributes
+    ----------
+    folder : Path
+        Path to the folder containing the photos.
+    sticks : List[Stick]
+        List of Stick-s that are seen in the photos of this Camera.
+    id : int
+        Integer identifier within the Dataset this Camera belongs to.
+    measurements_path : Path
+        Path to the CSV file where the measurements are stored.
+    measurements : pandas.DataFrame
+        DataFrame of measurements. Rows correspond to individual photos,
+        columns correspond to individual sticks + maybe some other
+        measurements.
+
+    Methods
+    -------
+    save_measurements(path: Path)
+        Saves this measurements to the file specified by `path` in CSV format.
+    get_folder_name() -> str
+        Returns the name of this Camera's photos folder.
+    """
+    def __init__(self, folder: Path, id: int, measurements_path: Path = None):
         self.folder = Path(folder)
         self.sticks: List[Stick] = []
         self.id = id
@@ -16,7 +43,7 @@ class Camera:
             self.measurements_path = measurements_path
             self.measurements = self.__load_measuremets()
         else:
-            self.measurement = pd.DataFrame()
+            self.measurements = pd.DataFrame()
             self.measurements_path = None
 
     def __load_measuremets(self) -> pd.DataFrame:
@@ -46,3 +73,6 @@ class Camera:
         camera.sticks = sticks
 
         return camera
+
+    def get_folder_name(self) -> str:
+        return self.folder.name
