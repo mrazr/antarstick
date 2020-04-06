@@ -41,7 +41,6 @@ class AnalyzerWidget(QtWidgets.QTabWidget):
 
     @Slot(int)
     def handle_tab_close_requested(self, tab_id: int):
-        print(self.camera_tab_map)
         for cam_id, _tab_id in self.camera_tab_map.items():
             if _tab_id == tab_id:
                 self.dataset.remove_camera(cam_id)
