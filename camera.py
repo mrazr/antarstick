@@ -1,7 +1,6 @@
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional
 
-import jsonpickle
 import pandas as pd
 
 from stick import Stick
@@ -35,7 +34,7 @@ class Camera:
     get_folder_name() -> str
         Returns the name of this Camera's photos folder.
     """
-    def __init__(self, folder: Path, id: int, measurements_path: Path = None):
+    def __init__(self, folder: Path, id: int, measurements_path: Optional[Path] = None):
         self.folder = Path(folder)
         self.sticks: List[Stick] = []
         self.id = id
@@ -64,7 +63,11 @@ class Camera:
         del state['measurements']
         return state
 
-    def build_from_state(state):
+    def get_folder_name(self) -> str:
+        return self.folder.name
+
+    @staticmethod
+    def build_from_state(state: Dict) -> 'Camera':
         path = state['folder']
         sticks = state['sticks']
         id = state['id']
@@ -73,6 +76,3 @@ class Camera:
         camera.sticks = sticks
 
         return camera
-
-    def get_folder_name(self) -> str:
-        return self.folder.name

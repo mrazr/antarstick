@@ -1,12 +1,10 @@
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
-import simplejson as json
 import jsonpickle
+from PySide2.QtCore import QObject, Signal
 
 from camera import Camera
-
-from PySide2.QtCore import Signal, QObject
 
 
 class Dataset(QObject):
@@ -58,18 +56,21 @@ class Dataset(QObject):
     camera_added = Signal(Camera)
     camera_removed = Signal(int)
 
-    def __init__(self, path: Path = None):
+    def __init__(self, path: Optional[Path] = None):
         super(Dataset, self).__init__()
-        self.path = path
+        if path is not None:
+            if path.exists():
+                self.load_from(path)
+        else:
+            self.path = Path(".")
         self.stick_translation_table: Dict[int, Tuple[int, int]] = dict({})
         self.cameras: List[Camera] = []
         self.next_camera_id = 0
 
-
     def add_camera(self, folder: Path):
         camera = Camera(folder, self.next_camera_id)
         if self.path:
-                camera.measurements_path = self.path.parent / f"camera{camera.id}.csv"
+            camera.measurements_path = self.path.parent / f"camera{camera.id}.csv"
         self.cameras.append(camera)
         self.next_camera_id += 1
         self.camera_added.emit(camera)
@@ -81,7 +82,7 @@ class Dataset(QObject):
             self.camera_removed.emit(camera_id)
 
     def save(self) -> bool:
-        if not self.path:
+        if self.path == Path("."):
             return False
         try:
             with open(self.path, "w") as output_file:
@@ -97,7 +98,7 @@ class Dataset(QObject):
             print(f"Could not open {self.path} for writing: {err.strerror}")
             return False
         return True
-    
+
     def save_as(self, path: Path) -> bool:
         self.path = path
         return self.save()
@@ -111,9 +112,7 @@ class Dataset(QObject):
                 self.next_camera_id = decoded['next_camera_id']
                 self.cameras = [Camera.build_from_state(camera_state) for camera_state in decoded['cameras']]
                 for camera in self.cameras:
-                        self.camera_added.emit(camera)
+                    self.camera_added.emit(camera)
             return True
-        except OSError: # TODO do actual handling
+        except OSError:  # TODO do actual handling
             return False
-
-
