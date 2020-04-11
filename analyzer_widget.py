@@ -49,19 +49,13 @@ class AnalyzerWidget(QtWidgets.QTabWidget):
             self.camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
             return
         img = pics[1]
-        #barray = QByteArray(img.tobytes())
-        #image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
-        #camera_widget.pixmap = QPixmap.fromImage(image)
-        #camera_widget.gpixmap.setPixmap(camera_widget.pixmap)
-        camera_widget.show_image(img)
         self.camera_link_available.connect(camera_widget.gpixmap.set_link_cameras_enabled)
-        if len(self.dataset.cameras) > 1:
-            print("COOL count")
-            self.camera_link_available.emit(True)
         camera_widget.ui.detectionSensitivitySlider.valueChanged.emit(0)
         self.camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
         self.setCurrentIndex(self.camera_tab_map[camera.id])
-        camera_widget.ui.cameraView.fitInView(camera_widget.gpixmap.boundingRect().toRect(), Qt.KeepAspectRatio)
+        camera_widget.show_image(img)
+        if len(self.dataset.cameras) > 1:
+            self.camera_link_available.emit(True)
 
     @Slot(int)
     def handle_camera_removed(self, camera_id: int):

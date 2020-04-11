@@ -2,8 +2,8 @@
 from PySide2 import QtCore
 from PySide2.QtCore import Qt, QByteArray
 from PySide2 import QtWidgets
-from PySide2.QtGui import QPixmap, QImage
-from PySide2.QtWidgets import QGraphicsScene
+from PySide2.QtGui import QPixmap, QImage, QFont, QFontDatabase
+from PySide2.QtWidgets import QGraphicsScene, QGraphicsSimpleTextItem
 import ui_camera_view
 from camera import Camera
 from dataset import Dataset
@@ -19,8 +19,15 @@ from numpy import ndarray
 
 
 class CameraViewWidget(QtWidgets.QWidget):
+    __font: Optional[QFont] = None
     def __init__(self, camera: Camera):
         QtWidgets.QWidget.__init__(self)
+        if not CameraViewWidget.__font:
+            CameraViewWidget.__font = QFont()
+            CameraViewWidget.__font.setStyleHint(QFont().Monospace)
+            CameraViewWidget.__font.setFamily("monospace")
+            CameraViewWidget.__font.setPointSizeF(16)
+
         self.ui = ui_camera_view.Ui_CameraView()
         self.ui.setupUi(self)
         self.ui.detectionSensitivitySlider.sliderReleased.connect(self.update_stick_widgets)
@@ -30,7 +37,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.ui.cameraView.setScene(self.graphics_scene)
         self.pixmap = QPixmap(w=0, h=0)
         self.image = QImage()
-        self.gpixmap = CustomPixmap()
+        self.gpixmap = CustomPixmap(CameraViewWidget.__font)
         self.gpixmap.setPixmap(self.pixmap)
         self.graphics_scene.addItem(self.gpixmap)
         self.stick_widgets: List[StickWidget] = []
@@ -71,3 +78,10 @@ class CameraViewWidget(QtWidgets.QWidget):
         image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
         self.pixmap = QPixmap.fromImage(image)
         self.gpixmap.setPixmap(self.pixmap)
+        re = self.graphics_scene.sceneRect()
+        re.setWidth(1893)
+        self.graphics_scene.setSceneRect(re)
+        self.gpixmap.setPos(1893 / 2 - self.gpixmap.boundingRect().width() / 2, 0)
+        self.ui.cameraView.fitInView(self.gpixmap.boundingRect().toRect(), Qt.KeepAspectRatio)
+        self.ui.cameraView.centerOn(self.gpixmap)
+        self.graphics_scene.update()

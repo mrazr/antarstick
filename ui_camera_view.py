@@ -26,6 +26,8 @@ class Ui_CameraView(object):
         self.cameraView = QGraphicsView(CameraView)
         self.cameraView.setObjectName(u"cameraView")
         self.cameraView.setMouseTracking(False)
+        self.cameraView.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.cameraView.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.cameraView.setRenderHints(QPainter.Antialiasing|QPainter.TextAntialiasing)
 
         self.verticalLayout_2.addWidget(self.cameraView)

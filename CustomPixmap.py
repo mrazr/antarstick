@@ -1,7 +1,7 @@
 import PySide2
 from PySide2.QtCore import QMarginsF, QLine, QPoint, Slot
-from PySide2.QtGui import QBrush, QColor, QPainter
-from PySide2.QtWidgets import QGraphicsPixmapItem, QGraphicsItem, QWidget, QGraphicsRectItem
+from PySide2.QtGui import QBrush, QColor, QPainter, QFont
+from PySide2.QtWidgets import QGraphicsPixmapItem, QGraphicsItem, QWidget, QGraphicsSimpleTextItem
 from PySide2.QtGui import QPixmap
 from typing import Optional, List
 from stick_widget import StickWidget
@@ -9,12 +9,17 @@ from LinkCameraButton import LinkCameraButton
 
 
 class CustomPixmap(QGraphicsPixmapItem):
-    def __init__(self, parent: Optional[QGraphicsItem] = None):
+    def __init__(self, font: QFont, parent: Optional[QGraphicsItem] = None):
         QGraphicsPixmapItem.__init__(self, parent)
         self.stick_widgets: List[StickWidget] = []
         self.reference_line = QLine()
-        self.left_add_button = LinkCameraButton(parent=self)
-        self.right_add_button = LinkCameraButton(parent=self)
+        self.link_cam_text = QGraphicsSimpleTextItem("Link camera...", self)
+        self.link_cam_text.setZValue(42)
+        self.link_cam_text.setVisible(False)
+        self.link_cam_text.setFont(font)
+        self.link_cam_text.setPos(0, 0)
+        self.left_add_button = LinkCameraButton(self.link_cam_text, parent=self)
+        self.right_add_button = LinkCameraButton(self.link_cam_text, parent=self)
         self.show_add_buttons = False
 
     def paint(self, painter: QPainter, option: PySide2.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
@@ -30,14 +35,6 @@ class CustomPixmap(QGraphicsPixmapItem):
         for sw in self.stick_widgets:
             painter.drawPixmap(sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)),
                                self.pixmap(), sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)))
-
-        if self.show_add_buttons:
-            pass
-            #self.right_add_button.setRect(self.pixmap().width() - 5, self.pixmap().height() * 0.5, 10, 10)
-            #self.left_add_button.setRect(-5, self.pixmap().height() * 0.5, 10, 10)
-            #painter.setBrush(QBrush(QColor(0, 200, 50, 200)))
-            #painter.drawEllipse(self.left_add_button.rect().center(), 10, 10)
-            #painter.drawEllipse(self.right_add_button.rect().center(), 10, 10)
 
     def set_reference_line_percentage(self, percentage: float):
         if self.pixmap().isNull():
@@ -59,5 +56,5 @@ class CustomPixmap(QGraphicsPixmapItem):
         else:
             self.right_add_button.setVisible(False)
             self.left_add_button.setVisible(False)
-        #self.scene().update()
+        self.scene().update()
 
