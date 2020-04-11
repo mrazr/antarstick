@@ -34,10 +34,10 @@ class Camera:
     get_folder_name() -> str
         Returns the name of this Camera's photos folder.
     """
-    def __init__(self, folder: Path, id: int, measurements_path: Optional[Path] = None):
+    def __init__(self, folder: Path, _id: int, measurements_path: Optional[Path] = None):
         self.folder = Path(folder)
         self.sticks: List[Stick] = []
-        self.id = id
+        self.id = _id
         if measurements_path:
             self.measurements_path = measurements_path
             self.measurements = self.__load_measuremets()
@@ -70,9 +70,9 @@ class Camera:
     def build_from_state(state: Dict) -> 'Camera':
         path = state['folder']
         sticks = state['sticks']
-        id = state['id']
+        _id = state['id']
         measurements_path = state['measurements_path']
-        camera = Camera(path, id, measurements_path)
+        camera = Camera(path, _id, measurements_path)
         camera.sticks = sticks
 
         return camera

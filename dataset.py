@@ -2,9 +2,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import jsonpickle
-from PySide2.QtCore import QObject, Signal
+from PySide2.QtCore import QObject, Signal, Slot
 
 from camera import Camera
+from stick import Stick
+from numpy import zeros
+import antarstick_analyzer as antar
 
 
 class Dataset(QObject):
@@ -42,6 +45,11 @@ class Dataset(QObject):
     load_from(path: Path) -> bool
         Loads to self the dataset specified by `path`.
         Returns True if successful
+    create_new_stick() -> Stick
+        Creates a new zero valued Stick. Stick creation is handled
+        by this method so as to assure assigning unique global IDs per Dataset.
+    create_new_sticks(count: int) -> List[Stick]
+        Creates `count` new zero valued Stick-s.
 
     Signals
     -------
@@ -49,12 +57,15 @@ class Dataset(QObject):
         Emitted when a Camera is added to Dataset. Argument is the Camera
         that was added.
     camera_removed : Signal(int)
-        Emitted when a Camera is remove from Dataset.
+        Emitted when a Camera is remove from dataset.
         Argument is the id of the removed camera.
+    camera_sticks_detected: Signal(Camera)
+        Emitted when Stick-s are detected for a certain Camera
     """
 
     camera_added = Signal(Camera)
     camera_removed = Signal(int)
+    camera_sticks_detected = Signal(Camera)
 
     def __init__(self, path: Optional[Path] = None):
         super(Dataset, self).__init__()
@@ -66,6 +77,7 @@ class Dataset(QObject):
         self.stick_translation_table: Dict[int, Tuple[int, int]] = dict({})
         self.cameras: List[Camera] = []
         self.next_camera_id = 0
+        self.next_stick_id = 0
 
     def add_camera(self, folder: Path):
         camera = Camera(folder, self.next_camera_id)
@@ -92,6 +104,7 @@ class Dataset(QObject):
                 state = self.__dict__.copy()
                 del state['camera_added']
                 del state['camera_removed']
+                del state['camera_sticks_detected']
                 state['cameras'] = [camera.get_state() for camera in self.cameras]
                 output_file.write(jsonpickle.encode(state))
         except OSError as err:
@@ -116,3 +129,20 @@ class Dataset(QObject):
             return True
         except OSError:  # TODO do actual handling
             return False
+
+    def create_new_stick(self) -> Stick:
+        id = self.next_stick_id
+        self.next_stick_id += 1
+        return Stick(id, zeros((1, 2)), zeros((1, 2)))
+
+    def create_new_sticks(self, count: int) -> List[Stick]:
+        return list(map(lambda _: self.create_new_stick(), range(count)))
+
+    @Slot(Camera)
+    def detect_sticks_in_camera(self, camera: Camera):
+        detected_sticks = antar.detect_sticks_in_camera(self, camera, 1.0)
+        if len(detected_sticks) == 0:
+            return
+        camera.sticks.clear()
+        camera.sticks.extend(detected_sticks)
+        self.camera_sticks_detected.emit(camera)
