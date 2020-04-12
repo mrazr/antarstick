@@ -6,11 +6,9 @@ from PySide2.QtGui import QBrush, QColor, QPainter, QFont, QPen, QImage, QPixmap
 from PySide2.QtWidgets import QGraphicsPixmapItem, QGraphicsItem, QWidget, QGraphicsSimpleTextItem, QGraphicsRectItem
 
 from camera import Camera
-from link_camera_button import LinkCameraButton
-from stick_widget import StickWidget
+from .link_camera_button import LinkCameraButton
+from .stick_widget import StickWidget
 from numpy import ndarray
-from skimage.io import imread
-from skimage.transform import rescale
 import cv2 as cv
 
 

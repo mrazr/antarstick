@@ -1,23 +1,22 @@
 # This Python file uses the following encoding: utf-8
 import os
-from typing import List, Optional
+from typing import Optional
 
-import cv2 as cv
 from PySide2 import QtWidgets
-from PySide2.QtCore import Qt, QByteArray, QPointF
+from PySide2.QtCore import QPointF, Qt
 from PySide2.QtCore import Slot
-from PySide2.QtGui import QPixmap, QImage, QFont
-from PySide2.QtWidgets import QGraphicsScene, QGraphicsView
+from PySide2.QtGui import QFont
+from PySide2.QtWidgets import QGraphicsScene
 from numpy import ndarray
 
-import antarstick_analyzer as antar
-import ui_camera_view
+from analyzer.widgets import ui_camera_view
+from analyzer import antarstick_analyzer as antar
 from camera import Camera
-from custom_pixmap import CustomPixmap
 from dataset import Dataset
-from stick import Stick
-from stick_widget import StickWidget
-from link_camera_menu import LinkCameraMenu
+from .custom_pixmap import CustomPixmap
+from .link_camera_menu import LinkCameraMenu
+from .stick_widget import StickWidget
+from ..antarstick_analyzer import *
 
 
 class CameraViewWidget(QtWidgets.QWidget):

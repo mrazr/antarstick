@@ -7,7 +7,7 @@ from PySide2.QtCore import QObject, Signal, Slot
 from camera import Camera
 from stick import Stick
 from numpy import zeros
-import antarstick_analyzer as antar
+import analyzer.antarstick_analyzer as antar
 
 
 class Dataset(QObject):

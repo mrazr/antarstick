@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
+from os import listdir
 
 from stick import Stick
 
@@ -44,6 +45,7 @@ class Camera:
         else:
             self.measurements = pd.DataFrame()
             self.measurements_path = None
+        self.rep_image = self.folder / Path(listdir(self.folder)[0])
 
     def __load_measuremets(self) -> pd.DataFrame:
         try:
@@ -61,6 +63,7 @@ class Camera:
     def get_state(self):
         state = self.__dict__.copy()
         del state['measurements']
+        del state['rep_image']
         return state
 
     def get_folder_name(self) -> str:

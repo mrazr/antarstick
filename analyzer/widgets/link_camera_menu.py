@@ -5,7 +5,7 @@ from typing import Optional, List
 from PySide2.QtCore import Signal, QMarginsF
 
 from camera import Camera
-from custom_pixmap import CustomPixmap
+from .custom_pixmap import CustomPixmap
 
 
 class LinkCameraMenu(QGraphicsObject):

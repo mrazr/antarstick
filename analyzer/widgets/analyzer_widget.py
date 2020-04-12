@@ -1,18 +1,18 @@
 # This Python file uses the following encoding: utf-8
-from PySide2 import QtWidgets
-from dataset import Dataset
-from PySide2.QtCore import Slot, QByteArray, Qt
-from CameraViewWidget import CameraViewWidget
-from camera import Camera
-from typing import Dict, List
-from stick_widget import StickWidget
-import numpy as np
 from os import scandir
+from typing import Dict, List
+
 import cv2 as cv
-import antarstick_analyzer as antar
-from PySide2.QtGui import QPixmap, QImage
-from stick import Stick
+import numpy as np
+from PySide2 import QtWidgets
 from PySide2.QtCore import Signal
+from PySide2.QtCore import Slot
+
+import analyzer.antarstick_analyzer as antar
+from camera import Camera
+from .camera_view_widget import CameraViewWidget
+from dataset import Dataset
+from stick import Stick
 
 
 class AnalyzerWidget(QtWidgets.QTabWidget):
@@ -42,18 +42,19 @@ class AnalyzerWidget(QtWidgets.QTabWidget):
 
     @Slot(Camera)
     def handle_camera_added(self, camera: Camera):
-        camera_widget = CameraViewWidget(camera)
+        camera_widget = CameraViewWidget(self.dataset)
         camera_widget.ui.btnFindNonSnow.clicked.connect(self.handle_detect_sticks_clicked)
-        pics = self.find_non_snow_pics_in_camera(camera, 2)
+        pics = self.find_non_snow_pics_in_camera(camera, 1)
         if len(pics) == 0:
             self.camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
             return
-        img = pics[1]
-        self.camera_link_available.connect(camera_widget.gpixmap.set_link_cameras_enabled)
-        camera_widget.ui.detectionSensitivitySlider.valueChanged.emit(0)
+        img = pics[0]
         self.camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
         self.setCurrentIndex(self.camera_tab_map[camera.id])
-        camera_widget.show_image(img)
+        camera_widget.initialise_with(camera)
+        self.camera_link_available.connect(camera_widget.gpixmap.set_link_cameras_enabled)
+        camera_widget.ui.detectionSensitivitySlider.valueChanged.emit(0)
+        #camera_widget.show_image(img)
         if len(self.dataset.cameras) > 1:
             self.camera_link_available.emit(True)
 
@@ -76,24 +77,26 @@ class AnalyzerWidget(QtWidgets.QTabWidget):
         camera_widget_id = self.camera_tab_map[camera.id]
         camera_widget: CameraViewWidget = self.widget(camera_widget_id)
         camera_widget.stick_widgets.clear()
-        for stick in camera.sticks:
-            stick_widget = StickWidget(stick)
-            camera_widget.stick_widgets.append(stick_widget)
+        #for stick in camera.sticks:
+        #    stick_widget = StickWidget(stick)
+        #    camera_widget.stick_widgets.append(stick_widget)
 
     @Slot()
     def handle_detect_sticks_clicked(self):
         camera_widget: CameraViewWidget = self.currentWidget()
         camera = camera_widget.camera
-        non_snow_pics = self.find_non_snow_pics_in_camera(camera, 4)
+        non_snow_pics = self.find_non_snow_pics_in_camera(camera, 2)
         if len(non_snow_pics) == 0:
             return
-        img = cv.cvtColor(non_snow_pics[1], cv.COLOR_BGR2GRAY)
+        img = cv.cvtColor(non_snow_pics[0], cv.COLOR_BGR2GRAY)
         line_height_perc = camera_widget.ui.detectionSensitivitySlider.value() / 100.0
         lines = antar.detect_sticks_hmt(img, line_height_perc)
         if len(lines) == 0:
             return
         sticks = list(map(lambda line_: Stick(0, np.array(line_[0]), np.array(line_[1])), lines))
         sticks = sorted(sticks, key=lambda stick_: stick_.length_px, reverse=True)
+        camera.sticks.clear()
+        camera.sticks.extend(sticks)
         camera_widget.detected_sticks = sticks
         camera_widget.update_stick_widgets()
 

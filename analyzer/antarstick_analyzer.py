@@ -11,12 +11,11 @@ from typing import Dict, List, Tuple
 
 import cv2 as cv
 import numpy as np
-
-from skimage.measure import regionprops
-from skimage.morphology import rectangle, white_tophat
-from stick import Stick
 import skimage as sk
-from time import time
+from skimage.measure import regionprops
+from skimage.morphology import rectangle
+
+from stick import Stick
 
 Area = float
 Height = float
