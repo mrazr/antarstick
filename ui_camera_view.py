@@ -29,6 +29,7 @@ class Ui_CameraView(object):
         self.cameraView.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.cameraView.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.cameraView.setRenderHints(QPainter.Antialiasing|QPainter.TextAntialiasing)
+        self.cameraView.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
 
         self.verticalLayout_2.addWidget(self.cameraView)
 
