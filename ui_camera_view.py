@@ -20,16 +20,11 @@ class Ui_CameraView(object):
     def setupUi(self, CameraView):
         if not CameraView.objectName():
             CameraView.setObjectName(u"CameraView")
-        CameraView.resize(985, 795)
+        CameraView.resize(667, 530)
         self.verticalLayout_2 = QVBoxLayout(CameraView)
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
         self.cameraView = QGraphicsView(CameraView)
         self.cameraView.setObjectName(u"cameraView")
-        self.cameraView.setMouseTracking(False)
-        self.cameraView.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.cameraView.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.cameraView.setRenderHints(QPainter.Antialiasing|QPainter.TextAntialiasing)
-        self.cameraView.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
 
         self.verticalLayout_2.addWidget(self.cameraView)
 
@@ -43,17 +38,12 @@ class Ui_CameraView(object):
         self.detectionSensitivitySlider = QSlider(CameraView)
         self.detectionSensitivitySlider.setObjectName(u"detectionSensitivitySlider")
         self.detectionSensitivitySlider.setMaximum(100)
-        self.detectionSensitivitySlider.setValue(10)
+        self.detectionSensitivitySlider.setValue(95)
         self.detectionSensitivitySlider.setOrientation(Qt.Horizontal)
         self.detectionSensitivitySlider.setTickPosition(QSlider.NoTicks)
         self.detectionSensitivitySlider.setTickInterval(5)
 
         self.horizontalLayout.addWidget(self.detectionSensitivitySlider)
-
-        self.btnFindNonSnow = QPushButton(CameraView)
-        self.btnFindNonSnow.setObjectName(u"btnFindNonSnow")
-
-        self.horizontalLayout.addWidget(self.btnFindNonSnow)
 
 
         self.verticalLayout_2.addLayout(self.horizontalLayout)
@@ -66,7 +56,6 @@ class Ui_CameraView(object):
 
     def retranslateUi(self, CameraView):
         CameraView.setWindowTitle(QCoreApplication.translate("CameraView", u"Form", None))
-        self.label.setText(QCoreApplication.translate("CameraView", u"Minimum stick height", None))
-        self.btnFindNonSnow.setText(QCoreApplication.translate("CameraView", u"Detect", None))
+        self.label.setText(QCoreApplication.translate("CameraView", u"Detection sensitivity", None))
     # retranslateUi
 

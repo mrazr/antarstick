@@ -13,16 +13,16 @@ import cv2 as cv
 import numpy as np
 import skimage as sk
 from skimage.measure import regionprops
-from skimage.morphology import rectangle
+from skimage.morphology import rectangle, white_tophat
 
 from stick import Stick
+from time import time
 
 Area = float
 Height = float
 Ecc = float
 Label = int
 Centroid = Tuple[int, int]
-
 
 def rect_se(width: int, height: int) -> np.ndarray:
     """Constructs a rectangular structuring element of a given width and height.
@@ -40,7 +40,6 @@ def rect_se(width: int, height: int) -> np.ndarray:
 
     return cv.getStructuringElement(cv.MORPH_RECT, (width, height))
 
-
 def stick_segmentation_preprocess(img: np.ndarray) -> np.ndarray:
     """Segments line-like structures out of a grayscale image.
 
@@ -48,7 +47,7 @@ def stick_segmentation_preprocess(img: np.ndarray) -> np.ndarray:
     ----------
     img : np.ndarray
         a grayscale image
-
+    
     Returns
     -------
     np.ndarray
@@ -59,22 +58,18 @@ def stick_segmentation_preprocess(img: np.ndarray) -> np.ndarray:
 
     denoised = denoise(img)
 
-    # Closing off the possible duct-tapes on sticks which would disconnect components in segmented image
+    # Closing off the possible duct-tapes on sticks which would disconnect compenents in segmented image
     closed: np.ndarray = cv.morphologyEx(denoised, cv.MORPH_CLOSE, rect_se(19, 19))
 
     wth: np.ndarray = cv.morphologyEx(closed, cv.MORPH_TOPHAT, rect_se(19, 19))
 
-    thresh: np.ndarray = cv.adaptiveThreshold(wth, 255.0, thresh_method, cv.THRESH_BINARY, 25, -2)
+    thresh: np.ndarray = cv.adaptiveThreshold(wth, 255.0, thresh_method, cv.THRESH_BINARY, 25, -3)
 
     # close holes in our thresholded image
-    closed = cv.morphologyEx(thresh, cv.MORPH_CLOSE, rect_se(5, 13))
-    open = cv.morphologyEx(thresh, cv.MORPH_OPEN, rect_se(1, 5))
-
+    closed: np.ndarray = cv.morphologyEx(thresh, cv.MORPH_CLOSE, rect_se(5, 13))
 
     # This extracts and finally returns line-like structures
-    return cv.morphologyEx(thresh, cv.MORPH_OPEN, rect_se(1, 13))
-    #return cv.morphologyEx(open, cv.MORPH_CLOSE, rect_se(3, 15))
-
+    return cv.morphologyEx(closed, cv.MORPH_OPEN, rect_se(1, 13))
 
 def denoise(img: np.ndarray) -> np.ndarray:
     """Denoises image by perfoming cv.pyrDown twice and then cv.pyrUp twice.
@@ -83,18 +78,15 @@ def denoise(img: np.ndarray) -> np.ndarray:
     ----------
     img : np.ndarray
         image
-
+    
     Returns
     -------
     np.ndarray
     """
 
     down = cv.pyrDown(img)
-    #down = cv.pyrDown(down)
-    #down = cv.pyrUp(down)
     return cv.pyrUp(down)
-
-
+    
 def detect_sticks(img: np.ndarray, scale_lines_by: float = 1.0, merge_lines: bool = True) -> List[List[int]]:
     """Detects sticks in the given image.
 
@@ -106,17 +98,14 @@ def detect_sticks(img: np.ndarray, scale_lines_by: float = 1.0, merge_lines: boo
         all detected lines will be scaled by this factor (default is 1.0)
     merge_lines : bool, optional
         debug parameter, whether to merge multiple lines belonging to the same stick (default is True)
-
+    
     Returns
     -------
     List[List[int]]
         list of detected lines, each line is a list of the following format: [x0, y0, x1, y1] where y0 < y1
     """
-    img_ = img
-    if len(img.shape) == 3:
-        img_ = cv.cvtColor(img_, cv.COLOR_BGR2GRAY)
     # First preprocess the input image
-    preprocessed = stick_segmentation_preprocess(img_)
+    preprocessed = stick_segmentation_preprocess(img)
 
     n_labels, label_img = cv.connectedComponents(preprocessed, connectivity=4, ltype=cv.CV_16U)
     region_props = regionprops(label_img)
@@ -124,25 +113,13 @@ def detect_sticks(img: np.ndarray, scale_lines_by: float = 1.0, merge_lines: boo
     likely_labels_stats: List[Tuple[Label, Height, Area, Ecc, Centroid]] = get_likely_labels(preprocessed, region_props)
     likely_labels = {l[0] for l in likely_labels_stats}
 
-    show_imgs_([preprocessed], ["prep_pre"])
-
     # Filter out labels which are not interesting
-
-    for region_prop in region_props:
-        if region_prop.label in likely_labels:
-            continue
-        bbox = region_prop.bbox
-        preprocessed[bbox[0]:bbox[2], bbox[1]:bbox[3]] = 0
-
-    show_imgs_([preprocessed], ["prep_post"])
-    cv.destroyAllWindows()
-
-    #for r in range(preprocessed.shape[0]):
-    #    for c in range(preprocessed.shape[1]):
-    #        if label_img[r, c] not in likely_labels:
-    #            preprocessed[r, c] = 0
+    for r in range(preprocessed.shape[0]):
+        for c in range(preprocessed.shape[1]):
+            if label_img[r, c] not in likely_labels:
+                preprocessed[r, c] = 0
     height = likely_labels_stats[5][1]
-
+    
     lines = cv.HoughLinesP(preprocessed, 1, np.pi / 180, int(0.8 * height), height, 20)
 
     # Transform the lines so they all have their first endpoint is the higher one
@@ -151,13 +128,15 @@ def detect_sticks(img: np.ndarray, scale_lines_by: float = 1.0, merge_lines: boo
     if not merge_lines:
         return (np.array(lines) * scale_lines_by).astype(int)
 
+
     # Now we're onto merging multiple detected lines per label
-    close_lines: Dict[int, List[List[int]]] = {l[0]: [] for l in likely_labels_stats}
+    close_lines = {l[0] : [] for l in likely_labels_stats}
 
     # Assign each line the label whose bounding box contains that line, we get bins of lines that belong to the same bbox
     for line in lines:
         line_mid_point = (int(0.5 * (line[0] + line[2])), int(0.5 * (line[1] + line[3])))
         for l in likely_labels:
+            bbox = region_props[l-1].bbox
             if bbox_contains(region_props[l-1].bbox, line_mid_point):
                 close_lines[l].append(line)
 
@@ -192,7 +171,7 @@ def get_likely_labels(label_img: np.ndarray, label_stats) -> List[Tuple[Label, H
         image of labeled regions
     label_stats : List[RegionProps]
         list of scikit structure RegionProps containing various properties of labels of label_img
-
+    
     Returns
     -------
     List[Tuple[int, int, int, float, Tuple[int, int]]]
@@ -202,12 +181,15 @@ def get_likely_labels(label_img: np.ndarray, label_stats) -> List[Tuple[Label, H
     # Retain labels that are elongated
     likely_labels = list(sorted(filter(lambda l: l.eccentricity > 0.87, label_stats), key=height_of_region, reverse=True))
 
+    #likely_labels = list(sorted(likely_labels, key=height_of_region, reverse=True))
+
     max_height = height_of_region(likely_labels[0])
 
-    likely_labels = list(filter(lambda l: height_of_region(l) >= 0.2 * max_height, likely_labels))
+
+    likely_labels = filter(lambda l: height_of_region(l) >= 0.2 * max_height, likely_labels)
+
 
     return list(map(lambda l: (l.label, height_of_region(l), l.area, l.eccentricity, l.centroid), likely_labels))
-
 
 def height_of_region(region_prop) -> int:
     return region_prop.bbox[2] - region_prop.bbox[0]
@@ -216,17 +198,14 @@ def height_of_region(region_prop) -> int:
 def draw_lines_on_img(img, lines):
     for line in lines:
         cv.line(img, tuple(line[:2]), tuple(line[2:]), [255, 255, 0], 2)
-
-
+    
 def bbox_contains(bbox: Tuple[int, int, int, int], point: Tuple[int, int]) -> bool:
     return point[0] >= bbox[1] and point[0] < bbox[3] and point[1] >= bbox[0] and point[1] < bbox[2]
-
 
 def show_imgs_(images: List[np.ndarray], names: List[str]):
     for image, name in zip(images, names):
         cv.imshow(name, image)
     cv.waitKey(0)
-
 
 def measure_snow(img: np.ndarray, sticks: List[Stick]) -> Dict[int, float]:
     """Measures the height of snow in the image `img` around the sticks in `sticks`
@@ -255,12 +234,12 @@ def measure_snow(img: np.ndarray, sticks: List[Stick]) -> Dict[int, float]:
         end2 = np.array([stick.bottom[1], stick.bottom[0]])
 
         # Extract intesity profile underneath the line
-        line_profile = sk.measure.profile_line(blurred, end2, end1, mode='reflect')
-
+        line_profile = sk.measure.profile_line(img, end2, end1, mode='reflect')
+        
         off_x = np.array([0, int(1.5 * thickness)])
         # Now extract intensity profiles left of and right of the stick
-        left_neigh_profile = sk.measure.profile_line(blurred, end2 - off_x, end1 - off_x, mode='reflect')
-        right_neigh_profile = sk.measure.profile_line(blurred, end2 + off_x, end1 + off_x, mode='reflect')
+        left_neigh_profile = sk.measure.profile_line(img, end2 - off_x, end1 - off_x, mode='reflect')
+        right_neigh_profile = sk.measure.profile_line(img, end2 + off_x, end1 + off_x, mode='reflect')
 
         # Compute the difference of the line profile and the average of the neighboring profiles
         # the idea is that, if there is snow, all the three intensity profiles will be similar enough
@@ -282,71 +261,3 @@ def measure_snow(img: np.ndarray, sticks: List[Stick]) -> Dict[int, float]:
             measurements[stick.id] = height[0]
 
     return measurements
-
-
-def is_non_snow(hsv_img: np.ndarray) -> bool:
-    roi_x = int(0.2 * hsv_img.shape[1])
-    roi_y = int(0.4 * hsv_img.shape[0])
-    roi_w = int(0.6 * hsv_img.shape[1])
-    roi_h = int(0.4 * hsv_img.shape[0])
-
-    return np.mean(hsv_img[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w, 2]) < 100
-
-
-def verify_stick(stick: Stick, angle_img: np.ndarray, sigma: float) -> bool:
-    e1 = np.array([stick.top[1], stick.top[0]])
-    e2 = np.array([stick.bottom[1], stick.bottom[0]])
-    profile_line = sk.measure.profile_line(angle_img, e1, e2)
-    return np.std(profile_line) < sigma
-
-
-def get_angle_image(img: np.ndarray) -> np.ndarray:
-    dx = cv.Sobel(img, cv.CV_32F, 1, 0)
-    dy = cv.Sobel(img, cv.CV_32F, 0, 1)
-    return cv.phase(dx, dy, angleInDegrees=True)
-
-
-def filter_non_valid_angles(angle_img: np.ndarray) -> np.ndarray:
-    mask1 = angle_img <= 30.0
-    mask2 = np.bitwise_and(angle_img >= 150, angle_img <= 210)
-    mask3 = angle_img >= 330
-    mask = np.bitwise_or(np.bitwise_or(mask1, mask2), mask3)
-    return angle_img * mask
-
-
-hmt_se = np.ones((3, 3), dtype=np.int8)
-hmt_se = np.pad(hmt_se, ((0, 0), (2, 2)), 'constant', constant_values=-1)
-hmt_se = np.pad(hmt_se, ((0, 0), (1, 1)), 'constant', constant_values=0)
-
-
-def uhmt(img: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    e_se = (1 * (hmt_se == 1)).astype(np.uint8)
-    d_se = (1 * (hmt_se == 0)).astype(np.uint8)
-    e = cv.erode(img, e_se)
-    d = cv.dilate(img, d_se)
-    mask = e > d
-    diff = (e.astype(np.int16) - d.astype(np.int16))
-    diff[diff < 0] = 0
-    return cv.convertScaleAbs(diff), (255 * mask).astype(np.uint8)
-
-
-def preprocess_image(img: np.ndarray) -> np.ndarray:
-    img = denoise(img)
-    return sk.util.img_as_ubyte(sk.exposure.equalize_adapthist(
-        img, [int(img.shape[0] / 20.0), int(img.shape[1] / 20.0)]))
-
-
-def detect_sticks_hmt(img: np.ndarray, height_perc: float) -> List[List[int]]:
-    prep = preprocess_image(img)
-    hmt, mask = uhmt(prep)
-    height = int(height_perc * img.shape[0])
-    rankd = sk.filters.rank.percentile(mask, sk.morphology.rectangle(7, 3), p0=0.8)
-    closed = cv.morphologyEx(rankd, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (5, 5)))
-    lines = sk.transform.probabilistic_hough_line(closed,
-                                                  threshold=int(0.1 * height),
-                                                  line_length=int(0.4 * height),
-                                                  line_gap=int(0.07 * height))
-
-    if len(lines) == 0:
-        return []
-    return lines

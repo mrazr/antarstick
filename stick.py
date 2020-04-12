@@ -26,7 +26,7 @@ class Stick:
     scale_ : float
         current scale of the stick. There might be situations when we want to
         down/upscale the stick for whatever reasons
-
+    
     Methods
     -------
     scale(factor: float)
@@ -40,6 +40,7 @@ class Stick:
     label: str = "stick"
     scale_: float = 1.0
 
+
     def __post_init__(self):
         self.length_px = np.linalg.norm(self.top - self.bottom)
 
@@ -49,7 +50,7 @@ class Stick:
         ----------
         factor : float
             factor to scale the stick by
-
+        
         Returns
         -------
         Stick

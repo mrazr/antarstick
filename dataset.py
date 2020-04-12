@@ -1,13 +1,12 @@
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
+import simplejson as json
 import jsonpickle
-from PySide2.QtCore import QObject, Signal, Slot
 
 from camera import Camera
-from stick import Stick
-from numpy import zeros
-import analyzer.antarstick_analyzer as antar
+
+from PySide2.QtCore import Signal, QObject
 
 
 class Dataset(QObject):
@@ -45,11 +44,6 @@ class Dataset(QObject):
     load_from(path: Path) -> bool
         Loads to self the dataset specified by `path`.
         Returns True if successful
-    create_new_stick() -> Stick
-        Creates a new zero valued Stick. Stick creation is handled
-        by this method so as to assure assigning unique global IDs per Dataset.
-    create_new_sticks(count: int) -> List[Stick]
-        Creates `count` new zero valued Stick-s.
 
     Signals
     -------
@@ -57,32 +51,25 @@ class Dataset(QObject):
         Emitted when a Camera is added to Dataset. Argument is the Camera
         that was added.
     camera_removed : Signal(int)
-        Emitted when a Camera is remove from dataset.
+        Emitted when a Camera is remove from Dataset.
         Argument is the id of the removed camera.
-    camera_sticks_detected: Signal(Camera)
-        Emitted when Stick-s are detected for a certain Camera
     """
 
     camera_added = Signal(Camera)
     camera_removed = Signal(int)
-    camera_sticks_detected = Signal(Camera)
 
-    def __init__(self, path: Optional[Path] = None):
+    def __init__(self, path: Path = None):
         super(Dataset, self).__init__()
-        if path is not None:
-            if path.exists():
-                self.load_from(path)
-        else:
-            self.path = Path(".")
+        self.path = path
         self.stick_translation_table: Dict[int, Tuple[int, int]] = dict({})
         self.cameras: List[Camera] = []
         self.next_camera_id = 0
-        self.next_stick_id = 0
+
 
     def add_camera(self, folder: Path):
         camera = Camera(folder, self.next_camera_id)
         if self.path:
-            camera.measurements_path = self.path.parent / f"camera{camera.id}.csv"
+                camera.measurements_path = self.path.parent / f"camera{camera.id}.csv"
         self.cameras.append(camera)
         self.next_camera_id += 1
         self.camera_added.emit(camera)
@@ -94,7 +81,7 @@ class Dataset(QObject):
             self.camera_removed.emit(camera_id)
 
     def save(self) -> bool:
-        if self.path == Path("."):
+        if not self.path:
             return False
         try:
             with open(self.path, "w") as output_file:
@@ -104,14 +91,13 @@ class Dataset(QObject):
                 state = self.__dict__.copy()
                 del state['camera_added']
                 del state['camera_removed']
-                del state['camera_sticks_detected']
                 state['cameras'] = [camera.get_state() for camera in self.cameras]
                 output_file.write(jsonpickle.encode(state))
         except OSError as err:
             print(f"Could not open {self.path} for writing: {err.strerror}")
             return False
         return True
-
+    
     def save_as(self, path: Path) -> bool:
         self.path = path
         return self.save()
@@ -125,24 +111,9 @@ class Dataset(QObject):
                 self.next_camera_id = decoded['next_camera_id']
                 self.cameras = [Camera.build_from_state(camera_state) for camera_state in decoded['cameras']]
                 for camera in self.cameras:
-                    self.camera_added.emit(camera)
+                        self.camera_added.emit(camera)
             return True
-        except OSError:  # TODO do actual handling
+        except OSError: # TODO do actual handling
             return False
 
-    def create_new_stick(self) -> Stick:
-        id = self.next_stick_id
-        self.next_stick_id += 1
-        return Stick(id, zeros((1, 2)), zeros((1, 2)))
 
-    def create_new_sticks(self, count: int) -> List[Stick]:
-        return list(map(lambda _: self.create_new_stick(), range(count)))
-
-    @Slot(Camera)
-    def detect_sticks_in_camera(self, camera: Camera):
-        detected_sticks = antar.detect_sticks_in_camera(self, camera, 1.0)
-        if len(detected_sticks) == 0:
-            return
-        camera.sticks.clear()
-        camera.sticks.extend(detected_sticks)
-        self.camera_sticks_detected.emit(camera)
