@@ -1,8 +1,8 @@
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List
 
+import jsonpickle
 import pandas as pd
-from os import listdir
 
 from stick import Stick
 
@@ -35,17 +35,16 @@ class Camera:
     get_folder_name() -> str
         Returns the name of this Camera's photos folder.
     """
-    def __init__(self, folder: Path, _id: int, measurements_path: Optional[Path] = None):
+    def __init__(self, folder: Path, id: int, measurements_path: Path = None):
         self.folder = Path(folder)
         self.sticks: List[Stick] = []
-        self.id = _id
+        self.id = id
         if measurements_path:
             self.measurements_path = measurements_path
             self.measurements = self.__load_measuremets()
         else:
             self.measurements = pd.DataFrame()
             self.measurements_path = None
-        self.rep_image = self.folder / Path(listdir(self.folder)[0])
 
     def __load_measuremets(self) -> pd.DataFrame:
         try:
@@ -63,19 +62,17 @@ class Camera:
     def get_state(self):
         state = self.__dict__.copy()
         del state['measurements']
-        del state['rep_image']
         return state
 
-    def get_folder_name(self) -> str:
-        return self.folder.name
-
-    @staticmethod
-    def build_from_state(state: Dict) -> 'Camera':
+    def build_from_state(state):
         path = state['folder']
         sticks = state['sticks']
-        _id = state['id']
+        id = state['id']
         measurements_path = state['measurements_path']
-        camera = Camera(path, _id, measurements_path)
+        camera = Camera(path, id, measurements_path)
         camera.sticks = sticks
 
         return camera
+
+    def get_folder_name(self) -> str:
+        return self.folder.name
