@@ -10,11 +10,11 @@ from PyQt5.QtCore import pyqtSlot as Slot
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import QGraphicsScene
 
-from analyzer import antarstick_analyzer as antar
-from analyzer.widgets import ui_camera_view
-from analyzer.widgets.custom_pixmap import CustomPixmap
-from analyzer.widgets.link_camera_menu import LinkCameraMenu
-from analyzer.widgets.stick_widget import StickWidget
+from camera_processing import antarstick_processing as antar
+from camera_processing.widgets import ui_camera_view
+from camera_processing.widgets.custom_pixmap import CustomPixmap
+from camera_processing.widgets.link_camera_menu import LinkCameraMenu
+from camera_processing.widgets.stick_widget import StickWidget
 from camera import Camera
 from dataset import Dataset
 from stick import Stick

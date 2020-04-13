@@ -6,7 +6,7 @@ from PyQt5.QtCore import pyqtSignal as Signal
 from PyQt5.QtGui import QBrush, QColor, QPen
 from PyQt5.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsRectItem
 
-from analyzer.widgets.custom_pixmap import CustomPixmap
+from camera_processing.widgets.custom_pixmap import CustomPixmap
 from camera import Camera
 
 

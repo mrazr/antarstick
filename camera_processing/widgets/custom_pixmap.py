@@ -9,8 +9,8 @@ from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsPixmapItem,
                              QGraphicsRectItem, QGraphicsSimpleTextItem,
                              QWidget)
 
-from analyzer.widgets.link_camera_button import LinkCameraButton
-from analyzer.widgets.stick_widget import StickWidget
+from camera_processing.widgets.link_camera_button import LinkCameraButton
+from camera_processing.widgets.stick_widget import StickWidget
 from camera import Camera
 
 

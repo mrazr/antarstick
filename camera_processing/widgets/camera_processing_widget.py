@@ -8,14 +8,14 @@ from PyQt5 import QtWidgets
 from PyQt5.QtCore import pyqtSignal as Signal
 from PyQt5.QtCore import pyqtSlot as Slot
 
-import analyzer.antarstick_analyzer as antar
-from analyzer.widgets.camera_view_widget import CameraViewWidget
+import camera_processing.antarstick_processing as antar
+from camera_processing.widgets.camera_view_widget import CameraViewWidget
 from camera import Camera
 from dataset import Dataset
 from stick import Stick
 
 
-class AnalyzerWidget(QtWidgets.QTabWidget):
+class CameraProcessingWidget(QtWidgets.QTabWidget):
     """Class representing GUI widget for the analyzation part of Antarstick.
     Derives from QTabWidget. Each camera gets its own tab page.
     Just initialize this with a Dataset instance and add this widget
@@ -52,7 +52,6 @@ class AnalyzerWidget(QtWidgets.QTabWidget):
         self.camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
         self.setCurrentIndex(self.camera_tab_map[camera.id])
         camera_widget.initialise_with(camera)
-        print(camera_widget.gpixmap)
         self.camera_link_available.connect(camera_widget.gpixmap.set_link_cameras_enabled)
         camera_widget.ui.detectionSensitivitySlider.valueChanged.emit(0)
         #camera_widget.show_image(img)
