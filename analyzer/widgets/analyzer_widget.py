@@ -4,13 +4,13 @@ from typing import Dict, List
 
 import cv2 as cv
 import numpy as np
-from PySide2 import QtWidgets
-from PySide2.QtCore import Signal
-from PySide2.QtCore import Slot
+from PyQt5 import QtWidgets
+from PyQt5.QtCore import pyqtSignal as Signal
+from PyQt5.QtCore import pyqtSlot as Slot
 
 import analyzer.antarstick_analyzer as antar
+from analyzer.widgets.camera_view_widget import CameraViewWidget
 from camera import Camera
-from .camera_view_widget import CameraViewWidget
 from dataset import Dataset
 from stick import Stick
 
@@ -52,6 +52,7 @@ class AnalyzerWidget(QtWidgets.QTabWidget):
         self.camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
         self.setCurrentIndex(self.camera_tab_map[camera.id])
         camera_widget.initialise_with(camera)
+        print(camera_widget.gpixmap)
         self.camera_link_available.connect(camera_widget.gpixmap.set_link_cameras_enabled)
         camera_widget.ui.detectionSensitivitySlider.valueChanged.emit(0)
         #camera_widget.show_image(img)

@@ -1,22 +1,23 @@
 # This Python file uses the following encoding: utf-8
 import os
-from typing import Optional
+from typing import List, Optional
 
-from PySide2 import QtWidgets
-from PySide2.QtCore import QPointF, Qt
-from PySide2.QtCore import Slot
-from PySide2.QtGui import QFont
-from PySide2.QtWidgets import QGraphicsScene
+import cv2 as cv
 from numpy import ndarray
+from PyQt5 import QtWidgets
+from PyQt5.QtCore import QPointF, Qt
+from PyQt5.QtCore import pyqtSlot as Slot
+from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import QGraphicsScene
 
-from analyzer.widgets import ui_camera_view
 from analyzer import antarstick_analyzer as antar
+from analyzer.widgets import ui_camera_view
+from analyzer.widgets.custom_pixmap import CustomPixmap
+from analyzer.widgets.link_camera_menu import LinkCameraMenu
+from analyzer.widgets.stick_widget import StickWidget
 from camera import Camera
 from dataset import Dataset
-from .custom_pixmap import CustomPixmap
-from .link_camera_menu import LinkCameraMenu
-from .stick_widget import StickWidget
-from ..antarstick_analyzer import *
+from stick import Stick
 
 
 class CameraViewWidget(QtWidgets.QWidget):
@@ -67,6 +68,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         percentage = self.ui.detectionSensitivitySlider.value() / 100.0
         self.gpixmap.set_reference_line_percentage(percentage)
         self.gpixmap.update_stick_widgets()
+        if len(self.stick_widgets) > 0:
+            self.gpixmap.set_show_stick_widgets(True)
         end_idx = int(1.0 * len(self.detected_sticks))
         #for sw in self.stick_widgets:
         #    self.graphics_scene.removeItem(sw)
@@ -94,7 +97,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.camera = camera
         self.gpixmap.initialise_with(self.camera)
         self.gpixmap.setPos(1893 / 2 - self.gpixmap.boundingRect().width() / 2, 0)
-        self.ui.cameraView.fitInView(self.gpixmap.boundingRect().toRect(), Qt.KeepAspectRatio)
+        self.ui.cameraView.fitInView(self.gpixmap.boundingRect(), Qt.KeepAspectRatio)
         self.ui.cameraView.centerOn(self.gpixmap)
         self.graphics_scene.update()
 

@@ -1,9 +1,12 @@
-import PySide2
-from PySide2.QtWidgets import QGraphicsItem, QStyleOptionGraphicsItem, QWidget, QGraphicsLineItem
-from PySide2.QtCore import QLine, Qt, QRect
-from PySide2.QtGui import QPainter, QPen, QColor, QBrush
-from stick import Stick
 from typing import Optional
+
+import PyQt5
+from PyQt5.QtCore import QLine, QLineF, QRect, Qt
+from PyQt5.QtGui import QBrush, QColor, QPainter, QPen
+from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsLineItem,
+                             QStyleOptionGraphicsItem)
+
+from stick import Stick
 
 
 class StickWidget(QGraphicsItem):
@@ -11,10 +14,10 @@ class StickWidget(QGraphicsItem):
         QGraphicsItem.__init__(self, parent)
         self.line = QLine(stick.top[0], stick.top[1],
                           stick.bottom[0], stick.bottom[1])
-        self.gline = QGraphicsLineItem(self.line)
+        self.gline = QGraphicsLineItem(QLineF(self.line))
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem,
-              widget: Optional[PySide2.QtWidgets.QWidget] = ...):
+              widget: Optional[PyQt5.QtWidgets.QWidget] = ...):
         pen = QPen(QColor(0, 125, 125, 255))
         pen.setStyle(Qt.DotLine)
         pen.setWidth(2.0)
@@ -29,5 +32,5 @@ class StickWidget(QGraphicsItem):
 
 
 
-    def boundingRect(self) -> PySide2.QtCore.QRectF:
+    def boundingRect(self) -> PyQt5.QtCore.QRectF:
         return self.gline.boundingRect()

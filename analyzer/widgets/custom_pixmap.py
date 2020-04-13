@@ -1,19 +1,17 @@
-from typing import Optional, List
+from typing import List, Optional
 
-import PySide2
-from PySide2.QtCore import QMarginsF, QLine, QPoint, Slot, QByteArray, Qt, QRectF
-from PySide2.QtGui import QBrush, QColor, QPainter, QFont, QPen, QImage, QPixmap, QTransform
-from PySide2.QtWidgets import QGraphicsPixmapItem, QGraphicsItem, QWidget, QGraphicsSimpleTextItem, QGraphicsRectItem
-
-from camera import Camera
-from .link_camera_button import LinkCameraButton
-from .stick_widget import StickWidget
-from numpy import ndarray
 import cv2 as cv
+import PyQt5
+from numpy import ndarray
+from PyQt5.QtCore import QByteArray, QLine, QMarginsF, QPoint
+from PyQt5.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap
+from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsPixmapItem,
+                             QGraphicsRectItem, QGraphicsSimpleTextItem,
+                             QWidget)
 
-
-class QTransfrom(object):
-    pass
+from analyzer.widgets.link_camera_button import LinkCameraButton
+from analyzer.widgets.stick_widget import StickWidget
+from camera import Camera
 
 
 class CustomPixmap(QGraphicsPixmapItem):
@@ -43,21 +41,23 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.title.setBrush(QBrush(QColor(255, 255, 255, 255)))
         self.title.setPen(QPen(QColor(255, 255, 255, 255)))
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
+        self.show_stick_widgets = False
 
-    def paint(self, painter: QPainter, option: PySide2.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
+    def paint(self, painter: QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
         QGraphicsPixmapItem.paint(self, painter, option, widget)
         if self.pixmap().isNull():
             return
         painter.setRenderHint(QPainter.Antialiasing, True)
         QGraphicsPixmapItem.paint(self, painter, option, widget)
-        brush = QBrush(QColor(255, 255, 255, 100))
-        painter.fillRect(self.boundingRect(), brush)
-
         painter.drawLine(self.reference_line)
 
-        for sw in self.stick_widgets:
-            painter.drawPixmap(sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)),
-                               self.pixmap(), sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)))
+        if self.show_stick_widgets:
+            brush = QBrush(QColor(255, 255, 255, 100))
+            painter.fillRect(self.boundingRect(), brush)
+
+            for sw in self.stick_widgets:
+                painter.drawPixmap(sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)),
+                                   self.pixmap(), sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)))
 
     def set_reference_line_percentage(self, percentage: float):
         if self.pixmap().isNull():
@@ -67,7 +67,6 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.reference_line.setP2(QPoint(int(pixmap.width() * 0.5), int(pixmap.height() * (1 - percentage))))
         self.scene().update()
 
-    @Slot(bool)
     def set_link_cameras_enabled(self, value: bool):
         self.show_add_buttons = value
         if self.show_add_buttons:
@@ -81,7 +80,7 @@ class CustomPixmap(QGraphicsPixmapItem):
             self.left_add_button.setVisible(False)
         self.scene().update()
 
-    def boundingRect(self) -> PySide2.QtCore.QRectF:
+    def boundingRect(self) -> PyQt5.QtCore.QRectF:
         return QGraphicsPixmapItem.boundingRect(self).united(self.title_rect.boundingRect().translated(
             QPoint(0, - 0 * self.title.boundingRect().height())
         ))
@@ -144,3 +143,5 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2, 0)
 
+    def set_show_stick_widgets(self, value: bool):
+        self.show_stick_widgets = value
