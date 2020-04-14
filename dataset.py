@@ -5,9 +5,7 @@ import jsonpickle
 from numpy import zeros
 from PyQt5.QtCore import QObject
 from PyQt5.QtCore import pyqtSignal as Signal
-from PyQt5.QtCore import pyqtSlot as Slot
 
-import camera_processing.antarstick_processing as antar
 from camera import Camera
 from stick import Stick
 
