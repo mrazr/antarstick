@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Callable
 
 import PyQt5
 from PyQt5.QtCore import QMarginsF
@@ -31,10 +31,12 @@ class LinkCameraMenu(QGraphicsObject):
     def boundingRect(self) -> PyQt5.QtCore.QRectF:
         return self.background_rect.boundingRect()
 
-    def initialise_with(self, cameras: List[Camera]):
+    def initialise_with(self, cameras: List[Camera], click_handler: Callable[[Camera], None]):
         for i, camera in enumerate(cameras):
             c_pixmap = CustomPixmap(self)
+            c_pixmap.setAcceptHoverEvents(True)
             c_pixmap.initialise_with(camera)
+            c_pixmap.set_button_mode(click_handler)
             c_pixmap.scale_item(self.pixmap_scale)
             c_pixmap.setPos(0, i * (c_pixmap.sceneBoundingRect().height() + self.pixmap_bottom_margin))
             self.camera_pixmaps.append(c_pixmap)

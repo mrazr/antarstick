@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Callable
 
 import cv2 as cv
 import PyQt5
@@ -6,7 +6,8 @@ from numpy import ndarray
 from PyQt5.QtCore import QByteArray, QLine, QMarginsF, QPoint
 from PyQt5.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsPixmapItem,
-                             QGraphicsRectItem, QGraphicsSimpleTextItem,
+                             QGraphicsRectItem, QGraphicsSceneHoverEvent,
+                             QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem,
                              QWidget)
 
 from camera import Camera
@@ -42,6 +43,10 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.title.setPen(QPen(QColor(255, 255, 255, 255)))
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
         self.show_stick_widgets = False
+        self.setAcceptHoverEvents(True)
+
+        self.mode = 0 # TODO make enum Mode
+        self.click_handler = None
 
     def paint(self, painter: QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
         QGraphicsPixmapItem.paint(self, painter, option, widget)
@@ -138,3 +143,24 @@ class CustomPixmap(QGraphicsPixmapItem):
 
     def set_show_stick_widgets(self, value: bool):
         self.show_stick_widgets = value
+
+    def hoverEnterEvent(self, e: QGraphicsSceneHoverEvent):
+        pass
+    
+    def hoverLeaveEvent(self, e: QGraphicsSceneHoverEvent):
+        pass
+    
+    def mousePressEvent(self, e: QGraphicsSceneMouseEvent):
+        pass
+    
+    def mouseReleaseEvent(self, e: QGraphicsSceneMouseEvent):
+        if self.mode == 1:
+            self.click_handler(self.camera)
+
+    def set_button_mode(self, click_handler: Callable[[Camera], None]):
+        self.mode = 1 # TODO make a proper ENUM
+        self.click_handler = click_handler
+    
+    def set_display_mode(self):
+        self.mode = 0 # TODO make a proper ENUM
+        self.click_handler = None

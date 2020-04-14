@@ -37,9 +37,10 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.ui.cameraView.setScene(self.graphics_scene)
         self.gpixmap = CustomPixmap()
+        self.gpixmap.setAcceptHoverEvents(False)
 
-        self.gpixmap.right_add_button.clicked.connect(self.handle_link_camera_clicked)
-        self.gpixmap.left_add_button.clicked.connect(self.handle_link_camera_clicked)
+        self.gpixmap.right_add_button.clicked.connect(self.handle_link_camera_button_clicked)
+        self.gpixmap.left_add_button.clicked.connect(self.handle_link_camera_button_clicked)
 
         self.graphics_scene.addItem(self.gpixmap)
 
@@ -79,11 +80,11 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.gpixmap.update_stick_widgets()
             
 
-    def handle_link_camera_clicked(self, btn_name: str):
+    def handle_link_camera_button_clicked(self, btn_name: str):
         other_cameras = list(filter(lambda c: c.folder != self.camera.folder, self.dataset.cameras))
         link_menu = LinkCameraMenu()
         self.graphics_scene.addItem(link_menu)
-        link_menu.initialise_with(other_cameras)
+        link_menu.initialise_with(other_cameras, self.handle_link_camera_clicked)
         pos = self.gpixmap.left_add_button.sceneBoundingRect().center()
         if btn_name == "right":
             pos = self.gpixmap.right_add_button.sceneBoundingRect().center()
@@ -123,3 +124,6 @@ class CameraViewWidget(QtWidgets.QWidget):
     @Slot(int)
     def _handle_slider_value_changed(self, value: int):
         self.gpixmap.set_reference_line_percentage(value / 100.0)
+    
+    def handle_link_camera_clicked(self, camera: Camera):
+        pass # TODO link `camera` with `self.camera`
