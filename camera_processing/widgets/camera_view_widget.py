@@ -46,6 +46,8 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.stick_widgets: List[StickWidget] = []
         self.detected_sticks: List[Stick] = []
+        self.link_menu: LinkCameraMenu = None
+        self.linked_pixmaps: List[CustomPixmap] = []
 
     @Slot()
     def handle_find_non_snow_clicked(self):
@@ -80,19 +82,20 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.gpixmap.update_stick_widgets()
             
 
-    def handle_link_camera_button_clicked(self, btn_name: str):
+    def handle_link_camera_button_clicked(self, btn_position: str):
         other_cameras = list(filter(lambda c: c.folder != self.camera.folder, self.dataset.cameras))
-        link_menu = LinkCameraMenu()
-        self.graphics_scene.addItem(link_menu)
-        link_menu.initialise_with(other_cameras, self.handle_link_camera_clicked)
+        self.link_menu = LinkCameraMenu(btn_position)
+        self.graphics_scene.addItem(self.link_menu)
+        self.link_menu.initialise_with(other_cameras, self.handle_link_camera_clicked)
         pos = self.gpixmap.left_add_button.sceneBoundingRect().center()
-        if btn_name == "right":
+        self.link_menu.position = "left"
+        if btn_position == "right":
             pos = self.gpixmap.right_add_button.sceneBoundingRect().center()
+            self.link_menu.position = "right"
 
-        pos: QPointF = pos - QPointF(link_menu.sceneBoundingRect().width() * 0.5,
-                                     link_menu.sceneBoundingRect().height() * 0.5)
-
-        link_menu.setPos(pos)
+        pos = pos - QPointF(self.link_menu.sceneBoundingRect().width() * 0.5,
+                            self.link_menu.sceneBoundingRect().height() * 0.5)
+        self.link_menu.setPos(pos)
     
     @Slot(bool)
     def link_cameras_enabled(self, value: bool):
@@ -126,4 +129,37 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.gpixmap.set_reference_line_percentage(value / 100.0)
     
     def handle_link_camera_clicked(self, camera: Camera):
+        c_pixmap: CustomPixmap = list(filter(lambda pixmap: pixmap.camera.id == camera.id, self.link_menu.camera_pixmaps))[0]
+
+        self.linked_pixmaps.append(c_pixmap)
+        self.link_menu.camera_pixmaps.remove(c_pixmap)
+
+
+        pos: QPointF  = self.gpixmap.pos()
+        if self.link_menu.position == "left":
+            pos.setX(pos.x() - self.gpixmap.boundingRect().width())
+        else:
+            pos.setX(pos.x() + self.gpixmap.boundingRect().width())
+
+        c_pixmap.setParentItem(None)
+        self.graphics_scene.removeItem(self.link_menu)
+        self.link_menu.deleteLater()
+        self.link_menu = None
+
+        c_pixmap.scale_item(1.0)
+
+
+        c_pixmap.set_display_mode()
+
+        c_pixmap.setPos(pos)
+        rect_to_view = self.gpixmap.sceneBoundingRect()
+        
+        for pixmap in self.linked_pixmaps:
+            rect_to_view = rect_to_view.united(pixmap.sceneBoundingRect())
+
+        self.graphics_scene.setSceneRect(rect_to_view)
+        self.ui.cameraView.fitInView(rect_to_view, Qt.KeepAspectRatio)
+        self.graphics_scene.update()
+
+
         pass # TODO link `camera` with `self.camera`

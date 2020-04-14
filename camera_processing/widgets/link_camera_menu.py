@@ -13,7 +13,7 @@ from camera_processing.widgets.custom_pixmap import CustomPixmap
 class LinkCameraMenu(QGraphicsObject):
     link_camera_selected = Signal(Camera)
 
-    def __init__(self, parent: Optional[QGraphicsItem] = None):
+    def __init__(self, position: str, parent: Optional[QGraphicsItem] = None):
         QGraphicsObject.__init__(self, parent)
         self.cameras = []
         self.camera_pixmaps = []
@@ -23,6 +23,7 @@ class LinkCameraMenu(QGraphicsObject):
         self.pixmap_scale = 0.25
         self.pixmap_bottom_margin = 20
         self.setAcceptHoverEvents(True)
+        self.position = position
 
     def paint(self, painter: PyQt5.QtGui.QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem,
               widget: Optional[PyQt5.QtWidgets.QWidget] = ...):

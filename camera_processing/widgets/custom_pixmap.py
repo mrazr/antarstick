@@ -45,6 +45,10 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.show_stick_widgets = False
         self.setAcceptHoverEvents(True)
 
+        self.original_pixmap = self.pixmap()
+
+        self.hovered = False
+
         self.mode = 0 # TODO make enum Mode
         self.click_handler = None
 
@@ -63,6 +67,13 @@ class CustomPixmap(QGraphicsPixmapItem):
             for sw in self.stick_widgets:
                 painter.drawPixmap(sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)),
                                    self.pixmap(), sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)))
+
+        if self.mode and self.hovered:
+            pen = QPen(QColor(0, 125, 200, 255))
+            pen.setWidth(4)
+            painter.setPen(pen)
+            painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(4, 4, 4, 4)))
+
 
     def set_reference_line_percentage(self, percentage: float):
         if self.pixmap().isNull():
@@ -106,8 +117,8 @@ class CustomPixmap(QGraphicsPixmapItem):
     def set_image(self, img: ndarray):
         barray = QByteArray(img.tobytes())
         image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
-        pixmap = QPixmap.fromImage(image)
-        self.setPixmap(pixmap)
+        self.original_pixmap = QPixmap.fromImage(image)
+        self.setPixmap(self.original_pixmap)
 
         self.title_rect.setRect(0, 0, self.pixmap().width(), self.title.boundingRect().height())
         self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
@@ -132,7 +143,7 @@ class CustomPixmap(QGraphicsPixmapItem):
 
     def scale_item(self, factor: float):
         self.prepareGeometryChange()
-        pixmap = self.pixmap().scaledToHeight(int(self.pixmap().height() * factor))
+        pixmap = self.original_pixmap.scaledToHeight(int(self.original_pixmap.height() * factor))
         self.setPixmap(pixmap)
         self.__update_title()
 
@@ -145,10 +156,12 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.show_stick_widgets = value
 
     def hoverEnterEvent(self, e: QGraphicsSceneHoverEvent):
-        pass
+        self.hovered = True
+        self.scene().update(self.boundingRect())
     
     def hoverLeaveEvent(self, e: QGraphicsSceneHoverEvent):
-        pass
+        self.hovered = False
+        self.scene().update(self.boundingRect())
     
     def mousePressEvent(self, e: QGraphicsSceneMouseEvent):
         pass
