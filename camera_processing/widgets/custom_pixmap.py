@@ -157,11 +157,11 @@ class CustomPixmap(QGraphicsPixmapItem):
 
     def hoverEnterEvent(self, e: QGraphicsSceneHoverEvent):
         self.hovered = True
-        self.scene().update(self.boundingRect())
+        self.scene().update(self.sceneBoundingRect())
     
     def hoverLeaveEvent(self, e: QGraphicsSceneHoverEvent):
         self.hovered = False
-        self.scene().update(self.boundingRect())
+        self.scene().update(self.sceneBoundingRect())
     
     def mousePressEvent(self, e: QGraphicsSceneMouseEvent):
         pass
@@ -170,10 +170,23 @@ class CustomPixmap(QGraphicsPixmapItem):
         if self.mode == 1:
             self.click_handler(self.camera)
 
-    def set_button_mode(self, click_handler: Callable[[Camera], None]):
+    def set_button_mode(self, click_handler: Callable[[Camera], None], data: str):
         self.mode = 1 # TODO make a proper ENUM
-        self.click_handler = click_handler
+        self.click_handler = lambda c: click_handler(c, data)
     
     def set_display_mode(self):
         self.mode = 0 # TODO make a proper ENUM
         self.click_handler = None
+
+    def disable_link_button(self, btn_position: str):
+        if btn_position == "left":
+            self.left_add_button.setVisible(False)
+        else:
+            self.right_add_button.setVisible(False)
+    
+    def enable_link_button(self, btn_position: str):
+        if btn_position == "left":
+            self.left_add_button.setVisible(True)
+        else:
+            self.right_add_button.setVisible(True)
+

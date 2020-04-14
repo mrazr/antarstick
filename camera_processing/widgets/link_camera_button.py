@@ -2,7 +2,7 @@ from typing import Optional
 
 import PyQt5
 from PyQt5.QtCore import QMarginsF, QRectF
-from PyQt5.QtCore import pyqtSignal as Signal
+from PyQt5.QtCore import QPointF, pyqtSignal as Signal
 from PyQt5.QtGui import QBrush, QColor, QPen
 from PyQt5.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem,
                              QGraphicsObject, QGraphicsRectItem,
@@ -12,6 +12,8 @@ from PyQt5.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem,
 class LinkCameraButton(QGraphicsObject):
 
     clicked = Signal(str)
+    __LINK_COLOR = QColor(0, 200, 0, 200)
+    __UNLINK_COLOR = QColor(200, 0, 0, 200)
 
     def __init__(self, text_item: QGraphicsSimpleTextItem, name: str, radius: int = 30, parent: QGraphicsEllipseItem = None):
         QGraphicsObject.__init__(self, parent)
@@ -19,7 +21,7 @@ class LinkCameraButton(QGraphicsObject):
         self.setVisible(False)
         self.name = name
         self.circle = QGraphicsEllipseItem(0, 0, self.radius, self.radius, self)
-        self.circle.setBrush(QColor(0, 200, 0, 200))
+        self.circle.setBrush(self.__LINK_COLOR)
         self.circle.setPen(QPen(QColor(255, 255, 255, 0)))
         self.circle.setZValue(1)
         self.vertical_rect = QGraphicsRectItem(QRectF(0, 0, 0.2 * self.radius, 0.8 * self.radius), self)
@@ -39,13 +41,16 @@ class LinkCameraButton(QGraphicsObject):
 
         self.vertical_rect.setBrush(QBrush(QColor(255, 255, 255)))
         self.horizontal_rect.setBrush(QBrush(QColor(255, 255, 255)))
-        self.link_cam_text = text_item
+        self.link_cam_text = QGraphicsSimpleTextItem("Link camera...", self)
+        self.link_cam_text.setFont(text_item.font())
+        self.link_cam_text.setBrush(text_item.brush())
+        self.link_cam_text.setVisible(False)
         self.setAcceptHoverEvents(True)
         self.text_rect = QGraphicsRectItem(self.link_cam_text.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)), self.link_cam_text)
         self.text_rect.setFlag(QGraphicsItem.ItemStacksBehindParent)
         self.text_rect.setBrush(QBrush(QColor(50, 50, 50, 100)))
         self.text_rect.setPen(QPen(QColor()))
-       #self.text_rect.setVisible(False)
+        self.role = "LINK"
 
     def paint(self, painter: PyQt5.QtGui.QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: Optional[PyQt5.QtWidgets.QWidget]=...):
         pass
@@ -56,7 +61,12 @@ class LinkCameraButton(QGraphicsObject):
     def hoverEnterEvent(self, event: PyQt5.QtWidgets.QGraphicsSceneHoverEvent):
         self.text_rect.setPos(self.link_cam_text.boundingRect().topLeft())
         self.text_rect.setVisible(True)
-        self.link_cam_text.setPos(self.pos().x(), self.pos().y() - 1.5 * self.link_cam_text.boundingRect().height())
+        #self.link_cam_text.setPos(self.pos().x(), self.pos().y() - 1.5 * self.link_cam_text.boundingRect().height())
+        if self.name == "left":
+            self.link_cam_text.setPos(self.boundingRect().topRight() + QPointF(10, 0))
+        else:
+            self.link_cam_text.setPos(self.boundingRect().topLeft() - QPointF(self.link_cam_text.boundingRect().width() + 10, 0))
+        #self.link_cam_text.setPos(self.boundingRect().right(), self.)
         self.link_cam_text.setVisible(True)
 
     def hoverLeaveEvent(self, event: PyQt5.QtWidgets.QGraphicsSceneHoverEvent):
@@ -71,3 +81,23 @@ class LinkCameraButton(QGraphicsObject):
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
         self.clicked.emit(self.name)
+    
+    def set_role(self, role: str):
+        self.role = role
+        self.setTransformOriginPoint(self.circle.boundingRect().center())
+        self.horizontal_rect.setTransformOriginPoint(self.horizontal_rect.boundingRect().center())
+        self.vertical_rect.setTransformOriginPoint(self.vertical_rect.boundingRect().center())
+        self.text_rect.setVisible(False)
+        self.link_cam_text.setVisible(False)
+        if self.role == "LINK":
+            self.link_cam_text.setText("Link camera...")
+            self.circle.setBrush(self.__LINK_COLOR)
+            self.setRotation(0.0)
+        else:
+            self.link_cam_text.setText("Unlink")
+            self.text_rect.setRect(self.link_cam_text.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)))
+            self.circle.setBrush(self.__UNLINK_COLOR)
+            self.horizontal_rect.setRotation(45.0)
+            self.vertical_rect.setRotation(45.0)
+    
+

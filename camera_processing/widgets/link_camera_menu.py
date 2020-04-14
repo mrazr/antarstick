@@ -24,26 +24,29 @@ class LinkCameraMenu(QGraphicsObject):
         self.pixmap_bottom_margin = 20
         self.setAcceptHoverEvents(True)
         self.position = position
+        self.background_rect_margin = 10
 
     def paint(self, painter: PyQt5.QtGui.QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem,
               widget: Optional[PyQt5.QtWidgets.QWidget] = ...):
         pass
 
     def boundingRect(self) -> PyQt5.QtCore.QRectF:
-        return self.background_rect.boundingRect()
+        return self.background_rect.rect()
 
     def initialise_with(self, cameras: List[Camera], click_handler: Callable[[Camera], None]):
         for i, camera in enumerate(cameras):
             c_pixmap = CustomPixmap(self)
             c_pixmap.setAcceptHoverEvents(True)
             c_pixmap.initialise_with(camera)
-            c_pixmap.set_button_mode(click_handler)
+            c_pixmap.set_button_mode(click_handler, self.position)
             c_pixmap.scale_item(self.pixmap_scale)
-            c_pixmap.setPos(0, i * (c_pixmap.sceneBoundingRect().height() + self.pixmap_bottom_margin))
+            c_pixmap.setPos(self.background_rect_margin, i * (c_pixmap.sceneBoundingRect().height() + self.pixmap_bottom_margin) + self.background_rect_margin)
             self.camera_pixmaps.append(c_pixmap)
 
+
         self.background_rect.setRect(0, 0,
-                                     self.camera_pixmaps[0].sceneBoundingRect().width(),
+                                     self.camera_pixmaps[0].sceneBoundingRect().width() + 2 * self.background_rect_margin,
                                      len(self.camera_pixmaps) * self.camera_pixmaps[0].sceneBoundingRect().height()
-                                     + (len(self.camera_pixmaps) - 1) * self.pixmap_bottom_margin)
-        self.background_rect.setRect(self.background_rect.rect().marginsAdded(QMarginsF(10, 10, 10, 10)))
+                                     + (len(self.camera_pixmaps) - 1) * self.pixmap_bottom_margin + 2 * self.background_rect_margin)
+        self.prepareGeometryChange()
+        self.scene().update()
