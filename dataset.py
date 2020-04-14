@@ -2,12 +2,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import jsonpickle
-from PySide2.QtCore import QObject, Signal, Slot
+from numpy import zeros
+from PyQt5.QtCore import QObject
+from PyQt5.QtCore import pyqtSignal as Signal
 
 from camera import Camera
 from stick import Stick
-from numpy import zeros
-import analyzer.antarstick_analyzer as antar
 
 
 class Dataset(QObject):
@@ -137,12 +137,3 @@ class Dataset(QObject):
 
     def create_new_sticks(self, count: int) -> List[Stick]:
         return list(map(lambda _: self.create_new_stick(), range(count)))
-
-    @Slot(Camera)
-    def detect_sticks_in_camera(self, camera: Camera):
-        detected_sticks = antar.detect_sticks_in_camera(self, camera, 1.0)
-        if len(detected_sticks) == 0:
-            return
-        camera.sticks.clear()
-        camera.sticks.extend(detected_sticks)
-        self.camera_sticks_detected.emit(camera)

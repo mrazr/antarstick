@@ -1,15 +1,16 @@
-from PySide2.QtGui import QBrush, QColor, QPen
-from PySide2.QtWidgets import  QGraphicsRectItem, QGraphicsItem, QGraphicsObject
-import PySide2
-from typing import Optional, List
-from PySide2.QtCore import Signal, QMarginsF
+from typing import List, Optional
+
+import PyQt5
+from PyQt5.QtCore import QMarginsF
+from PyQt5.QtCore import pyqtSignal as Signal
+from PyQt5.QtGui import QBrush, QColor, QPen
+from PyQt5.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsRectItem
 
 from camera import Camera
-from .custom_pixmap import CustomPixmap
+from camera_processing.widgets.custom_pixmap import CustomPixmap
 
 
 class LinkCameraMenu(QGraphicsObject):
-
     link_camera_selected = Signal(Camera)
 
     def __init__(self, parent: Optional[QGraphicsItem] = None):
@@ -23,15 +24,16 @@ class LinkCameraMenu(QGraphicsObject):
         self.pixmap_bottom_margin = 20
         self.setAcceptHoverEvents(True)
 
-    def paint(self, painter: PySide2.QtGui.QPainter, option: PySide2.QtWidgets.QStyleOptionGraphicsItem, widget: Optional[PySide2.QtWidgets.QWidget]=...):
+    def paint(self, painter: PyQt5.QtGui.QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem,
+              widget: Optional[PyQt5.QtWidgets.QWidget] = ...):
         pass
 
-    def boundingRect(self) -> PySide2.QtCore.QRectF:
+    def boundingRect(self) -> PyQt5.QtCore.QRectF:
         return self.background_rect.boundingRect()
 
     def initialise_with(self, cameras: List[Camera]):
         for i, camera in enumerate(cameras):
-            c_pixmap = CustomPixmap(CustomPixmap.font, parent=self)
+            c_pixmap = CustomPixmap(self)
             c_pixmap.initialise_with(camera)
             c_pixmap.scale_item(self.pixmap_scale)
             c_pixmap.setPos(0, i * (c_pixmap.sceneBoundingRect().height() + self.pixmap_bottom_margin))

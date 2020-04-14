@@ -7,13 +7,19 @@ Created on Thu Mar 26 12:20:07 2020
 """
 
 import math
-from typing import Dict, List, Tuple
+from os import scandir
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 import cv2 as cv
 import numpy as np
-import skimage as sk
+import skimage.exposure
+import skimage.filters
+import skimage.measure
+import skimage.morphology
+import skimage.transform
 from skimage.measure import regionprops
-from skimage.morphology import rectangle
+from skimage.util import img_as_ubyte
 
 from stick import Stick
 
@@ -255,12 +261,12 @@ def measure_snow(img: np.ndarray, sticks: List[Stick]) -> Dict[int, float]:
         end2 = np.array([stick.bottom[1], stick.bottom[0]])
 
         # Extract intesity profile underneath the line
-        line_profile = sk.measure.profile_line(blurred, end2, end1, mode='reflect')
+        line_profile = skimage.measure.profile_line(blurred, end2, end1, mode='reflect')
 
         off_x = np.array([0, int(1.5 * thickness)])
         # Now extract intensity profiles left of and right of the stick
-        left_neigh_profile = sk.measure.profile_line(blurred, end2 - off_x, end1 - off_x, mode='reflect')
-        right_neigh_profile = sk.measure.profile_line(blurred, end2 + off_x, end1 + off_x, mode='reflect')
+        left_neigh_profile = skimage.measure.profile_line(blurred, end2 - off_x, end1 - off_x, mode='reflect')
+        right_neigh_profile = skimage.measure.profile_line(blurred, end2 + off_x, end1 + off_x, mode='reflect')
 
         # Compute the difference of the line profile and the average of the neighboring profiles
         # the idea is that, if there is snow, all the three intensity profiles will be similar enough
@@ -296,7 +302,7 @@ def is_non_snow(hsv_img: np.ndarray) -> bool:
 def verify_stick(stick: Stick, angle_img: np.ndarray, sigma: float) -> bool:
     e1 = np.array([stick.top[1], stick.top[0]])
     e2 = np.array([stick.bottom[1], stick.bottom[0]])
-    profile_line = sk.measure.profile_line(angle_img, e1, e2)
+    profile_line = skimage.measure.profile_line(angle_img, e1, e2)
     return np.std(profile_line) < sigma
 
 
@@ -332,7 +338,7 @@ def uhmt(img: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 
 def preprocess_image(img: np.ndarray) -> np.ndarray:
     img = denoise(img)
-    return sk.util.img_as_ubyte(sk.exposure.equalize_adapthist(
+    return img_as_ubyte(skimage.exposure.equalize_adapthist(
         img, [int(img.shape[0] / 20.0), int(img.shape[1] / 20.0)]))
 
 
@@ -340,13 +346,28 @@ def detect_sticks_hmt(img: np.ndarray, height_perc: float) -> List[List[int]]:
     prep = preprocess_image(img)
     hmt, mask = uhmt(prep)
     height = int(height_perc * img.shape[0])
-    rankd = sk.filters.rank.percentile(mask, sk.morphology.rectangle(7, 3), p0=0.8)
+    rankd = skimage.filters.rank.percentile(mask, skimage.morphology.rectangle(7, 3), p0=0.8)
     closed = cv.morphologyEx(rankd, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (5, 5)))
-    lines = sk.transform.probabilistic_hough_line(closed,
+    lines = skimage.transform.probabilistic_hough_line(closed,
                                                   threshold=int(0.1 * height),
                                                   line_length=int(0.4 * height),
                                                   line_gap=int(0.07 * height))
 
-    if len(lines) == 0:
-        return []
     return lines
+
+
+def get_non_snow_images(path: Path, count: int = 1) -> Optional[List[np.ndarray]]:
+    image_list: List[np.ndarray] = []
+
+    for file in scandir(path):
+        if file.name[-3:].lower() != "jpg": # TODO handle JPEG
+            continue
+        img = cv.imread(str(file.path))
+        img = cv.pyrDown(img)
+        hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+        if is_non_snow(hsv):
+            image_list.append(img)
+            if len(image_list) == count:
+                return image_list
+    
+    return None

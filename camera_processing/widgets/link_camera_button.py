@@ -1,9 +1,12 @@
-from PySide2.QtWidgets import QGraphicsEllipseItem, QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem,\
-    QGraphicsRectItem, QGraphicsItem, QGraphicsObject
-import PySide2
-from PySide2.QtGui import QColor, QPen, QBrush
-from PySide2.QtCore import QRectF, QMarginsF, QObject, Signal
 from typing import Optional
+
+import PyQt5
+from PyQt5.QtCore import QMarginsF, QRectF
+from PyQt5.QtCore import pyqtSignal as Signal
+from PyQt5.QtGui import QBrush, QColor, QPen
+from PyQt5.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem,
+                             QGraphicsObject, QGraphicsRectItem,
+                             QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem)
 
 
 class LinkCameraButton(QGraphicsObject):
@@ -44,23 +47,23 @@ class LinkCameraButton(QGraphicsObject):
         self.text_rect.setPen(QPen(QColor()))
        #self.text_rect.setVisible(False)
 
-    def paint(self, painter: PySide2.QtGui.QPainter, option: PySide2.QtWidgets.QStyleOptionGraphicsItem, widget: Optional[PySide2.QtWidgets.QWidget]=...):
+    def paint(self, painter: PyQt5.QtGui.QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: Optional[PyQt5.QtWidgets.QWidget]=...):
         pass
 
-    def boundingRect(self) -> PySide2.QtCore.QRectF:
+    def boundingRect(self) -> PyQt5.QtCore.QRectF:
         return self.circle.boundingRect()
 
-    def hoverEnterEvent(self, event: PySide2.QtWidgets.QGraphicsSceneHoverEvent):
+    def hoverEnterEvent(self, event: PyQt5.QtWidgets.QGraphicsSceneHoverEvent):
         self.text_rect.setPos(self.link_cam_text.boundingRect().topLeft())
         self.text_rect.setVisible(True)
         self.link_cam_text.setPos(self.pos().x(), self.pos().y() - 1.5 * self.link_cam_text.boundingRect().height())
         self.link_cam_text.setVisible(True)
 
-    def hoverLeaveEvent(self, event: PySide2.QtWidgets.QGraphicsSceneHoverEvent):
+    def hoverLeaveEvent(self, event: PyQt5.QtWidgets.QGraphicsSceneHoverEvent):
         self.link_cam_text.setVisible(False)
         self.text_rect.setVisible(False)
 
-    def hoverMoveEvent(self, event: PySide2.QtWidgets.QGraphicsSceneHoverEvent):
+    def hoverMoveEvent(self, event: PyQt5.QtWidgets.QGraphicsSceneHoverEvent):
         self.hoverEnterEvent(event)
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent):

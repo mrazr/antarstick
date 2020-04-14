@@ -1,33 +1,31 @@
-from typing import Optional, List
+from typing import List, Optional
 
-import PySide2
-from PySide2.QtCore import QMarginsF, QLine, QPoint, Slot, QByteArray, Qt, QRectF
-from PySide2.QtGui import QBrush, QColor, QPainter, QFont, QPen, QImage, QPixmap, QTransform
-from PySide2.QtWidgets import QGraphicsPixmapItem, QGraphicsItem, QWidget, QGraphicsSimpleTextItem, QGraphicsRectItem
+import cv2 as cv
+import PyQt5
+from numpy import ndarray
+from PyQt5.QtCore import QByteArray, QLine, QMarginsF, QPoint
+from PyQt5.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap
+from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsPixmapItem,
+                             QGraphicsRectItem, QGraphicsSimpleTextItem,
+                             QWidget)
 
 from camera import Camera
-from .link_camera_button import LinkCameraButton
-from .stick_widget import StickWidget
-from numpy import ndarray
-import cv2 as cv
-
-
-class QTransfrom(object):
-    pass
+from camera_processing.widgets.link_camera_button import LinkCameraButton
+from camera_processing.widgets.stick_widget import StickWidget
 
 
 class CustomPixmap(QGraphicsPixmapItem):
 
     font: QFont = QFont("monospace", 16)
 
-    def __init__(self, font: QFont, parent: Optional[QGraphicsItem] = None):
+    def __init__(self, parent: Optional[QGraphicsItem] = None):
         QGraphicsPixmapItem.__init__(self, parent)
         self.stick_widgets: List[StickWidget] = []
         self.reference_line = QLine()
         self.link_cam_text = QGraphicsSimpleTextItem("Link camera...", self)
         self.link_cam_text.setZValue(42)
         self.link_cam_text.setVisible(False)
-        self.link_cam_text.setFont(font)
+        self.link_cam_text.setFont(CustomPixmap.font)
         self.link_cam_text.setPos(0, 0)
         self.link_cam_text.setPen(QPen(QColor(255, 255, 255, 255)))
         self.link_cam_text.setBrush(QBrush(QColor(255, 255, 255, 255)))
@@ -39,25 +37,27 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.title_rect = QGraphicsRectItem(self)
         self.title_rect.setBrush(QBrush(QColor(50, 50, 50, 150)))
         self.title = QGraphicsSimpleTextItem("Nothing", self.title_rect)
-        self.title.setFont(font)
+        self.title.setFont(CustomPixmap.font)
         self.title.setBrush(QBrush(QColor(255, 255, 255, 255)))
         self.title.setPen(QPen(QColor(255, 255, 255, 255)))
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
+        self.show_stick_widgets = False
 
-    def paint(self, painter: QPainter, option: PySide2.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
+    def paint(self, painter: QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
         QGraphicsPixmapItem.paint(self, painter, option, widget)
         if self.pixmap().isNull():
             return
         painter.setRenderHint(QPainter.Antialiasing, True)
         QGraphicsPixmapItem.paint(self, painter, option, widget)
-        brush = QBrush(QColor(255, 255, 255, 100))
-        painter.fillRect(self.boundingRect(), brush)
-
         painter.drawLine(self.reference_line)
 
-        for sw in self.stick_widgets:
-            painter.drawPixmap(sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)),
-                               self.pixmap(), sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)))
+        if self.show_stick_widgets:
+            brush = QBrush(QColor(255, 255, 255, 100))
+            painter.fillRect(self.boundingRect(), brush)
+
+            for sw in self.stick_widgets:
+                painter.drawPixmap(sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)),
+                                   self.pixmap(), sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)))
 
     def set_reference_line_percentage(self, percentage: float):
         if self.pixmap().isNull():
@@ -67,7 +67,6 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.reference_line.setP2(QPoint(int(pixmap.width() * 0.5), int(pixmap.height() * (1 - percentage))))
         self.scene().update()
 
-    @Slot(bool)
     def set_link_cameras_enabled(self, value: bool):
         self.show_add_buttons = value
         if self.show_add_buttons:
@@ -81,7 +80,7 @@ class CustomPixmap(QGraphicsPixmapItem):
             self.left_add_button.setVisible(False)
         self.scene().update()
 
-    def boundingRect(self) -> PySide2.QtCore.QRectF:
+    def boundingRect(self) -> PyQt5.QtCore.QRectF:
         return QGraphicsPixmapItem.boundingRect(self).united(self.title_rect.boundingRect().translated(
             QPoint(0, - 0 * self.title.boundingRect().height())
         ))
@@ -93,12 +92,6 @@ class CustomPixmap(QGraphicsPixmapItem):
 
         self.prepareGeometryChange()
         self.set_image(img)
-        #for sw in self.stick_widgets:
-        #    self.scene().removeItem(sw)
-        #self.stick_widgets.clear()
-
-        #for stick in camera.sticks:
-        #    self.stick_widgets.append(StickWidget(stick, self))
 
         self.title.setText(str(camera.folder.name))
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2,
@@ -114,10 +107,6 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.title_rect.setRect(0, 0, self.pixmap().width(), self.title.boundingRect().height())
         self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
         self.title_rect.setVisible(True)
-        re = self.scene().sceneRect()
-        re.setWidth(1893)  # TODO replace this magic number
-        self.scene().setSceneRect(re)
-        #self.setPos(1893 / 2 - self.boundingRect().width() / 2, 0)
 
     def show_title(self, value: bool):
         self.title_rect.setVisible(value)
@@ -130,6 +119,9 @@ class CustomPixmap(QGraphicsPixmapItem):
 
         for stick in self.camera.sticks:
             self.stick_widgets.append(StickWidget(stick, self))
+        
+        if len(self.stick_widgets) > 0:
+            self.show_stick_widgets = True
 
         self.scene().update()
 
@@ -144,3 +136,5 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2, 0)
 
+    def set_show_stick_widgets(self, value: bool):
+        self.show_stick_widgets = value
