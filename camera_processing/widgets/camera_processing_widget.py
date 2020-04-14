@@ -32,54 +32,75 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         QtWidgets.QTabWidget.__init__(self)
         self.setTabsClosable(True)
         self.tabCloseRequested.connect(self.handle_tab_close_requested)
-        self.dataset = dataset
-        self.dataset.camera_added.connect(self.handle_camera_added)
-        self.dataset.camera_removed.connect(self.handle_camera_removed)
-        self.dataset.camera_sticks_detected.connect(self.handle_camera_sticks_detected)
-        self.camera_tab_map: Dict[int, int] = dict({})
+        self._dataset = dataset
+        self._dataset.camera_added.connect(self.handle_camera_added)
+        self._dataset.camera_removed.connect(self.handle_camera_removed)
+        self._camera_tab_map: Dict[int, int] = dict({})
 
     camera_link_available = Signal(bool)
 
+    #@Slot(Camera)
+    #def _handle_camera_added(self, camera: Camera):
+    #    camera_widget = CameraViewWidget(self.dataset)
+    #    camera_widget.ui.btnFindNonSnow.clicked.connect(self.handle_detect_sticks_clicked)
+    #    pics = self.find_non_snow_pics_in_camera(camera, 1)
+    #    if len(pics) == 0:
+    #        self.camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
+    #        return
+    #    img = pics[0]
+    #    self.camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
+    #    self.setCurrentIndex(self.camera_tab_map[camera.id])
+    #    camera_widget.initialise_with(camera)
+    #    self.camera_link_available.connect(camera_widget.gpixmap.set_link_cameras_enabled)
+    #    camera_widget.ui.detectionSensitivitySlider.valueChanged.emit(0)
+    #    #camera_widget.show_image(img)
+    #    if len(self.dataset.cameras) > 1:
+    #        self.camera_link_available.emit(True)
+    
     @Slot(Camera)
     def handle_camera_added(self, camera: Camera):
-        camera_widget = CameraViewWidget(self.dataset)
-        camera_widget.ui.btnFindNonSnow.clicked.connect(self.handle_detect_sticks_clicked)
-        pics = self.find_non_snow_pics_in_camera(camera, 1)
-        if len(pics) == 0:
-            self.camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
-            return
-        img = pics[0]
-        self.camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
-        self.setCurrentIndex(self.camera_tab_map[camera.id])
+        camera_widget = CameraViewWidget(self._dataset)
+
+        self.camera_link_available.connect(camera_widget.link_cameras_enabled)
+        self._camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
+        self.setCurrentIndex(self._camera_tab_map[camera.id])
+
         camera_widget.initialise_with(camera)
-        self.camera_link_available.connect(camera_widget.gpixmap.set_link_cameras_enabled)
-        camera_widget.ui.detectionSensitivitySlider.valueChanged.emit(0)
-        #camera_widget.show_image(img)
-        if len(self.dataset.cameras) > 1:
+
+        if len(self._dataset.cameras) > 1:
             self.camera_link_available.emit(True)
 
     @Slot(int)
     def handle_camera_removed(self, camera_id: int):
-        if self.camera_tab_map[camera_id]:
-            self.removeTab(self.camera_tab_map[camera_id])
-        if len(self.dataset.cameras) < 2:
-            print("LOW COUNT")
+        camera_widget: CameraViewWidget = None
+        if self._camera_tab_map[camera_id] is not None:
+            camera_widget = self.widget(self._camera_tab_map[camera_id])
+            self.removeTab(self._camera_tab_map[camera_id])
+            camera_widget.deleteLater()
+        if len(self._dataset.cameras) < 2:
             self.camera_link_available.emit(False)
 
     @Slot(int)
     def handle_tab_close_requested(self, tab_id: int):
-        for cam_id, _tab_id in self.camera_tab_map.items():
+        for cam_id, _tab_id in self._camera_tab_map.items():
             if _tab_id == tab_id:
-                self.dataset.remove_camera(cam_id)
+                self._dataset.remove_camera(cam_id)
+        self._camera_tab_map.clear()
 
-    @Slot(Camera)
-    def handle_camera_sticks_detected(self, camera: Camera):
-        camera_widget_id = self.camera_tab_map[camera.id]
-        camera_widget: CameraViewWidget = self.widget(camera_widget_id)
-        camera_widget.stick_widgets.clear()
-        #for stick in camera.sticks:
-        #    stick_widget = StickWidget(stick)
-        #    camera_widget.stick_widgets.append(stick_widget)
+        for i in range(self.count()):
+            camera_widget: CameraViewWidget = self.widget(i)
+            self._camera_tab_map[camera_widget.camera.id] = i
+
+
+
+    #@Slot(Camera)
+    #def handle_camera_sticks_detected(self, camera: Camera):
+    #    camera_widget_id = self.camera_tab_map[camera.id]
+    #    camera_widget: CameraViewWidget = self.widget(camera_widget_id)
+    #    camera_widget.stick_widgets.clear()
+    #    #for stick in camera.sticks:
+    #    #    stick_widget = StickWidget(stick)
+    #    #    camera_widget.stick_widgets.append(stick_widget)
 
     @Slot()
     def handle_detect_sticks_clicked(self):

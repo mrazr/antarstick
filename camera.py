@@ -68,6 +68,9 @@ class Camera:
 
     def get_folder_name(self) -> str:
         return self.folder.name
+    
+    def stick_count(self) -> int:
+        return len(self.sticks)
 
     @staticmethod
     def build_from_state(state: Dict) -> 'Camera':

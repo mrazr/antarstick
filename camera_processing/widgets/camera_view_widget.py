@@ -10,12 +10,14 @@ from PyQt5.QtCore import pyqtSlot as Slot
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import QGraphicsScene
 
+from camera import Camera
 from camera_processing import antarstick_processing as antar
+from camera_processing.antarstick_processing import (detect_sticks_hmt,
+                                                     get_non_snow_images)
 from camera_processing.widgets import ui_camera_view
 from camera_processing.widgets.custom_pixmap import CustomPixmap
 from camera_processing.widgets.link_camera_menu import LinkCameraMenu
 from camera_processing.widgets.stick_widget import StickWidget
-from camera import Camera
 from dataset import Dataset
 from stick import Stick
 
@@ -36,7 +38,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.ui.detectionSensitivitySlider.sliderReleased.connect(self.update_stick_widgets)
         self.ui.detectionSensitivitySlider.valueChanged.connect(self.update_stick_widgets)
         self.dataset = dataset
-        self.camera = None
+        self.camera: Camera = None
         self.graphics_scene = QGraphicsScene()
         self.ui.cameraView.setScene(self.graphics_scene)
         self.gpixmap = CustomPixmap(CameraViewWidget.__font)
@@ -101,6 +103,26 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.ui.cameraView.centerOn(self.gpixmap)
         self.graphics_scene.update()
 
+        if self.camera.stick_count() == 0:
+            non_snow = get_non_snow_images(self.camera.folder)
+            if non_snow is None:
+                return
+            img = cv.cvtColor(non_snow[0], cv.COLOR_BGR2GRAY)
+            img = cv.pyrDown(img)
+            perc = self.ui.detectionSensitivitySlider.value() / 100.0
+            lines = detect_sticks_hmt(img, perc)
+            if len(lines) == 0:
+                return
+            
+            sticks: List[Stick] = self.dataset.create_new_sticks(len(lines))
+            for i, stick in enumerate(sticks):
+                line = lines[i]
+                stick.set_endpoints(*(line[0]), *(line[1]))
+            self.camera.sticks = sticks
+        
+        self.gpixmap.update_stick_widgets()
+            
+
     def handle_link_camera_clicked(self, btn_name: str):
         other_cameras = list(filter(lambda c: c.folder != self.camera.folder, self.dataset.cameras))
         link_menu = LinkCameraMenu()
@@ -114,3 +136,7 @@ class CameraViewWidget(QtWidgets.QWidget):
                                      link_menu.sceneBoundingRect().height() * 0.5)
 
         link_menu.setPos(pos)
+    
+    @Slot(bool)
+    def link_cameras_enabled(self, value: bool):
+        self.gpixmap.set_link_cameras_enabled(value)

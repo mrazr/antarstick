@@ -92,12 +92,6 @@ class CustomPixmap(QGraphicsPixmapItem):
 
         self.prepareGeometryChange()
         self.set_image(img)
-        #for sw in self.stick_widgets:
-        #    self.scene().removeItem(sw)
-        #self.stick_widgets.clear()
-
-        #for stick in camera.sticks:
-        #    self.stick_widgets.append(StickWidget(stick, self))
 
         self.title.setText(str(camera.folder.name))
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2,

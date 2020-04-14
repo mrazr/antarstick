@@ -7,15 +7,17 @@ Created on Thu Mar 26 12:20:07 2020
 """
 
 import math
-from typing import Dict, List, Tuple
+from os import scandir
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 import cv2 as cv
 import numpy as np
 import skimage.exposure
-import skimage.transform
-import skimage.morphology
 import skimage.filters
 import skimage.measure
+import skimage.morphology
+import skimage.transform
 from skimage.measure import regionprops
 from skimage.util import img_as_ubyte
 
@@ -351,6 +353,21 @@ def detect_sticks_hmt(img: np.ndarray, height_perc: float) -> List[List[int]]:
                                                   line_length=int(0.4 * height),
                                                   line_gap=int(0.07 * height))
 
-    if len(lines) == 0:
-        return []
     return lines
+
+
+def get_non_snow_images(path: Path, count: int = 1) -> Optional[List[np.ndarray]]:
+    image_list: List[np.ndarray] = []
+
+    for file in scandir(path):
+        if file.name[-3:].lower() != "jpg": # TODO handle JPEG
+            continue
+        img = cv.imread(str(file.path))
+        img = cv.pyrDown(img)
+        hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+        if is_non_snow(hsv):
+            image_list.append(img)
+            if len(image_list) == count:
+                return image_list
+    
+    return None
