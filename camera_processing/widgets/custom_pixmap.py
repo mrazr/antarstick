@@ -9,23 +9,23 @@ from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsPixmapItem,
                              QGraphicsRectItem, QGraphicsSimpleTextItem,
                              QWidget)
 
+from camera import Camera
 from camera_processing.widgets.link_camera_button import LinkCameraButton
 from camera_processing.widgets.stick_widget import StickWidget
-from camera import Camera
 
 
 class CustomPixmap(QGraphicsPixmapItem):
 
     font: QFont = QFont("monospace", 16)
 
-    def __init__(self, font: QFont, parent: Optional[QGraphicsItem] = None):
+    def __init__(self, parent: Optional[QGraphicsItem] = None):
         QGraphicsPixmapItem.__init__(self, parent)
         self.stick_widgets: List[StickWidget] = []
         self.reference_line = QLine()
         self.link_cam_text = QGraphicsSimpleTextItem("Link camera...", self)
         self.link_cam_text.setZValue(42)
         self.link_cam_text.setVisible(False)
-        self.link_cam_text.setFont(font)
+        self.link_cam_text.setFont(CustomPixmap.font)
         self.link_cam_text.setPos(0, 0)
         self.link_cam_text.setPen(QPen(QColor(255, 255, 255, 255)))
         self.link_cam_text.setBrush(QBrush(QColor(255, 255, 255, 255)))
@@ -37,7 +37,7 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.title_rect = QGraphicsRectItem(self)
         self.title_rect.setBrush(QBrush(QColor(50, 50, 50, 150)))
         self.title = QGraphicsSimpleTextItem("Nothing", self.title_rect)
-        self.title.setFont(font)
+        self.title.setFont(CustomPixmap.font)
         self.title.setBrush(QBrush(QColor(255, 255, 255, 255)))
         self.title.setPen(QPen(QColor(255, 255, 255, 255)))
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
@@ -107,10 +107,6 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.title_rect.setRect(0, 0, self.pixmap().width(), self.title.boundingRect().height())
         self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
         self.title_rect.setVisible(True)
-        re = self.scene().sceneRect()
-        re.setWidth(1893)  # TODO replace this magic number
-        self.scene().setSceneRect(re)
-        #self.setPos(1893 / 2 - self.boundingRect().width() / 2, 0)
 
     def show_title(self, value: bool):
         self.title_rect.setVisible(value)
@@ -123,6 +119,9 @@ class CustomPixmap(QGraphicsPixmapItem):
 
         for stick in self.camera.sticks:
             self.stick_widgets.append(StickWidget(stick, self))
+        
+        if len(self.stick_widgets) > 0:
+            self.show_stick_widgets = True
 
         self.scene().update()
 

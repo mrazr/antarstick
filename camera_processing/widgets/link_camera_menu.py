@@ -6,8 +6,8 @@ from PyQt5.QtCore import pyqtSignal as Signal
 from PyQt5.QtGui import QBrush, QColor, QPen
 from PyQt5.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsRectItem
 
-from camera_processing.widgets.custom_pixmap import CustomPixmap
 from camera import Camera
+from camera_processing.widgets.custom_pixmap import CustomPixmap
 
 
 class LinkCameraMenu(QGraphicsObject):
@@ -33,7 +33,7 @@ class LinkCameraMenu(QGraphicsObject):
 
     def initialise_with(self, cameras: List[Camera]):
         for i, camera in enumerate(cameras):
-            c_pixmap = CustomPixmap(CustomPixmap.font, parent=self)
+            c_pixmap = CustomPixmap(self)
             c_pixmap.initialise_with(camera)
             c_pixmap.scale_item(self.pixmap_scale)
             c_pixmap.setPos(0, i * (c_pixmap.sceneBoundingRect().height() + self.pixmap_bottom_margin))

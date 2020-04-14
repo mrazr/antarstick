@@ -9,8 +9,8 @@ from PyQt5.QtCore import pyqtSignal as Signal
 from PyQt5.QtCore import pyqtSlot as Slot
 
 import camera_processing.antarstick_processing as antar
-from camera_processing.widgets.camera_view_widget import CameraViewWidget
 from camera import Camera
+from camera_processing.widgets.camera_view_widget import CameraViewWidget
 from dataset import Dataset
 from stick import Stick
 
