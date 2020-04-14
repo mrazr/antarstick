@@ -5,9 +5,9 @@ from typing import List
 import cv2 as cv
 from numpy import ndarray
 from PyQt5 import QtWidgets
-from PyQt5.QtCore import QMarginsF, QPointF, QRectF, Qt
+from PyQt5.QtCore import QPointF, QRectF, Qt
 from PyQt5.QtCore import pyqtSlot as Slot
-from PyQt5.QtWidgets import QGraphicsRectItem, QGraphicsScene
+from PyQt5.QtWidgets import QGraphicsScene
 
 from camera import Camera
 from camera_processing import antarstick_processing as antar
@@ -19,7 +19,6 @@ from camera_processing.widgets.link_camera_menu import LinkCameraMenu
 from camera_processing.widgets.stick_widget import StickWidget
 from dataset import Dataset
 from stick import Stick
-from PyQt5.QtGui import QColor, QPen
 
 
 class CameraViewWidget(QtWidgets.QWidget):
@@ -49,7 +48,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.stick_widgets: List[StickWidget] = []
         self.detected_sticks: List[Stick] = []
         self.link_menus = dict({"right": None, "left": None})
-        self.linked_pixmaps: List[CustomPixmap] = []
+        self.left_link: CustomPixmap = None
+        self.right_link: CustomPixmap = None
 
     @Slot()
     def handle_find_non_snow_clicked(self):
@@ -85,6 +85,22 @@ class CameraViewWidget(QtWidgets.QWidget):
             
 
     def handle_link_camera_button_clicked(self, btn_position: str):
+        # TODO This if..elif could be handled better
+        if btn_position == "left" and self.left_link is not None:
+            self.left_link.setParentItem(None)
+            self.graphics_scene.removeItem(self.left_link)
+            self.left_link = None
+            self.gpixmap.left_add_button.set_role("LINK")
+            self._recenter_view()
+            return
+        elif btn_position == "right" and self.right_link is not None:
+            self.right_link.setParentItem(None)
+            self.graphics_scene.removeItem(self.right_link)
+            self.right_link = None
+            self.gpixmap.right_add_button.set_role("LINK")
+            self._recenter_view()
+            return
+
         other_cameras = list(filter(lambda c: c.folder != self.camera.folder, self.dataset.cameras))
 
         self.link_menus[btn_position] = LinkCameraMenu(btn_position)
@@ -141,10 +157,14 @@ class CameraViewWidget(QtWidgets.QWidget):
     def _recenter_view(self):
         rect_to_view = self.gpixmap.sceneBoundingRect()
         
-        for pixmap in self.linked_pixmaps:
-            rect_to_view = rect_to_view.united(pixmap.sceneBoundingRect())
-        
+        #for pixmap in self.linked_pixmaps:
+        #    rect_to_view = rect_to_view.united(pixmap.sceneBoundingRect())
 
+        if self.left_link is not None:
+            rect_to_view = rect_to_view.united(self.left_link.sceneBoundingRect())
+        if self.right_link is not None:
+            rect_to_view = rect_to_view.united(self.right_link.sceneBoundingRect())
+        
         self.graphics_scene.setSceneRect(rect_to_view)
         self.ui.cameraView.fitInView(rect_to_view, Qt.KeepAspectRatio)
         self.graphics_scene.update(rect_to_view)
@@ -153,7 +173,6 @@ class CameraViewWidget(QtWidgets.QWidget):
         link_menu = self.link_menus[menu_position]
         c_pixmap: CustomPixmap = list(filter(lambda pixmap: pixmap.camera.id == camera.id, link_menu.camera_pixmaps))[0]
 
-        self.linked_pixmaps.append(c_pixmap)
         link_menu.camera_pixmaps.remove(c_pixmap)
 
 
@@ -161,9 +180,11 @@ class CameraViewWidget(QtWidgets.QWidget):
         if menu_position == "left":
             pos.setX(pos.x() - self.gpixmap.boundingRect().width())
             self.gpixmap.left_add_button.set_role("UNLINK")
+            self.left_link = c_pixmap
         else:
             pos.setX(pos.x() + self.gpixmap.boundingRect().width() - 1)
             self.gpixmap.right_add_button.set_role("UNLINK")
+            self.right_link = c_pixmap
 
 
         c_pixmap.setParentItem(None)
@@ -182,6 +203,3 @@ class CameraViewWidget(QtWidgets.QWidget):
         c_pixmap.setPos(pos)
 
         self._recenter_view()
-
-
-        pass # TODO link `camera` with `self.camera`

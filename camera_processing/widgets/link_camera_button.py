@@ -92,7 +92,8 @@ class LinkCameraButton(QGraphicsObject):
         if self.role == "LINK":
             self.link_cam_text.setText("Link camera...")
             self.circle.setBrush(self.__LINK_COLOR)
-            self.setRotation(0.0)
+            self.horizontal_rect.setRotation(0.0)
+            self.vertical_rect.setRotation(0.0)
         else:
             self.link_cam_text.setText("Unlink")
             self.text_rect.setRect(self.link_cam_text.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)))
