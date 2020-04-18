@@ -15,6 +15,7 @@ import cv2 as cv
 import numpy as np
 import skimage.exposure
 import skimage.filters
+import skimage.feature
 import skimage.measure
 import skimage.morphology
 import skimage.transform
@@ -22,6 +23,9 @@ from skimage.measure import regionprops
 from skimage.util import img_as_ubyte
 
 from stick import Stick
+
+import seaborn as sb
+import matplotlib.pyplot as plt
 
 Area = float
 Height = float
@@ -130,18 +134,12 @@ def detect_sticks(img: np.ndarray, scale_lines_by: float = 1.0, merge_lines: boo
     likely_labels_stats: List[Tuple[Label, Height, Area, Ecc, Centroid]] = get_likely_labels(preprocessed, region_props)
     likely_labels = {l[0] for l in likely_labels_stats}
 
-    show_imgs_([preprocessed], ["prep_pre"])
-
     # Filter out labels which are not interesting
-
     for region_prop in region_props:
         if region_prop.label in likely_labels:
             continue
         bbox = region_prop.bbox
         preprocessed[bbox[0]:bbox[2], bbox[1]:bbox[3]] = 0
-
-    show_imgs_([preprocessed], ["prep_post"])
-    cv.destroyAllWindows()
 
     #for r in range(preprocessed.shape[0]):
     #    for c in range(preprocessed.shape[1]):
@@ -228,11 +226,9 @@ def bbox_contains(bbox: Tuple[int, int, int, int], point: Tuple[int, int]) -> bo
     return point[0] >= bbox[1] and point[0] < bbox[3] and point[1] >= bbox[0] and point[1] < bbox[2]
 
 
-def show_imgs_(images: List[np.ndarray], names: List[str]):
+def show_imgs_(images: List[np.ndarray], names: List[str]) -> int:
     for image, name in zip(images, names):
         cv.imshow(name, image)
-    cv.waitKey(0)
-
 
 def measure_snow(img: np.ndarray, sticks: List[Stick]) -> Dict[int, float]:
     """Measures the height of snow in the image `img` around the sticks in `sticks`
@@ -321,13 +317,16 @@ def filter_non_valid_angles(angle_img: np.ndarray) -> np.ndarray:
 
 
 hmt_se = np.ones((3, 3), dtype=np.int8)
-hmt_se = np.pad(hmt_se, ((0, 0), (2, 2)), 'constant', constant_values=-1)
-hmt_se = np.pad(hmt_se, ((0, 0), (1, 1)), 'constant', constant_values=0)
+hmt_se = np.pad(hmt_se, ((0, 0), (1, 1)), 'constant', constant_values=-1)
+hmt_se = np.pad(hmt_se, ((0, 0), (2, 2)), 'constant', constant_values=0)
 
+hmt_se2= np.zeros((5, 5), dtype=np.int8)
+hmt_se2 = np.pad(hmt_se2, ((1, 1), (0, 0)), 'constant', constant_values=-1)
+hmt_se2 = np.pad(hmt_se2, ((3, 3), (0, 0)), 'constant', constant_values=1)
 
-def uhmt(img: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    e_se = (1 * (hmt_se == 1)).astype(np.uint8)
-    d_se = (1 * (hmt_se == 0)).astype(np.uint8)
+def uhmt(img: np.ndarray, se: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    e_se = (1 * (se == 1)).astype(np.uint8)
+    d_se = (1 * (se == 0)).astype(np.uint8)
     e = cv.erode(img, e_se)
     d = cv.dilate(img, d_se)
     mask = e > d
@@ -344,17 +343,31 @@ def preprocess_image(img: np.ndarray) -> np.ndarray:
 
 def detect_sticks_hmt(img: np.ndarray, height_perc: float) -> List[List[int]]:
     prep = preprocess_image(img)
-    hmt, mask = uhmt(prep)
+    hmt, mask = uhmt(prep, hmt_se)
     height = int(height_perc * img.shape[0])
     rankd = skimage.filters.rank.percentile(mask, skimage.morphology.rectangle(7, 3), p0=0.8)
-    closed = cv.morphologyEx(rankd, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (5, 5)))
-    lines = skimage.transform.probabilistic_hough_line(closed,
+    closed = cv.morphologyEx(rankd, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (3, 15)))
+
+    thin = img_as_ubyte(skimage.morphology.thin(closed))
+    #show_imgs_([mask, rankd, closed, thin], ["mask", "randk", "closed", "thin"])
+    #cv.destroyAllWindows()
+    #lines = skimage.transform.probabilistic_hough_line(closed,
+    #                                              threshold=int(0.5 * height),
+    #                                              line_length=int(0.4 * height),
+    #                                              line_gap=int(0.07 * height))
+    lines = skimage.transform.probabilistic_hough_line(thin,
                                                   threshold=int(0.1 * height),
-                                                  line_length=int(0.4 * height),
-                                                  line_gap=int(0.07 * height))
+                                                  line_length=int(1.0 * height),
+                                                  line_gap=int(0.2 * height))
+
+    labels, num_labels = skimage.measure.label(thin, connectivity=2, return_num=True)
+    print(num_labels)
+
+    show_imgs_([img_as_ubyte(labels), thin], ['labels', 'thin'])
+    cv.destroyAllWindows()
 
     return lines
-
+    #return merge_lines(lines)
 
 def get_non_snow_images(path: Path, count: int = 1) -> Optional[List[np.ndarray]]:
     image_list: List[np.ndarray] = []
@@ -371,3 +384,146 @@ def get_non_snow_images(path: Path, count: int = 1) -> Optional[List[np.ndarray]
                 return image_list
     
     return None
+
+def detect_sticks_hmt2(img: np.ndarray, height_percentage: float) -> List[List[int]]:
+    print(height_percentage)
+    height = int(0.8 * height_percentage * img.shape[0])
+    print(height)
+    prep = preprocess_image(img)
+    hmt, mask = uhmt(prep)
+
+    rankd = skimage.filters.rank.percentile(mask, skimage.morphology.rectangle(7, 3), p0=0.8)
+    closed = cv.morphologyEx(rankd, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (3, 15)))
+
+    thin = skimage.morphology.thin(closed)
+
+    valid = skimage.morphology.remove_small_objects(thin, height, connectivity=2)
+
+    show_imgs_([img_as_ubyte(thin), img_as_ubyte(valid)], ['thin', 'valid'])
+    cv.waitKey(0)
+    cv.destroyAllWindows()
+
+    labels, num_labels = skimage.measure.label(thin, connectivity=2, return_num=True)
+
+    region_props = regionprops(labels)
+
+    return []
+
+
+def merge_lines(lines: List[Tuple[Tuple[int]]]) -> List[List[int]]:
+    if len(lines) == 0:
+        return []
+    dist_angles = []
+
+    thetas = []
+    rhos = []
+
+    lines_rhos_thetas = []
+    for line in lines:
+        p = np.array(line[0])
+        q = np.array(line[1])
+        u = (q - p) * (1.0 / np.linalg.norm(q - p))
+        v = u * u.dot(-p)
+        r_v = -(-p - v)
+        r = np.linalg.norm(r_v)
+        r_v = r_v * (1.0 / np.linalg.norm(r_v))
+        theta = 90.0 + (np.math.acos(np.array([1.0, 0.0]).dot(r_v)) / np.pi) * 180.0
+
+        dist_angles.append((r, theta))
+
+        rhos.append(r)
+        thetas.append(theta)
+        line = [list(line[0]), list(line[1])]
+
+        if line[0][1] > line[1][1]:
+            line[0], line[1] = line[1], line[0]
+
+        lines_rhos_thetas.append((line, r, theta))
+
+    
+    lines_rhos_thetas = sorted(lines_rhos_thetas, key=lambda lrt: lrt[1])
+
+    lines = []
+    current_line_r_t = lines_rhos_thetas[0]
+
+    for line_r_t in lines_rhos_thetas[1:]:
+        if np.abs(line_r_t[2] - current_line_r_t[2]) > 5:
+        #if np.abs(line_r_t[1] - current_line_r_t[1]) > 20:
+            lines.append(current_line_r_t[0])
+            current_line_r_t = line_r_t
+            continue
+        line = line_r_t[0]
+        current_line = current_line_r_t[0]
+        if line[0][1] < current_line[0][1]:
+            new_line = [line[0], current_line[1]]
+            if np.abs(compute_line_theta(new_line) - current_line_r_t[2]) < 3:
+                current_line_r_t = (new_line, current_line_r_t[1], current_line_r_t[2])
+        if line[1][1] > current_line[1][1]:
+            new_line = [current_line[0], line[1]]
+            if np.abs(compute_line_theta(new_line) - current_line_r_t[2]) < 3:
+                current_line_r_t = (new_line, current_line_r_t[1], current_line_r_t[2])
+    
+    lines.append(current_line_r_t[0])
+
+    #print(lines)
+
+    #plot = sb.scatterplot(x=rhos, y=thetas).figure
+    #plot.savefig("fig.png")
+    #fig = cv.imread("fig.png")
+
+    #cv.imshow("fig", fig)
+    #cv.waitKey(0)
+    #cv.destroyAllWindows()
+    #plt.clf()
+
+    return lines
+
+
+def compute_line_theta(line: List[List[int]]) -> float:
+    p = np.array(line[0])
+    q = np.array(line[1])
+    u = (p - q) * (1.0 / np.linalg.norm(p - q))
+    v = u * u.dot(-p)
+    r_v = -(-p - v)
+    r = np.linalg.norm(r_v)
+    r_v = r_v * (1.0 / np.linalg.norm(r_v))
+    theta = 90.0 + (np.math.acos(np.array([1.0, 0.0]).dot(r_v)) / np.pi) * 180.0
+
+    return theta
+   
+
+def preprocess_phase(img: np.ndarray) -> np.ndarray:
+    prep = preprocess_image(img)
+    _, mask = uhmt(prep, hmt_se)
+
+    rankd = skimage.filters.rank.percentile(mask, skimage.morphology.rectangle(7, 3), p0=0.8)
+    closed = cv.morphologyEx(rankd, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (1, 13)))
+
+    thin = skimage.morphology.thin(closed)
+
+    area_opened = skimage.morphology.remove_small_objects(thin, min_size=8, connectivity=2)
+
+    return area_opened
+
+def detect_sticks_from_preprocessed(img: np.ndarray, height_percentage: float) -> List[Tuple[Tuple[int]]]:
+    height = int(height_percentage * img.shape[0])
+
+    lines = skimage.transform.probabilistic_hough_line(img, threshold=int(0.4 * height),
+                                                       line_length=int(height * 0.9),
+                                                       line_gap=15)
+
+    return lines
+
+def get_lines_from_preprocessed(img: np.ndarray) -> List[List[np.ndarray]]:
+    labels, num_labels = skimage.measure.label(img, connectivity=2, return_num=True)
+    reg_props = skimage.measure.regionprops(labels)
+
+    lines = []
+    for reg_prop in reg_props:
+        coords = reg_prop.coords
+        min_y_coord = min(coords, key=lambda c: c[0])
+        max_y_coord = max(coords, key=lambda c: c[0])
+
+        lines.append([np.array([min_y_coord[1], min_y_coord[0]]), np.array([max_y_coord[1], max_y_coord[0]])])
+    
+    return lines
