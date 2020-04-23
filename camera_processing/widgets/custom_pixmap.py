@@ -58,7 +58,6 @@ class CustomPixmap(QGraphicsPixmapItem):
             return
         painter.setRenderHint(QPainter.Antialiasing, True)
         QGraphicsPixmapItem.paint(self, painter, option, widget)
-        painter.drawLine(self.reference_line)
 
         if self.show_stick_widgets:
             brush = QBrush(QColor(255, 255, 255, 100))
@@ -74,6 +73,7 @@ class CustomPixmap(QGraphicsPixmapItem):
             painter.setPen(pen)
             painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(4, 4, 4, 4)))
 
+        painter.drawLine(self.reference_line)
 
     def set_reference_line_percentage(self, percentage: float):
         if self.pixmap().isNull():

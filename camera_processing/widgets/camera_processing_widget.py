@@ -14,7 +14,6 @@ from camera_processing.widgets.camera_view_widget import CameraViewWidget
 from dataset import Dataset
 from stick import Stick
 
-
 class CameraProcessingWidget(QtWidgets.QTabWidget):
     """Class representing GUI widget for the analyzation part of Antarstick.
     Derives from QTabWidget. Each camera gets its own tab page.

@@ -28,6 +28,7 @@ class StickWidget(QGraphicsItem):
         painter.fillRect(rect, QColor(0, 125, 125, 125))
         rect.moveCenter(self.line.p2())
         painter.fillRect(rect, QColor(0, 125, 125, 125))
+        painter.drawLine(self.line.p1(), self.line.p2())
 
 
 

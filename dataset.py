@@ -102,9 +102,9 @@ class Dataset(QObject):
                     path = self.path.parent / f"camera{camera.id}.csv"
                     camera.save_measurements(path)
                 state = self.__dict__.copy()
-                del state['camera_added']
-                del state['camera_removed']
-                del state['camera_sticks_detected']
+                #del state['camera_added']
+                #del state['camera_removed']
+                #del state['camera_sticks_detected']
                 state['cameras'] = [camera.get_state() for camera in self.cameras]
                 output_file.write(jsonpickle.encode(state))
         except OSError as err:
