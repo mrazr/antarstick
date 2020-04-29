@@ -7,6 +7,7 @@ from PyQt5.QtGui import QBrush, QColor, QPen
 from PyQt5.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem,
                              QGraphicsObject, QGraphicsRectItem,
                              QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem)
+from PyQt5.Qt import QFont
 
 
 class LinkCameraButton(QGraphicsObject):
@@ -14,6 +15,7 @@ class LinkCameraButton(QGraphicsObject):
     clicked = Signal(str)
     __LINK_COLOR = QColor(0, 200, 0, 200)
     __UNLINK_COLOR = QColor(200, 0, 0, 200)
+    font = QFont("monospace", 16)
 
     def __init__(self, text_item: QGraphicsSimpleTextItem, name: str, radius: int = 30, parent: QGraphicsEllipseItem = None):
         QGraphicsObject.__init__(self, parent)
@@ -42,8 +44,8 @@ class LinkCameraButton(QGraphicsObject):
         self.vertical_rect.setBrush(QBrush(QColor(255, 255, 255)))
         self.horizontal_rect.setBrush(QBrush(QColor(255, 255, 255)))
         self.link_cam_text = QGraphicsSimpleTextItem("Link camera...", self)
-        self.link_cam_text.setFont(text_item.font())
-        self.link_cam_text.setBrush(text_item.brush())
+        self.link_cam_text.setFont(LinkCameraButton.font)
+        self.link_cam_text.setBrush(QBrush(QColor(255, 255, 255, 255)))
         self.link_cam_text.setVisible(False)
         self.setAcceptHoverEvents(True)
         self.text_rect = QGraphicsRectItem(self.link_cam_text.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)), self.link_cam_text)
@@ -68,13 +70,15 @@ class LinkCameraButton(QGraphicsObject):
             self.link_cam_text.setPos(self.boundingRect().topLeft() - QPointF(self.link_cam_text.boundingRect().width() + 10, 0))
         #self.link_cam_text.setPos(self.boundingRect().right(), self.)
         self.link_cam_text.setVisible(True)
+        self.scene().update()
 
     def hoverLeaveEvent(self, event: PyQt5.QtWidgets.QGraphicsSceneHoverEvent):
         self.link_cam_text.setVisible(False)
         self.text_rect.setVisible(False)
 
     def hoverMoveEvent(self, event: PyQt5.QtWidgets.QGraphicsSceneHoverEvent):
-        self.hoverEnterEvent(event)
+        pass
+        #self.hoverEnterEvent(event)
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent):
         pass

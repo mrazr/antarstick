@@ -24,7 +24,7 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.stick_widgets: List[StickWidget] = []
         self.reference_line = QLine()
         self.link_cam_text = QGraphicsSimpleTextItem("Link camera...", self)
-        self.link_cam_text.setZValue(42)
+        self.link_cam_text.setZValue(40)
         self.link_cam_text.setVisible(False)
         self.link_cam_text.setFont(CustomPixmap.font)
         self.link_cam_text.setPos(0, 0)
@@ -32,6 +32,8 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.link_cam_text.setBrush(QBrush(QColor(255, 255, 255, 255)))
         self.left_add_button = LinkCameraButton(self.link_cam_text, name="left", parent=self)
         self.right_add_button = LinkCameraButton(self.link_cam_text, name="right", parent=self)
+        self.left_add_button.setZValue(3)
+        self.right_add_button.setZValue(3)
 
         self.show_add_buttons = False
         self.camera = None
@@ -63,9 +65,9 @@ class CustomPixmap(QGraphicsPixmapItem):
             brush = QBrush(QColor(255, 255, 255, 100))
             painter.fillRect(self.boundingRect(), brush)
 
-            for sw in self.stick_widgets:
-                painter.drawPixmap(sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)),
-                                   self.pixmap(), sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)))
+            #for sw in self.stick_widgets:
+            #    painter.drawPixmap(sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)),
+            #                       self.pixmap(), sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)))
 
         if self.mode and self.hovered:
             pen = QPen(QColor(0, 125, 200, 255))
@@ -109,10 +111,6 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.prepareGeometryChange()
         self.set_image(img)
 
-        self.title.setText(str(camera.folder.name))
-        self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2,
-                          0)
-        self.title.setVisible(True)
 
     def set_image(self, img: ndarray):
         barray = QByteArray(img.tobytes())
@@ -123,6 +121,11 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.title_rect.setRect(0, 0, self.pixmap().width(), self.title.boundingRect().height())
         self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
         self.title_rect.setVisible(True)
+
+        self.title.setText(str(self.camera.folder.name))
+        self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2,
+                          0)
+        self.title.setVisible(True)
 
     def show_title(self, value: bool):
         self.title_rect.setVisible(value)

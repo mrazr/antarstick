@@ -42,6 +42,7 @@ class Stick:
 
     def __post_init__(self):
         self.length_px = np.linalg.norm(self.top - self.bottom)
+        self.label = str(self.id)
 
     def scale(self, factor: float):
         """

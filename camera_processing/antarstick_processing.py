@@ -23,9 +23,8 @@ from skimage.measure import regionprops
 from skimage.util import img_as_ubyte
 
 from stick import Stick
+from time import time
 
-import seaborn as sb
-import matplotlib.pyplot as plt
 
 Area = float
 Height = float
@@ -316,13 +315,16 @@ def filter_non_valid_angles(angle_img: np.ndarray) -> np.ndarray:
     return angle_img * mask
 
 
-hmt_se = np.ones((3, 3), dtype=np.int8)
-hmt_se = np.pad(hmt_se, ((0, 0), (1, 1)), 'constant', constant_values=-1)
-hmt_se = np.pad(hmt_se, ((0, 0), (2, 2)), 'constant', constant_values=0)
+dbd_se = np.ones((3, 3), dtype=np.int8)
+dbd_se = np.pad(dbd_se, ((0, 0), (1, 1)), 'constant', constant_values=-1)
+dbd_se = np.pad(dbd_se, ((0, 0), (2, 2)), 'constant', constant_values=0)
 
-hmt_se2= np.zeros((5, 5), dtype=np.int8)
-hmt_se2 = np.pad(hmt_se2, ((1, 1), (0, 0)), 'constant', constant_values=-1)
-hmt_se2 = np.pad(hmt_se2, ((3, 3), (0, 0)), 'constant', constant_values=1)
+top_end_se = np.pad(dbd_se, ((1, 0), (0, 0)), 'constant', constant_values=-1)
+top_end_se = np.pad(top_end_se, ((3, 0), (0, 0)), 'constant', constant_values=0)
+
+bdb_se = np.zeros((3, 3), dtype=np.int8)
+bdb_se = np.pad(bdb_se, ((0, 0), (1, 1)), 'constant', constant_values=-1)
+bdb_se = np.pad(bdb_se, ((0, 0), (2, 2)), 'constant', constant_values=1)
 
 def uhmt(img: np.ndarray, se: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     e_se = (1 * (se == 1)).astype(np.uint8)
@@ -343,7 +345,7 @@ def preprocess_image(img: np.ndarray) -> np.ndarray:
 
 def detect_sticks_hmt(img: np.ndarray, height_perc: float) -> List[List[int]]:
     prep = preprocess_image(img)
-    hmt, mask = uhmt(prep, hmt_se)
+    hmt, mask = uhmt(prep, dbd_se)
     height = int(height_perc * img.shape[0])
     rankd = skimage.filters.rank.percentile(mask, skimage.morphology.rectangle(7, 3), p0=0.8)
     closed = cv.morphologyEx(rankd, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (3, 15)))
@@ -494,16 +496,25 @@ def compute_line_theta(line: List[List[int]]) -> float:
 
 def preprocess_phase(img: np.ndarray) -> np.ndarray:
     prep = preprocess_image(img)
-    _, mask = uhmt(prep, hmt_se)
+    _, mask = uhmt(prep, dbd_se)
+    _, mask2 = uhmt(prep, bdb_se)
 
     rankd = skimage.filters.rank.percentile(mask, skimage.morphology.rectangle(7, 3), p0=0.8)
+    rankd2 = skimage.filters.rank.percentile(mask2, skimage.morphology.rectangle(7, 3), p0=0.8)
     closed = cv.morphologyEx(rankd, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (1, 13)))
+    closed2 = cv.morphologyEx(rankd2, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (1, 13)))
 
     thin = skimage.morphology.thin(closed)
+    thin2 = skimage.morphology.thin(closed2)
 
     area_opened = skimage.morphology.remove_small_objects(thin, min_size=8, connectivity=2)
+    area_opened2 = skimage.morphology.remove_small_objects(thin2, min_size=8, connectivity=2)
+    area_opened = np.bitwise_or(area_opened, area_opened2)
 
-    return area_opened
+    up = cv.resize(prep, (0, 0), fx=2, fy=2)
+    overlaid = cv.cvtColor(img, cv.COLOR_GRAY2BGR)
+
+    return area_opened, area_opened2
 
 def detect_sticks_from_preprocessed(img: np.ndarray, height_percentage: float) -> List[Tuple[Tuple[int]]]:
     height = int(height_percentage * img.shape[0])

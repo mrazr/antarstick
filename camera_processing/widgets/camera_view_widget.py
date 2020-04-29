@@ -5,9 +5,9 @@ import cv2 as cv
 import numpy as np
 from numpy import ndarray
 from PyQt5 import QtWidgets
-from PyQt5.QtCore import QPointF, QRectF, Qt, QModelIndex
+from PyQt5.QtCore import QPointF, QRectF, Qt, QModelIndex, QPoint, QMarginsF
 from PyQt5.QtCore import pyqtSlot as Slot
-from PyQt5.QtWidgets import QGraphicsScene
+from PyQt5.QtWidgets import QGraphicsScene, QGraphicsItem, QGraphicsRectItem
 
 from camera import Camera
 from camera_processing import antarstick_processing as antar
@@ -20,9 +20,14 @@ from camera_processing.widgets.custom_pixmap import CustomPixmap
 from camera_processing.widgets.link_camera_menu import LinkCameraMenu
 from camera_processing.widgets.stick_widget import StickWidget
 from camera_processing.widgets.cam_graphics_view import CamGraphicsView
+from camera_processing.widgets.camera_view_menu import CameraViewMenu
+from camera_processing.widgets.button_menu import ButtonMenu
+from camera_processing.widgets.overlay_gui import OverlayGui
 from dataset import Dataset
 from stick import Stick
 from image_list_model import ImageListModel
+from PyQt5.Qt import QBrush, QColor
+from camera_processing.widgets.link_camera_button import LinkCameraButton
 
 class CameraViewWidget(QtWidgets.QWidget):
 
@@ -42,6 +47,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.ui.splitter.setStretchFactor(1, 12)
         self.ui.splitter.splitterMoved.connect(self.handle_splitter_moved)
 
+
+
         self.dataset = dataset
         self.camera: Camera = None
         self.graphics_scene = QGraphicsScene()
@@ -51,6 +58,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.cam_view.setScene(self.graphics_scene)
 
 
+        self.current_viewed_image: np.ndarray = None
         self.gpixmap = CustomPixmap()
         self.gpixmap.setAcceptHoverEvents(False)
         self.gpixmap.setZValue(1)
@@ -66,6 +74,17 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.left_link: CustomPixmap = None
         self.right_link: CustomPixmap = None
 
+        self.overlay_gui = OverlayGui(self.cam_view)
+        self.overlay_gui.reset_view_requested.connect(self._recenter_view)
+        self.overlay_gui.edit_sticks_clicked.connect(self.handle_edit_sticks_clicked)
+        self.graphics_scene.addItem(self.overlay_gui)
+        self.overlay_gui.initialize()
+
+        self.blabla = LinkCameraButton(None, "blabla")
+        self.graphics_scene.addItem(self.blabla)
+        self.blabla.setPos(QPointF(400, 100))
+        self.blabla.setZValue(10)
+    
     @Slot()
     def handle_find_non_snow_clicked(self):
         for entry in os.scandir(self.camera.folder):
@@ -87,18 +106,25 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.image_list.initialize(self.camera.folder)
         self.ui.image_list.setModel(self.image_list)
         viewport_rect = self.cam_view.viewport().rect()
-        self.graphics_scene.setSceneRect(QRectF(viewport_rect))
+        _re = self.cam_view.mapToScene(viewport_rect)
+        self.graphics_scene.setSceneRect(QRectF(_re.boundingRect()))
         self.gpixmap.initialise_with(self.camera)
         x_center = self.cam_view.viewport().rect().width() / 2
         self.gpixmap.setPos(x_center - self.gpixmap.boundingRect().width() / 2, 0)
         self.cam_view.fitInView(self.gpixmap.boundingRect(), Qt.KeepAspectRatio)
         self.cam_view.centerOn(self.gpixmap)
+        #self.cam_view.gui.setRect(self.cam_view.mapToScene(self.cam_view.viewport().rect()).boundingRect())
         self.graphics_scene.update()
 
         if self.camera.stick_count() == 0:
             self._detect_sticks()
+        else:
+            for i, stick in enumerate(self.camera.sticks):
+                sw = StickWidget(stick, self.gpixmap)
+                sw.delete_clicked.connect(self.handle_stick_delete_clicked)
+                self.stick_widgets.append(sw)
         
-        self.gpixmap.update_stick_widgets()
+        #self.gpixmap.update_stick_widgets()
             
 
     def handle_link_camera_button_clicked(self, btn_position: str):
@@ -145,10 +171,14 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.gpixmap.set_link_cameras_enabled(value)
         
     def _detect_sticks(self):
-        non_snow = get_non_snow_images(self.camera.folder)
+        non_snow = self.current_viewed_image
         if non_snow is None:
-            return
-        img = cv.cvtColor(non_snow[0], cv.COLOR_BGR2GRAY)
+            non_snow = get_non_snow_images(self.camera.folder)
+            if non_snow is None:
+                return
+            non_snow = non_snow[0]
+
+        img = cv.cvtColor(non_snow, cv.COLOR_BGR2GRAY)
         img = cv.pyrDown(img)
         perc = self.ui.detectionSensitivitySlider.value() / 100.0
         height = perc * img.shape[0]
@@ -159,16 +189,26 @@ class CameraViewWidget(QtWidgets.QWidget):
             return
         
         self.camera.sticks.clear()
+        for sw in self.stick_widgets:
+            sw.setParentItem(None)
+            self.graphics_scene.removeItem(sw)
+
+        self.stick_widgets.clear()
+
         sticks: List[Stick] = self.dataset.create_new_sticks(len(lines))
         for i, stick in enumerate(sticks):
             line = lines[i]
             stick.set_endpoints(*(line[0]), *(line[1]))
+            sw = StickWidget(stick, self.gpixmap)
+            sw.delete_clicked.connect(self.handle_stick_delete_clicked)
+            self.stick_widgets.append(sw)
         self.camera.sticks = sticks
+        self.gpixmap.update()
     
     @Slot()
     def _handle_slider_released(self):
         self._detect_sticks()
-        self.gpixmap.update_stick_widgets()
+        #self.gpixmap.update_stick_widgets()
     
     @Slot(int)
     def _handle_slider_value_changed(self, value: int):
@@ -185,8 +225,22 @@ class CameraViewWidget(QtWidgets.QWidget):
         if self.right_link is not None:
             rect_to_view = rect_to_view.united(self.right_link.sceneBoundingRect())
         
-        self.graphics_scene.setSceneRect(rect_to_view)
+        #self.btn.setPos(QPointF(rect_to_view.x() + rect_to_view.width() / 2, rect_to_view.y() - 1.2 * self.btn.sceneBoundingRect().height()))
+
+        #rect_to_view = rect_to_view.united(self.btn.sceneBoundingRect())
+        
+        self.graphics_scene.setSceneRect(rect_to_view.marginsAdded(QMarginsF(50, 50, 50, 50)))
+
+
         self.cam_view.fitInView(rect_to_view, Qt.KeepAspectRatio)
+        #self.cam_view.gui.setRect(self.cam_view.mapToScene(self.cam_view.viewport().rect()).boundingRect())
+
+        #pp = self.cam_view.mapToScene(QPoint(self.cam_view.viewport().rect().width()//2 - self.btn.boundingRect().width() // 2, 10))
+        #self.btn.setPos(pp)
+        #rect_to_view = rect_to_view.united(self.btn.sceneBoundingRect())
+        #self.graphics_scene.setSceneRect(rect_to_view)
+
+        #self.btn.setPos(QPointF(rect_to_view.x() + rect_to_view.width() / 2 - self.btn.boundingRect().width() / 2, rect_to_view.y()))
         self.graphics_scene.update(rect_to_view)
     
     def handle_link_camera_clicked(self, camera: Camera, menu_position: str):
@@ -231,6 +285,23 @@ class CameraViewWidget(QtWidgets.QWidget):
     @Slot(QModelIndex, QModelIndex)
     def handle_list_model_current_changed(self, current: QModelIndex, previous: QModelIndex):
         image_path = self.image_list.data(current, Qt.UserRole)
-        img = cv.imread(str(image_path))
-        img = cv.resize(img, (0, 0), fx=0.25, fy=0.25)
-        self.gpixmap.set_image(img)
+        self.current_viewed_image = cv.pyrDown(cv.imread(str(image_path)))
+        self.gpixmap.set_image(cv.resize(self.current_viewed_image, (0, 0), fx=0.5, fy=0.5))
+        self._detect_sticks()
+        self.gpixmap.update_stick_widgets()
+    
+    @Slot()
+    def handle_edit_sticks_clicked(self):
+        for s in self.stick_widgets:
+            s.set_edit_mode(not s.edit_mode)
+        self.graphics_scene.update()
+    
+    @Slot(int)
+    def handle_stick_delete_clicked(self, stick_id: int):
+        self.camera.sticks = list(filter(lambda s: s.id != stick_id, self.camera.sticks))
+        stick_widget = list(filter(lambda sw: sw.stick.id == stick_id, self.stick_widgets))[0]
+        self.stick_widgets.remove(stick_widget)
+        stick_widget.setParentItem(None)
+        self.graphics_scene.removeItem(stick_widget)
+        self.graphics_scene.update()
+
