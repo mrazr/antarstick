@@ -1,13 +1,14 @@
-from PyQt5.QtWidgets import QGraphicsObject, QGraphicsItem, QGraphicsRectItem
-from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSlot, pyqtSignal
+import sys
+from pathlib import Path
+
+from PyQt5.Qt import QBrush, QColor, QPen
+from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QPainter, QPixmap
+from PyQt5.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsRectItem
 
 from camera_processing.widgets.button_menu import ButtonMenu
 from camera_processing.widgets.cam_graphics_view import CamGraphicsView
 
-from pathlib import Path
-import sys
-from PyQt5.Qt import QBrush, QColor, QPen
 
 class OverlayGui(QGraphicsObject):
 
@@ -62,7 +63,6 @@ class OverlayGui(QGraphicsObject):
         painter.save()
 
         painter.setWorldMatrixEnabled(False)
-        painter.drawRoundedRect(self.boundingRect(), 10, 10)
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(QColor("#aa555555")))
         painter.setRenderHint(QPainter.Antialiasing, True)

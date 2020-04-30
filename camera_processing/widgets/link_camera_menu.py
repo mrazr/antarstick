@@ -41,6 +41,7 @@ class LinkCameraMenu(QGraphicsObject):
             c_pixmap.set_button_mode(click_handler, self.position)
             c_pixmap.scale_item(self.pixmap_scale)
             c_pixmap.setPos(self.background_rect_margin, i * (c_pixmap.sceneBoundingRect().height() + self.pixmap_bottom_margin) + self.background_rect_margin)
+            c_pixmap.set_show_stick_widgets(False)
             self.camera_pixmaps.append(c_pixmap)
 
 

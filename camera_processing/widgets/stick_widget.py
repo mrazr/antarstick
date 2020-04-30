@@ -1,16 +1,18 @@
 from typing import Optional
 
+import numpy as np
 import PyQt5
+from PyQt5.Qt import QPoint, QPointF
 from PyQt5.QtCore import QLine, QLineF, QRect, Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen
-from PyQt5.QtWidgets import (QGraphicsObject, QGraphicsItem, QGraphicsLineItem, QGraphicsRectItem,
-                             QStyleOptionGraphicsItem, QGraphicsTextItem, QGraphicsSceneMouseEvent, QGraphicsSceneHoverEvent)
-
-from stick import Stick
-from PyQt5.Qt import QPoint, QPointF
-import numpy as np
+from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsLineItem, QGraphicsObject,
+                             QGraphicsRectItem, QGraphicsSceneHoverEvent,
+                             QGraphicsSceneMouseEvent, QGraphicsTextItem,
+                             QStyleOptionGraphicsItem)
 
 from camera_processing.widgets.button import Button
+from stick import Stick
+
 
 class StickWidget(QGraphicsObject):
 
@@ -128,8 +130,8 @@ class StickWidget(QGraphicsObject):
         elif self.hovered_handle == self.bottom_handle:
             self.line.setP2((event.pos() + self.handle_mouse_offset).toPoint())
         else:
-            displace = event.pos() - event.lastPos()
-            self.setPos(self.pos() + displace)
+            displacement = event.pos() - event.lastPos()
+            self.setPos(self.pos() + displacement)
         self.adjust_handles()
         self.adjust_stick()
         self.scene().update()
@@ -165,22 +167,23 @@ class StickWidget(QGraphicsObject):
         self.scene().update()
     
     def adjust_stick(self):
-        vec = 0.5 * (self.line.p1() - self.line.p2())
         self.stick.top[0] = self.pos().x() + self.line.p1().x()
         self.stick.top[1] = self.pos().y() + self.line.p1().y()
-        self.stick.bottom[0] = self.pos().x() - self.line.p2().x()
-        self.stick.bottom[1] = self.pos().y() - self.line.p2().y()
+        self.stick.bottom[0] = self.pos().x() + self.line.p2().x()
+        self.stick.bottom[1] = self.pos().y() + self.line.p2().y()
 
     def adjust_handles(self):
         if self.line.p1().y() > self.line.p2().y():
+            print("blah")
             p1, p2 = self.line.p1(), self.line.p2()
             self.line.setP1(p2)
             self.line.setP2(p1)
-            self.hovered_handle.setBrush(self.handle_idle_brush)
-            self.hovered_handle.setPen(self.handle_idle_pen)
-            self.hovered_handle = self.top_handle if self.hovered_handle == self.bottom_handle else self.bottom_handle
-            self.hovered_handle.setBrush(self.handle_press_brush)
-            self.hovered_handle.setPen(self.handle_press_pen)
+            if self.hovered_handle is not None:
+                self.hovered_handle.setBrush(self.handle_idle_brush)
+                self.hovered_handle.setPen(self.handle_idle_pen)
+                self.hovered_handle = self.top_handle if self.hovered_handle == self.bottom_handle else self.bottom_handle
+                self.hovered_handle.setBrush(self.handle_press_brush)
+                self.hovered_handle.setPen(self.handle_press_pen)
         rect = self.top_handle.rect()
         rect.moveCenter(self.line.p1())
         self.top_handle.setRect(rect)

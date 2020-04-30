@@ -9,13 +9,14 @@ Created on Thu Mar 26 12:20:07 2020
 import math
 from os import scandir
 from pathlib import Path
+from time import time
 from typing import Dict, List, Optional, Tuple
 
 import cv2 as cv
 import numpy as np
 import skimage.exposure
-import skimage.filters
 import skimage.feature
+import skimage.filters
 import skimage.measure
 import skimage.morphology
 import skimage.transform
@@ -23,8 +24,6 @@ from skimage.measure import regionprops
 from skimage.util import img_as_ubyte
 
 from stick import Stick
-from time import time
-
 
 Area = float
 Height = float

@@ -66,6 +66,9 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
         camera_widget.initialise_with(camera)
 
+        camera_widget.link_initiated_between.connect(self.handle_link_initiated_between)
+        camera_widget.link_broken_between.connect(self.handle_link_broken_between)
+
         if len(self._dataset.cameras) > 1:
             self.camera_link_available.emit(True)
 
@@ -132,3 +135,24 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
                 if len(images) == count:
                     break
         return images
+    
+    @Slot(Camera, Camera, str)
+    def handle_link_initiated_between(self, cam1: Camera, cam2: Camera, cam2_pos: str):
+        cam1_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam1.id])
+        cam2_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam2.id])
+
+        cam2_widget.add_linked_camera(cam1, "left" if cam2_pos == "right" else "left")
+
+        cam1_widget.sticks_changed.connect(cam2_widget.handle_sticks_changed)
+        cam2_widget.sticks_changed.connect(cam1_widget.handle_sticks_changed)
+        
+    
+    @Slot(Camera, Camera, str)
+    def handle_link_broken_between(self, cam1: Camera, cam2: Camera, cam2_pos: str):
+        cam1_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam1.id])
+        cam2_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam2.id])
+        
+
+        cam1_widget.sticks_changed.disconnect(cam2_widget.handle_sticks_changed)
+        cam2_widget.sticks_changed.disconnect(cam1_widget.handle_sticks_changed)
+        cam2_widget.remove_linked_camera("left" if cam2_pos == "right" else "left")

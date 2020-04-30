@@ -12,7 +12,7 @@ from PyQt5.Qt import QFont
 
 class LinkCameraButton(QGraphicsObject):
 
-    clicked = Signal(str)
+    clicked = Signal(str, str)
     __LINK_COLOR = QColor(0, 200, 0, 200)
     __UNLINK_COLOR = QColor(200, 0, 0, 200)
     font = QFont("monospace", 16)
@@ -84,7 +84,7 @@ class LinkCameraButton(QGraphicsObject):
         pass
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
-        self.clicked.emit(self.name)
+        self.clicked.emit(self.name, self.role)
     
     def set_role(self, role: str):
         self.role = role

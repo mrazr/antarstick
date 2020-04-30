@@ -1,8 +1,11 @@
-from PyQt5.Qt import QGraphicsItem, QGraphicsObject, QGraphicsSceneHoverEvent, QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem, QMarginsF, QThread, pyqtSignal
-from PyQt5.QtCore import QRectF, QPointF, QPropertyAnimation, pyqtProperty, QEasingCurve, QTimer, QTimerEvent
-from PyQt5.QtGui import QFont, QPainter, QBrush, QColor, QPen
-
 from typing import Union
+
+from PyQt5.Qt import (QGraphicsItem, QGraphicsObject, QGraphicsSceneHoverEvent,
+                      QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem,
+                      QMarginsF, QThread, pyqtSignal)
+from PyQt5.QtCore import (QEasingCurve, QPointF, QPropertyAnimation, QRectF,
+                          QTimer, QTimerEvent, pyqtProperty)
+from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen
 
 IDLE_COLORS = {
     "gray" : QColor(50, 50, 50, 100),

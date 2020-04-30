@@ -1,8 +1,13 @@
-from PyQt5.Qt import QGraphicsObject, QGraphicsItem, QGraphicsSimpleTextItem, pyqtSignal, QGraphicsSceneMouseEvent, QGraphicsSceneHoverEvent
-from PyQt5.QtCore import QRectF, QPointF
-from PyQt5.QtGui import QFont, QPainter, QBrush, QColor, QPen
+from typing import Callable, Dict, List, Optional
+
+from PyQt5.Qt import (QGraphicsItem, QGraphicsObject, QGraphicsSceneHoverEvent,
+                      QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem,
+                      pyqtSignal)
+from PyQt5.QtCore import QPointF, QRectF
+from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen
+
 from camera_processing.widgets.button import Button
-from typing import List, Dict, Callable, Optional
+
 
 class ButtonMenu(QGraphicsObject):
 

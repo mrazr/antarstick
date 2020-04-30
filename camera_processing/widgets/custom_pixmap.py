@@ -1,4 +1,4 @@
-from typing import List, Optional, Callable
+from typing import Callable, List, Optional
 
 import cv2 as cv
 import PyQt5
@@ -99,11 +99,12 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.scene().update()
 
     def boundingRect(self) -> PyQt5.QtCore.QRectF:
-        return QGraphicsPixmapItem.boundingRect(self).united(self.title_rect.boundingRect().translated(
-            QPoint(0, - 0 * self.title.boundingRect().height())
-        ))
+        #return QGraphicsPixmapItem.boundingRect(self).united(self.title_rect.boundingRect().translated(
+        #    QPoint(0, - 0 * self.title.boundingRect().height())
+        #))
+        return QGraphicsPixmapItem.boundingRect(self)
 
-    def initialise_with(self, camera: Camera):
+    def initialise_with(self, camera: Camera) -> List[StickWidget]:
         self.camera = camera
         img = cv.imread(str(camera.rep_image))
         img = cv.resize(img, (0, 0), fx=0.25, fy=0.25)
@@ -111,6 +112,7 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.prepareGeometryChange()
         self.set_image(img)
 
+        return self.update_stick_widgets()
 
     def set_image(self, img: ndarray):
         barray = QByteArray(img.tobytes())
@@ -127,22 +129,22 @@ class CustomPixmap(QGraphicsPixmapItem):
                           0)
         self.title.setVisible(True)
 
-    def show_title(self, value: bool):
+    def set_show_title(self, value: bool):
         self.title_rect.setVisible(value)
         self.title.setVisible(value)
 
-    def update_stick_widgets(self):
-        for sw in self.stick_widgets:
-            self.scene().removeItem(sw)
-        self.stick_widgets.clear()
+    def update_stick_widgets(self) -> List[StickWidget]:
+        self._remove_stick_widgets()
 
         for stick in self.camera.sticks:
             self.stick_widgets.append(StickWidget(stick, self))
         
         if len(self.stick_widgets) > 0:
             self.show_stick_widgets = True
+            _f = self.stick_widgets[0]
 
         self.scene().update()
+        return self.stick_widgets
 
     def scale_item(self, factor: float):
         self.prepareGeometryChange()
@@ -156,7 +158,9 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2, 0)
 
     def set_show_stick_widgets(self, value: bool):
-        self.show_stick_widgets = value
+        for sw in self.stick_widgets:
+            sw.setVisible(value)
+        self.scene().update()
 
     def hoverEnterEvent(self, e: QGraphicsSceneHoverEvent):
         self.hovered = True
@@ -193,3 +197,9 @@ class CustomPixmap(QGraphicsPixmapItem):
         else:
             self.right_add_button.setVisible(True)
 
+    def _remove_stick_widgets(self):
+        for sw in self.stick_widgets:
+            sw.setParentItem(None)
+            self.scene().removeItem(sw)
+            sw.deleteLater()
+        self.stick_widgets.clear()
