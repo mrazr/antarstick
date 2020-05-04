@@ -141,7 +141,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         cam1_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam1.id])
         cam2_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam2.id])
 
-        cam2_widget.add_linked_camera(cam1, "left" if cam2_pos == "right" else "left")
+        cam2_widget.add_linked_camera(cam1, "left" if cam2_pos == "right" else "right")
 
         cam1_widget.sticks_changed.connect(cam2_widget.handle_sticks_changed)
         cam2_widget.sticks_changed.connect(cam1_widget.handle_sticks_changed)
@@ -155,4 +155,4 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
         cam1_widget.sticks_changed.disconnect(cam2_widget.handle_sticks_changed)
         cam2_widget.sticks_changed.disconnect(cam1_widget.handle_sticks_changed)
-        cam2_widget.remove_linked_camera("left" if cam2_pos == "right" else "left")
+        cam2_widget.remove_linked_camera("left" if cam2_pos == "right" else "right")

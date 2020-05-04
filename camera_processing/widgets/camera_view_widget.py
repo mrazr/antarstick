@@ -303,10 +303,14 @@ class CameraViewWidget(QtWidgets.QWidget):
         pos: QPointF  = self.gpixmap.pos()
         if position == "left":
             pos.setX(pos.x() - self.gpixmap.boundingRect().width())
+            if self.left_link is not None:
+                self.remove_linked_camera(position, emit=True)
             self.gpixmap.left_add_button.set_role("UNLINK")
             self.left_link = c_pixmap
         else:
             pos.setX(pos.x() + self.gpixmap.boundingRect().width())
+            if self.right_link is not None:
+                self.remove_linked_camera(position, emit=True)
             self.gpixmap.right_add_button.set_role("UNLINK")
             self.right_link = c_pixmap
 
