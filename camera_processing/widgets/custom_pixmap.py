@@ -177,6 +177,9 @@ class CustomPixmap(QGraphicsPixmapItem):
         if self.mode == 1:
             self.click_handler(self.camera)
 
+    def mouseDoubleClickEvent(self, event: QGraphicsSceneMouseEvent):
+        print("new stick?")
+
     def set_button_mode(self, click_handler: Callable[[Camera], None], data: str):
         self.mode = 1 # TODO make a proper ENUM
         self.click_handler = lambda c: click_handler(c, data)

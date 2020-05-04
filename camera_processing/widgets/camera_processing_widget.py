@@ -34,6 +34,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self._dataset = dataset
         self._dataset.camera_added.connect(self.handle_camera_added)
         self._dataset.camera_removed.connect(self.handle_camera_removed)
+        self._dataset.loading_finished.connect(self.handle_dataset_loading_finished)
         self._camera_tab_map: Dict[int, int] = dict({})
 
     camera_link_available = Signal(bool)
@@ -142,6 +143,10 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         cam2_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam2.id])
 
         cam2_widget.add_linked_camera(cam1, "left" if cam2_pos == "right" else "right")
+        if cam2_pos == "right":
+            self._dataset.link_cameras(cam1, cam2)
+        else:
+            self._dataset.link_cameras(cam2, cam1)
 
         cam1_widget.sticks_changed.connect(cam2_widget.handle_sticks_changed)
         cam2_widget.sticks_changed.connect(cam1_widget.handle_sticks_changed)
@@ -156,3 +161,17 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         cam1_widget.sticks_changed.disconnect(cam2_widget.handle_sticks_changed)
         cam2_widget.sticks_changed.disconnect(cam1_widget.handle_sticks_changed)
         cam2_widget.remove_linked_camera("left" if cam2_pos == "right" else "right")
+
+        if cam2_pos == "right":
+            self._dataset.unlink_cameras(cam1, cam2)
+        else:
+            self._dataset.unlink_cameras(cam2, cam1)
+    
+    @Slot()
+    def handle_dataset_loading_finished(self):
+        for (cam1, cam2) in self._dataset.linked_cameras:
+            print(f"linking {(cam1, cam2)}")
+            cam1_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam1])
+            cam2_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam2])
+
+            cam1_widget.add_linked_camera(cam2_widget.camera, "right", emit=True)

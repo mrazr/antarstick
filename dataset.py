@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import jsonpickle
 from numpy import zeros
@@ -66,6 +66,7 @@ class Dataset(QObject):
     camera_added = Signal(Camera)
     camera_removed = Signal(int)
     camera_sticks_detected = Signal(Camera)
+    loading_finished = Signal()
 
     def __init__(self, path: Optional[Path] = None):
         super(Dataset, self).__init__()
@@ -78,6 +79,7 @@ class Dataset(QObject):
         self.cameras: List[Camera] = []
         self.next_camera_id = 0
         self.next_stick_id = 0
+        self.linked_cameras: Set[Tuple[int, int]] = set()
 
     def add_camera(self, folder: Path):
         camera = Camera(folder, self.next_camera_id)
@@ -123,9 +125,12 @@ class Dataset(QObject):
                 self.path = decoded['path']
                 self.stick_translation_table = decoded['stick_translation_table']
                 self.next_camera_id = decoded['next_camera_id']
+                print(decoded['linked_cameras'])
+                self.linked_cameras = decoded['linked_cameras']
                 self.cameras = [Camera.build_from_state(camera_state) for camera_state in decoded['cameras']]
                 for camera in self.cameras:
                     self.camera_added.emit(camera)
+            self.loading_finished.emit()
             return True
         except OSError:  # TODO do actual handling
             return False
@@ -137,3 +142,9 @@ class Dataset(QObject):
 
     def create_new_sticks(self, count: int) -> List[Stick]:
         return list(map(lambda _: self.create_new_stick(), range(count)))
+    
+    def link_cameras(self, cam1: Camera, cam2: Camera):
+        self.linked_cameras.add((cam1.id, cam2.id))
+    
+    def unlink_cameras(self, cam1: Camera, cam2: Camera):
+        self.linked_cameras.remove((cam1.id, cam2.id))
