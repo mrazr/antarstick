@@ -125,7 +125,6 @@ class Dataset(QObject):
                 self.path = decoded['path']
                 self.stick_translation_table = decoded['stick_translation_table']
                 self.next_camera_id = decoded['next_camera_id']
-                print(decoded['linked_cameras'])
                 self.linked_cameras = decoded['linked_cameras']
                 self.cameras = [Camera.build_from_state(camera_state) for camera_state in decoded['cameras']]
                 for camera in self.cameras:

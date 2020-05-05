@@ -87,6 +87,10 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
     def handle_tab_close_requested(self, tab_id: int):
         for cam_id, _tab_id in self._camera_tab_map.items():
             if _tab_id == tab_id:
+                camera_links = list(filter(lambda link: link[0] == cam_id or link[1] == cam_id, self._dataset.linked_cameras))
+                for c1, c2 in camera_links:
+                    cam_w1: CameraViewWidget = self.widget(self._camera_tab_map[c1])
+                    cam_w1.remove_linked_camera("right", emit=True)
                 self._dataset.remove_camera(cam_id)
         self._camera_tab_map.clear()
 
@@ -170,7 +174,6 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
     @Slot()
     def handle_dataset_loading_finished(self):
         for (cam1, cam2) in self._dataset.linked_cameras:
-            print(f"linking {(cam1, cam2)}")
             cam1_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam1])
             cam2_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam2])
 
