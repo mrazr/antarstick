@@ -82,3 +82,9 @@ class ButtonMenu(QGraphicsObject):
             btn.clicked.connect(call_back)
         self.buttons[btn_id] = btn
         self._center_buttons()
+    
+    def is_button_checked(self, button_id: str) -> bool:
+        button = self.buttons[button_id]
+        if button is None:
+            return False
+        return button.is_on()

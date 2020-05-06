@@ -1,16 +1,17 @@
 from PyQt5.QtWidgets import QGraphicsView, QWidget, QSizePolicy, QGraphicsRectItem
-from PyQt5.QtGui import QPixmap, QPainter, QBrush, QPen, QColor, QWheelEvent, QResizeEvent
+from PyQt5.QtGui import QPixmap, QPainter, QBrush, QPen, QColor, QWheelEvent, QResizeEvent, QMouseEvent
 from PyQt5.QtCore import Qt, QRectF, QPointF, pyqtSignal
 
 import sys
 from pathlib import Path
+from camera_processing.widgets.stick_widget import StickLinkManager
 
 
 class CamGraphicsView(QGraphicsView):
 
     view_changed = pyqtSignal()
 
-    def __init__(self, parent: QWidget = None):
+    def __init__(self, link_manager: StickLinkManager, parent: QWidget = None):
         QGraphicsView.__init__(self, parent)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -25,6 +26,8 @@ class CamGraphicsView(QGraphicsView):
 
         self.verticalScrollBar().valueChanged.connect(lambda _: self.view_changed.emit())
         self.horizontalScrollBar().valueChanged.connect(lambda _: self.view_changed.emit())
+        
+        self.stick_link_manager = link_manager
 
     def drawForeground(self, painter: QPainter, rect: QRectF) -> None:
         pass
@@ -73,3 +76,14 @@ class CamGraphicsView(QGraphicsView):
     
     def resizeEvent(self, event: QResizeEvent):
         self.view_changed.emit()
+    
+
+    #def mousePressEvent(self, event: QMouseEvent):
+    #    pass
+
+    #def mouseReleaseEvent(self, event: QMouseEvent):
+    #    pass
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        self.stick_link_manager.set_target(self.mapToScene(event.pos()))
+        QGraphicsView.mouseMoveEvent(self, event)

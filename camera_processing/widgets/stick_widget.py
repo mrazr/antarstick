@@ -1,24 +1,30 @@
-from typing import Optional
+from typing import Optional, Callable, Any
+from multiprocessing import Process
 
 import numpy as np
 import PyQt5
-from PyQt5.Qt import QPoint, QPointF
+from PyQt5.Qt import QMimeData, QPoint, QPointF, QRectF
 from PyQt5.QtCore import QLine, QLineF, QRect, Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen
-from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsLineItem, QGraphicsObject,
-                             QGraphicsRectItem, QGraphicsSceneHoverEvent,
+from PyQt5.QtGui import QBrush, QColor, QDrag, QFont, QPainter, QPen
+from PyQt5.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem,
+                             QGraphicsLineItem, QGraphicsObject,
+                             QGraphicsRectItem, QGraphicsSceneDragDropEvent,
+                             QGraphicsSceneHoverEvent,
                              QGraphicsSceneMouseEvent, QGraphicsTextItem,
                              QStyleOptionGraphicsItem)
 
 from camera_processing.widgets.button import Button
 from stick import Stick
-
+from dataset import Dataset
+from camera import Camera
 
 class StickWidget(QGraphicsObject):
 
     font: QFont = QFont("monospace", 16)
 
     delete_clicked = pyqtSignal(int)
+    link_initiated = pyqtSignal('PyQt_PyObject') # Actually StickWidget
+    link_accepted = pyqtSignal('PyQt_PyObject')
 
     handle_idle_brush = QBrush(QColor(0, 125, 125, 100))
     handle_hover_brush = QBrush(QColor(125, 125, 0, 150))
@@ -67,6 +73,11 @@ class StickWidget(QGraphicsObject):
 
         self.hovered_handle: Optional[QGraphicsRectItem] = None
         self.handles = [self.top_handle, self.mid_handle, self.bottom_handle]
+
+        self.link_button = Button("Link to...", self)
+        self.link_button.clicked.connect(lambda: self.link_initiated.emit(self))
+        self.link_button.set_height(15)
+
         self.adjust_handles()
         self.setAcceptHoverEvents(True)
         self.top_handle.setZValue(4)
@@ -78,7 +89,9 @@ class StickWidget(QGraphicsObject):
         self.bottom_handle.hide()
 
         self.handle_mouse_offset = QPointF(0, 0)
-        
+        self.available_for_linking = False
+
+
     @pyqtSlot()
     def handle_btn_delete_clicked(self):
         self.btn_delete.deleteLater()
@@ -108,19 +121,32 @@ class StickWidget(QGraphicsObject):
         self.top_handle.setVisible(self.edit_mode)
         self.mid_handle.setVisible(self.edit_mode)
         self.bottom_handle.setVisible(self.edit_mode)
+        self.link_button.setVisible(self.edit_mode)
+    
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent):
-        if not self.edit_mode or self.hovered_handle is None:
+        if not self.edit_mode:
             return
+        if self.hovered_handle is None:
+            #if self.link_token.contains(event.pos()):
+            #    print("ej")
+            return
+
         self.hovered_handle.setBrush(self.handle_press_brush)
         self.hovered_handle.setPen(self.handle_press_pen)
         self.handle_mouse_offset = self.hovered_handle.rect().center() - event.pos()
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
-        if not self.edit_mode or self.hovered_handle is None:
+        if self.available_for_linking:
+            self.link_accepted.emit(self)
             return
-        self.hovered_handle.setBrush(self.handle_hover_brush)
-        self.hovered_handle.setPen(self.handle_idle_pen)
+
+        if not self.edit_mode:
+            return
+
+        if self.hovered_handle is not None:
+            self.hovered_handle.setBrush(self.handle_hover_brush)
+            self.hovered_handle.setPen(self.handle_idle_pen)
     
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent):
         if self.hovered_handle is None:
@@ -138,7 +164,8 @@ class StickWidget(QGraphicsObject):
 
         
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent):
-        pass
+        if self.available_for_linking:
+            print("hov")
 
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent):
         for h in self.handles:
@@ -174,7 +201,6 @@ class StickWidget(QGraphicsObject):
 
     def adjust_handles(self):
         if self.line.p1().y() > self.line.p2().y():
-            print("blah")
             p1, p2 = self.line.p1(), self.line.p2()
             self.line.setP1(p2)
             self.line.setP2(p1)
@@ -194,3 +220,43 @@ class StickWidget(QGraphicsObject):
         rect.moveCenter(self.line.center())
         self.mid_handle.setRect(rect)
         self.btn_delete.setPos(self.line.p1() - QPointF(0.5 * self.btn_delete.boundingRect().width(), 1.1 * self.btn_delete.boundingRect().height()))
+        self.link_button.setPos(self.bottom_handle.rect().bottomRight() - QPointF(self.link_button.boundingRect().width() / 2, 0))
+    
+    def set_available_for_linking(self, value: bool):
+        self.available_for_linking = value
+    
+
+
+class StickLinkManager(QGraphicsObject):
+
+    sticks_linked = pyqtSignal([Stick, Stick])
+
+    def __init__(self, dataset: Dataset, camera: Camera, parent: QGraphicsItem = None):
+        QGraphicsObject.__init__(self, parent)
+        self.dataset = dataset
+        self.camera = camera
+        self.source: StickWidget = None
+        self.target = QPointF()
+    
+    def boundingRect(self):
+        return QRectF(self.scene().views()[0].viewport().rect())
+
+    def paint(self, painter: QPainter, options: QStyleOptionGraphicsItem, widget=None):
+        if self.source is not None:
+            pen = QPen(QColor(0, 125, 125, 255))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.drawLine(self.source.mapToScene(self.source.mid_handle.rect().center()), self.target)
+
+    def handle_stick_widget_link_requested(self, stick: StickWidget):
+        self.source = stick
+        self.target = stick.mapToScene(QPointF(stick.mid_handle.rect().center()))
+        self.update()
+    
+    def set_target(self, point: QPointF):
+        if self.source is not None:
+            self.target = point
+            self.update()
+    
+    def accept_link_by(self, stick_widget: StickWidget):
+        pass

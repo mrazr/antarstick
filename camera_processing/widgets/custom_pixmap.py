@@ -46,6 +46,7 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
         self.show_stick_widgets = False
         self.setAcceptHoverEvents(True)
+        self.stick_edit_mode = False
 
         self.original_pixmap = self.pixmap()
 
@@ -53,6 +54,7 @@ class CustomPixmap(QGraphicsPixmapItem):
 
         self.mode = 0 # TODO make enum Mode
         self.click_handler = None
+        self.double_click_handler: Callable[[int, int], None] = None
 
     def paint(self, painter: QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
         QGraphicsPixmapItem.paint(self, painter, option, widget)
@@ -137,7 +139,9 @@ class CustomPixmap(QGraphicsPixmapItem):
         self._remove_stick_widgets()
 
         for stick in self.camera.sticks:
-            self.stick_widgets.append(StickWidget(stick, self))
+            sw = StickWidget(stick, self)
+            sw.set_edit_mode(self.stick_edit_mode)
+            self.stick_widgets.append(sw)
         
         if len(self.stick_widgets) > 0:
             self.show_stick_widgets = True
@@ -178,7 +182,8 @@ class CustomPixmap(QGraphicsPixmapItem):
             self.click_handler(self.camera)
 
     def mouseDoubleClickEvent(self, event: QGraphicsSceneMouseEvent):
-        pass
+        if self.stick_edit_mode:
+            self.double_click_handler(event.pos().toPoint().x(), event.pos().toPoint().y())
 
     def set_button_mode(self, click_handler: Callable[[Camera], None], data: str):
         self.mode = 1 # TODO make a proper ENUM
@@ -206,3 +211,6 @@ class CustomPixmap(QGraphicsPixmapItem):
             self.scene().removeItem(sw)
             sw.deleteLater()
         self.stick_widgets.clear()
+    
+    def set_stick_edit_mode(self, value: bool):
+        self.stick_edit_mode = value

@@ -23,7 +23,7 @@ from camera_processing.widgets.custom_pixmap import CustomPixmap
 from camera_processing.widgets.link_camera_button import LinkCameraButton
 from camera_processing.widgets.link_camera_menu import LinkCameraMenu
 from camera_processing.widgets.overlay_gui import OverlayGui
-from camera_processing.widgets.stick_widget import StickWidget
+from camera_processing.widgets.stick_widget import StickWidget, StickLinkManager
 from dataset import Dataset
 from image_list_model import ImageListModel
 from stick import Stick
@@ -57,7 +57,11 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.camera: Camera = None
         self.graphics_scene = QGraphicsScene()
 
-        self.cam_view = CamGraphicsView(self)
+        self.stick_link_manager = StickLinkManager(self.dataset, self.camera)
+        self.graphics_scene.addItem(self.stick_link_manager)
+        self.stick_link_manager.setZValue(2)
+
+        self.cam_view = CamGraphicsView(self.stick_link_manager, self)
         self.ui.cam_view_placeholder.addWidget(self.cam_view)
         self.cam_view.setScene(self.graphics_scene)
 
@@ -66,6 +70,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.gpixmap = CustomPixmap()
         self.gpixmap.setAcceptHoverEvents(False)
         self.gpixmap.setZValue(1)
+        self.gpixmap.double_click_handler = self.double_click_handler
 
         self.gpixmap.right_add_button.clicked.connect(self.handle_link_camera_button_clicked)
         self.gpixmap.left_add_button.clicked.connect(self.handle_link_camera_button_clicked)
@@ -84,10 +89,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.graphics_scene.addItem(self.overlay_gui)
         self.overlay_gui.initialize()
 
-        self.blabla = LinkCameraButton(None, "blabla")
-        self.graphics_scene.addItem(self.blabla)
-        self.blabla.setPos(QPointF(400, 100))
-        self.blabla.setZValue(10)
+
     
     @Slot()
     def handle_find_non_snow_clicked(self):
@@ -125,8 +127,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         if len(self.stick_widgets) == 0:
             self._detect_sticks()
         else:
-            for sw in self.stick_widgets:
-                sw.delete_clicked.connect(self.handle_stick_delete_clicked)
+            self.connect_stick_widget_signals()
         
 
     def handle_link_camera_button_clicked(self, btn_position: str, button_role: str):
@@ -192,8 +193,7 @@ class CameraViewWidget(QtWidgets.QWidget):
             #self.stick_widgets.append(sw)
         self.stick_widgets = self.gpixmap.update_stick_widgets()
 
-        for sw in self.stick_widgets:
-            sw.delete_clicked.connect(self.handle_stick_delete_clicked)
+        self.connect_stick_widget_signals()
         
         self.sticks_changed.emit()
 
@@ -267,9 +267,11 @@ class CameraViewWidget(QtWidgets.QWidget):
     
     @Slot()
     def handle_edit_sticks_clicked(self):
+        edit_sticks_on = self.overlay_gui.edit_sticks_button_pushed()
+        self.gpixmap.set_stick_edit_mode(edit_sticks_on)
         for s in self.stick_widgets:
-            s.set_edit_mode(not s.edit_mode)
-        if not self.stick_widgets[0].edit_mode:
+            s.set_edit_mode(edit_sticks_on)
+        if not edit_sticks_on:
             self.sticks_changed.emit()
         self.graphics_scene.update()
     
@@ -296,6 +298,9 @@ class CameraViewWidget(QtWidgets.QWidget):
         c_pixmap.initialise_with(camera)
         #c_pixmap.scale_item(1.0)
         c_pixmap.setAcceptHoverEvents(False)
+
+        for sw in c_pixmap.stick_widgets:
+            sw.link_accepted.connect(self.handle_link_accepted)
 
         c_pixmap.set_display_mode()
         c_pixmap.set_show_stick_widgets(True)
@@ -336,3 +341,37 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.right_link = None
             self.gpixmap.right_add_button.set_role("LINK")
         self._recenter_view()
+
+    def double_click_handler(self, x: int, y: int):
+        stick = self.dataset.create_new_stick()
+        stick.set_endpoints(x, y-50, x, y+50)
+        self.camera.sticks.append(stick)
+        self.stick_widgets = self.gpixmap.update_stick_widgets()
+        self.connect_stick_widget_signals()
+        self.sticks_changed.emit()
+        self.gpixmap.update()
+    
+    @Slot('PyQt_PyObject')
+    def handle_stick_link_requested(self, stick_widget: StickWidget):
+        for sw in self.stick_widgets:
+            sw.set_available_for_linking(False)
+
+        if self.left_link is not None:
+            for sw in self.left_link.stick_widgets:
+                sw.set_available_for_linking(True)
+        
+        if self.right_link is not None:
+            for sw in self.right_link.stick_widgets:
+                sw.set_available_for_linking(True)
+
+        self.stick_link_manager.handle_stick_widget_link_requested(stick_widget)
+        self.graphics_scene.update()
+
+    def connect_stick_widget_signals(self):
+        for sw in self.stick_widgets:
+            sw.delete_clicked.connect(self.handle_stick_delete_clicked)
+            sw.link_initiated.connect(self.handle_stick_link_requested)
+
+
+    def handle_link_accepted(self, stick_widget: StickWidget):
+        self.stick_link_manager.accept_link_by(stick_widget)

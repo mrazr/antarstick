@@ -41,6 +41,7 @@ class OverlayGui(QGraphicsObject):
 
         self.top_menu.add_button("edit_sticks", "Edit sticks", is_checkable=True, call_back=self.edit_sticks_clicked.emit)
         self.top_menu.add_button("show_overaly", "Show overlay")
+        self.top_menu.add_button("link_sticks", "Link sticks", is_checkable=True)
         self.top_menu.add_button("show_linked_cameras", "Show linked cameras")
         self.top_menu.add_button("reset_view", "Reset view", call_back=self.reset_view_requested.emit)
         self.top_menu.set_height(40)
@@ -83,3 +84,6 @@ class OverlayGui(QGraphicsObject):
                          Qt.AlignHCenter, "Zoom in/out")
         painter.setWorldMatrixEnabled(True)
         painter.restore()
+    
+    def edit_sticks_button_pushed(self) -> bool:
+        return self.top_menu.is_button_checked("edit_sticks")
