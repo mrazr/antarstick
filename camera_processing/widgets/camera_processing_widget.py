@@ -88,9 +88,11 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         for cam_id, _tab_id in self._camera_tab_map.items():
             if _tab_id == tab_id:
                 camera_links = list(filter(lambda link: link[0] == cam_id or link[1] == cam_id, self._dataset.linked_cameras))
+                _cam_widget: CameraViewWidget = self.widget(tab_id)
                 for c1, c2 in camera_links:
                     cam_w1: CameraViewWidget = self.widget(self._camera_tab_map[c1])
                     cam_w1.remove_linked_camera("right", emit=True)
+                _cam_widget._destroy()
                 self._dataset.remove_camera(cam_id)
         self._camera_tab_map.clear()
 

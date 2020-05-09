@@ -34,6 +34,7 @@ class Stick:
     """
 
     id: int
+    camera_id: int
     top: ndarray
     bottom: ndarray
     length_px: float = field(init=False)

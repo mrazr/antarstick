@@ -4,7 +4,7 @@ from PyQt5.QtCore import Qt, QRectF, QPointF, pyqtSignal
 
 import sys
 from pathlib import Path
-from camera_processing.widgets.stick_widget import StickLinkManager
+from camera_processing.widgets.stick_link_manager import StickLinkManager
 
 
 class CamGraphicsView(QGraphicsView):
@@ -76,14 +76,18 @@ class CamGraphicsView(QGraphicsView):
     
     def resizeEvent(self, event: QResizeEvent):
         self.view_changed.emit()
-    
 
-    #def mousePressEvent(self, event: QMouseEvent):
-    #    pass
+    def mousePressEvent(self, event: QMouseEvent):
+        QGraphicsView.mousePressEvent(self, event)
 
-    #def mouseReleaseEvent(self, event: QMouseEvent):
-    #    pass
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        if event.button() == Qt.RightButton:
+            self.stick_link_manager.cancel()
+        elif event.button() == Qt.LeftButton:
+            self.stick_link_manager.accept()
+        QGraphicsView.mouseReleaseEvent(self, event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
-        self.stick_link_manager.set_target(self.mapToScene(event.pos()))
+        if not self.stick_link_manager.anchored:
+            self.stick_link_manager.set_target(self.mapToScene(event.pos()))
         QGraphicsView.mouseMoveEvent(self, event)

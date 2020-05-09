@@ -1,5 +1,6 @@
-from typing import Optional, Callable, Any
+from enum import Enum
 from multiprocessing import Process
+from typing import Any, Callable, List, Optional
 
 import numpy as np
 import PyQt5
@@ -13,18 +14,25 @@ from PyQt5.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem,
                              QGraphicsSceneMouseEvent, QGraphicsTextItem,
                              QStyleOptionGraphicsItem)
 
-from camera_processing.widgets.button import Button
-from stick import Stick
-from dataset import Dataset
 from camera import Camera
+from camera_processing.widgets.button import Button
+from dataset import Dataset
+from stick import Stick
+
+
+class StickMode(Enum):
+    DISPLAY = 0
+    EDIT = 1
+    LINK = 2
 
 class StickWidget(QGraphicsObject):
 
     font: QFont = QFont("monospace", 16)
 
-    delete_clicked = pyqtSignal(int)
+    delete_clicked = pyqtSignal(Stick)
     link_initiated = pyqtSignal('PyQt_PyObject') # Actually StickWidget
     link_accepted = pyqtSignal('PyQt_PyObject')
+    hovered = pyqtSignal(['PyQt_PyObject', 'PyQt_PyObject'])
 
     handle_idle_brush = QBrush(QColor(0, 125, 125, 100))
     handle_hover_brush = QBrush(QColor(125, 125, 0, 150))
@@ -46,7 +54,7 @@ class StickWidget(QGraphicsObject):
         self.stick_label_text.hide()
         self.setZValue(3)
 
-        self.edit_mode = False
+        self.mode = StickMode.DISPLAY
 
         self.btn_delete = Button("x", self)
         self.btn_delete.set_base_color("red")
@@ -95,7 +103,7 @@ class StickWidget(QGraphicsObject):
     @pyqtSlot()
     def handle_btn_delete_clicked(self):
         self.btn_delete.deleteLater()
-        self.delete_clicked.emit(self.stick.id)
+        self.delete_clicked.emit(self.stick)
     
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem,
               widget: Optional[PyQt5.QtWidgets.QWidget] = ...):
@@ -116,20 +124,33 @@ class StickWidget(QGraphicsObject):
         return self.gline.boundingRect().united(self.top_handle.boundingRect()).united(self.mid_handle.boundingRect()).united(self.bottom_handle.boundingRect())
     
     def set_edit_mode(self, value: bool):
-        self.edit_mode = value
-        self.btn_delete.setVisible(self.edit_mode)
-        self.top_handle.setVisible(self.edit_mode)
-        self.mid_handle.setVisible(self.edit_mode)
-        self.bottom_handle.setVisible(self.edit_mode)
-        self.link_button.setVisible(self.edit_mode)
+        if value:
+            self.set_mode(StickMode.EDIT)
+        else:
+            self.set_mode(StickMode.DISPLAY)
     
+    def set_mode(self, mode: StickMode):
+        if mode == StickMode.DISPLAY:
+            self.btn_delete.setVisible(False)
+            self.top_handle.setVisible(False)
+            self.mid_handle.setVisible(False)
+            self.bottom_handle.setVisible(False)
+            self.link_button.setVisible(False)
+        elif mode == StickMode.EDIT:
+            self.set_mode(StickMode.DISPLAY)
+            self.btn_delete.setVisible(True)
+            self.top_handle.setVisible(True)
+            self.mid_handle.setVisible(True)
+            self.bottom_handle.setVisible(True)
+        else:
+            self.set_mode(StickMode.DISPLAY)
+            self.link_button.setVisible(True)
+        self.mode = mode
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent):
-        if not self.edit_mode:
+        if self.mode != StickMode.EDIT:
             return
         if self.hovered_handle is None:
-            #if self.link_token.contains(event.pos()):
-            #    print("ej")
             return
 
         self.hovered_handle.setBrush(self.handle_press_brush)
@@ -141,7 +162,7 @@ class StickWidget(QGraphicsObject):
             self.link_accepted.emit(self)
             return
 
-        if not self.edit_mode:
+        if self.mode != StickMode.EDIT:
             return
 
         if self.hovered_handle is not None:
@@ -165,15 +186,18 @@ class StickWidget(QGraphicsObject):
         
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent):
         if self.available_for_linking:
-            print("hov")
+            print("entered")
+            self.hovered.emit(True, self)
 
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent):
         for h in self.handles:
             h.setBrush(self.handle_idle_brush)
+        if self.available_for_linking:
+            self.hovered.emit(False, self)
         self.scene().update()
     
     def hoverMoveEvent(self, event: QGraphicsSceneHoverEvent):
-        if not self.edit_mode:
+        if self.mode != StickMode.EDIT:
             return
         hovered_handle = list(filter(lambda h: h.rect().contains(event.pos()), self.handles))
         if len(hovered_handle) == 0:
@@ -225,38 +249,3 @@ class StickWidget(QGraphicsObject):
     def set_available_for_linking(self, value: bool):
         self.available_for_linking = value
     
-
-
-class StickLinkManager(QGraphicsObject):
-
-    sticks_linked = pyqtSignal([Stick, Stick])
-
-    def __init__(self, dataset: Dataset, camera: Camera, parent: QGraphicsItem = None):
-        QGraphicsObject.__init__(self, parent)
-        self.dataset = dataset
-        self.camera = camera
-        self.source: StickWidget = None
-        self.target = QPointF()
-    
-    def boundingRect(self):
-        return QRectF(self.scene().views()[0].viewport().rect())
-
-    def paint(self, painter: QPainter, options: QStyleOptionGraphicsItem, widget=None):
-        if self.source is not None:
-            pen = QPen(QColor(0, 125, 125, 255))
-            pen.setWidth(2)
-            painter.setPen(pen)
-            painter.drawLine(self.source.mapToScene(self.source.mid_handle.rect().center()), self.target)
-
-    def handle_stick_widget_link_requested(self, stick: StickWidget):
-        self.source = stick
-        self.target = stick.mapToScene(QPointF(stick.mid_handle.rect().center()))
-        self.update()
-    
-    def set_target(self, point: QPointF):
-        if self.source is not None:
-            self.target = point
-            self.update()
-    
-    def accept_link_by(self, stick_widget: StickWidget):
-        pass
