@@ -4,7 +4,7 @@ from typing import Any, Callable, List, Optional
 
 import numpy as np
 import PyQt5
-from PyQt5.Qt import QMimeData, QPoint, QPointF, QRectF
+from PyQt5.Qt import QMimeData, QPoint, QPointF, QRectF, QGraphicsDropShadowEffect
 from PyQt5.QtCore import QLine, QLineF, QRect, Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QBrush, QColor, QDrag, QFont, QPainter, QPen
 from PyQt5.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem,
@@ -65,7 +65,6 @@ class StickWidget(QGraphicsObject):
         self.btn_delete.clicked.connect(self.handle_btn_delete_clicked)
         self.btn_delete.setPos(self.line.p1() - QPointF(0.5 * self.btn_delete.boundingRect().width(), 1.1 * self.btn_delete.boundingRect().height()))
 
-
         self.top_handle = QGraphicsRectItem(0, 0, self.handle_size, self.handle_size, self)
         self.mid_handle = QGraphicsRectItem(0, 0, self.handle_size, self.handle_size, self)
         self.bottom_handle = QGraphicsRectItem(0, 0, self.handle_size, self.handle_size, self)
@@ -98,6 +97,7 @@ class StickWidget(QGraphicsObject):
 
         self.handle_mouse_offset = QPointF(0, 0)
         self.available_for_linking = False
+        self.highlight_color: QColor = None
 
 
     @pyqtSlot()
@@ -107,16 +107,17 @@ class StickWidget(QGraphicsObject):
     
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem,
               widget: Optional[PyQt5.QtWidgets.QWidget] = ...):
+            
+        if self.highlight_color is not None:
+            brush = QBrush(self.highlight_color)
+            pen = QPen(brush, 4)
+            painter.setPen(pen)
+            painter.drawLine(self.line.p1(), self.line.p2())
+
         pen = QPen(QColor(0, 125, 125, 255))
         pen.setStyle(Qt.DotLine)
         pen.setWidth(1.0)
         painter.setPen(pen)
-       # painter.setBrush(QBrush(QColor(0, 125, 125, 255)))
-       # rect = QRect(0, 0, 5, 5)
-       # rect.moveCenter(self.line.p1())
-       # painter.fillRect(rect, QColor(0, 125, 125, 125))
-       # rect.moveCenter(self.line.p2())
-       # painter.fillRect(rect, QColor(0, 125, 125, 125))
         painter.drawLine(self.line.p1(), self.line.p2())
 
 
@@ -136,6 +137,7 @@ class StickWidget(QGraphicsObject):
             self.mid_handle.setVisible(False)
             self.bottom_handle.setVisible(False)
             self.link_button.setVisible(False)
+            self.available_for_linking = False
         elif mode == StickMode.EDIT:
             self.set_mode(StickMode.DISPLAY)
             self.btn_delete.setVisible(True)
@@ -186,7 +188,6 @@ class StickWidget(QGraphicsObject):
         
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent):
         if self.available_for_linking:
-            print("entered")
             self.hovered.emit(True, self)
 
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent):
@@ -248,4 +249,13 @@ class StickWidget(QGraphicsObject):
     
     def set_available_for_linking(self, value: bool):
         self.available_for_linking = value
+        if self.available_for_linking:
+            self.set_highlight_color(QColor(0, 255, 0, 100))
+        else:
+            self.set_highlight_color(None)
+    
+    def set_highlight_color(self, color: Optional[QColor]):
+        self.highlight_color = color
+        self.update()
+    
     

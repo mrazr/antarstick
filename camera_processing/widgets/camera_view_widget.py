@@ -395,12 +395,9 @@ class CameraViewWidget(QtWidgets.QWidget):
     
     def handle_link_sticks_clicked(self):
         if self.overlay_gui.link_sticks_button_pushed():
-            self.stick_link_manager.setVisible(True)
-            self.stick_widgets_set_mode(StickMode.LINK)
+            self.stick_link_manager.start()
         else:
-            self.stick_link_manager.setVisible(False)
-            self.stick_widgets_set_mode(StickMode.DISPLAY)
-            self.stick_link_manager.cancel()
+            self.stick_link_manager.stop()
 
     def sync_stick_link_manager(self):
         cams = []

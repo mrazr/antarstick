@@ -5,7 +5,7 @@ from PyQt5.Qt import (QColor, QGraphicsItem, QGraphicsObject, QPainter, QPen,
 
 from camera import Camera
 from camera_processing.widgets.custom_pixmap import CustomPixmap
-from camera_processing.widgets.stick_widget import StickWidget
+from camera_processing.widgets.stick_widget import StickWidget, StickMode
 from dataset import Dataset
 from stick import Stick
 
@@ -56,7 +56,10 @@ class StickLinkManager(QGraphicsObject):
                     sw2 = next(filter(lambda _sw: _sw.stick.id == link[2], cam.stick_widgets))
                     p1 = sw.mapToScene(sw.mid_handle.rect().center())
                     p2 = sw2.mapToScene(sw2.mid_handle.rect().center())
-                    pen.setColor(QColor.fromHsv(hue, 100, 255, 255))
+                    color = QColor.fromHsv(hue, 100, 255, 255)
+                    sw.set_highlight_color(color)
+                    sw2.set_highlight_color(color)
+                    pen.setColor(color)
                     hue += hue_step
                     pen.setWidth(2)
                     painter.setPen(pen)
@@ -65,11 +68,6 @@ class StickLinkManager(QGraphicsObject):
 
 
     def handle_stick_widget_link_requested(self, stick: StickWidget):
-        for sw in self.primary_camera.stick_widgets:
-            sw.set_available_for_linking(False)
-        for cam in self.secondary_cameras:
-            for sw in cam.stick_widgets:
-                sw.set_available_for_linking(True)
 
         self.source = stick
         self.target_point = stick.mapToScene(QPointF(stick.mid_handle.rect().center()))
@@ -89,6 +87,9 @@ class StickLinkManager(QGraphicsObject):
     def cancel(self):
         self.source = None
         self.target = None
+        for cam in self.secondary_cameras:
+            for sw in cam.stick_widgets:
+                sw.set_available_for_linking(True)
         self.update()
     
     def anchor_to(self, stick_widget: StickWidget):
@@ -121,5 +122,26 @@ class StickLinkManager(QGraphicsObject):
     def handle_sticks_unlinked(self, stick1: Stick, stick2: Stick):
         if stick1.camera_id != self.camera.id and stick2.camera_id != self.camera.id:
             return
-        print("handling unlinkage")
         self.update_links()
+    
+    def start(self):
+        self.setVisible(True)
+
+        for sw in self.primary_camera.stick_widgets:
+            sw.set_mode(StickMode.LINK)
+            sw.set_available_for_linking(False)
+        
+        for cam in self.secondary_cameras:
+            for sw in cam.stick_widgets:
+                sw.set_available_for_linking(True)
+
+    def stop(self):
+        self.cancel()
+        for sw in self.primary_camera.stick_widgets:
+            sw.set_mode(StickMode.DISPLAY)
+        
+        for cam in self.secondary_cameras:
+            for sw in cam.stick_widgets:
+                sw.set_available_for_linking(False)
+        
+        self.setVisible(False)

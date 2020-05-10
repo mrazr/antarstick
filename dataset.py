@@ -116,9 +116,6 @@ class Dataset(QObject):
                     path = self.path.parent / f"camera{camera.id}.csv"
                     camera.save_measurements(path)
                 state = self.__dict__.copy()
-                #del state['camera_added']
-                #del state['camera_removed']
-                #del state['camera_sticks_detected']
                 state['cameras'] = [camera.get_state() for camera in self.cameras]
                 output_file.write(jsonpickle.encode(state))
         except OSError as err:
@@ -171,12 +168,9 @@ class Dataset(QObject):
             if stick.id in self.stick_views_map:
                 link = self.stick_views_map[stick.id]
                 if link[1] == cam2.id:
-                    self.unlink_stick(stick.id)
+                    self.unlink_stick(stick)
     
     def link_sticks(self, stick1: Stick, stick2: Stick):
-        #camera1: Camera = next((filter(lambda cam: any(map(lambda stick: stick.id == stick1_id, cam.sticks)), self.cameras)))
-        #camera2: Camera = next((filter(lambda cam: any(map(lambda stick: stick.id == stick2_id, cam.sticks)), self.cameras)))
-
         camera1: Camera = next(filter(lambda cam: cam.id == stick1.camera_id, self.cameras))
         camera2: Camera = next(filter(lambda cam: cam.id == stick2.camera_id, self.cameras))
 
