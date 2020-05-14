@@ -2,10 +2,10 @@ from typing import Union
 
 from PyQt5.Qt import (QGraphicsItem, QGraphicsObject, QGraphicsSceneHoverEvent,
                       QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem,
-                      QMarginsF, QThread, pyqtSignal)
+                      pyqtSignal)
 from PyQt5.QtCore import (QEasingCurve, QPointF, QPropertyAnimation, QRectF,
-                          QTimer, QTimerEvent, pyqtProperty)
-from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen
+                          QTimerEvent, pyqtProperty)
+from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPixmap
 
 IDLE_COLORS = {
     "gray" : QColor(50, 50, 50, 100),
@@ -24,6 +24,7 @@ PRESS_COLORS = {
     "red" : IDLE_COLORS["red"].darker(120),
     "green" : IDLE_COLORS["green"].darker(120),
 }
+
 
 class CheckbuttonLogic:
 
@@ -86,22 +87,22 @@ class PushbuttonLogic:
     def do_click(self):
         pass
 
+
 class Button(QGraphicsObject):
     font: QFont = QFont("monospace", 16)
 
-    clicked = pyqtSignal()
+    clicked = pyqtSignal('PyQt_PyObject')
 
-
-    def __init__(self, label: str, parent: QGraphicsItem = None):
+    def __init__(self, btn_id: str, label: str, parent: QGraphicsItem = None):
         QGraphicsObject.__init__(self, parent)
         self.label = QGraphicsSimpleTextItem(label, self)
         self.label.setFont(Button.font)
         self.label.setBrush(QBrush(QColor(255, 255, 255, 255)))
+        self.btn_id = btn_id
         self.rect = QRectF(0, 0, 0, 0)
 
         self.base_color = "gray"
 
-        #self.setFlag(QGraphicsItem.ItemIgnoresTransformations)
         self.hor_margin = 10
         self.ver_margin = 5
         self.current_timer = 0
@@ -115,8 +116,11 @@ class Button(QGraphicsObject):
         self.hovered = False
         self.setAcceptHoverEvents(True)
         self.setZValue(4)
+        self.set_height(30)
 
-    
+        self.pixmap: QPixmap = None
+        self.max_pixmap_height = 128
+
     def set_height(self, h: int):
         self.prepareGeometryChange()
         self.rect.setHeight(h)
@@ -147,6 +151,8 @@ class Button(QGraphicsObject):
     def paint(self, painter: QPainter, options, widget=None):
         painter.setBrush(QBrush(self.fill_color_current))
         painter.setPen(QPen(QColor(0, 0, 0, 0)))
+        if self.pixmap is not None:
+            painter.drawPixmap(self.hor_margin, self.ver_margin, self.pixmap)
         painter.drawRoundedRect(self.rect, 5, 5)
     
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent):
@@ -158,7 +164,7 @@ class Button(QGraphicsObject):
         self.fill_color_current = self.logic.release_color()
         if self.scene() is not None:
             self.scene().update(self.sceneBoundingRect())
-        self.clicked.emit()
+        self.clicked.emit({"btn_id": self.btn_id, "btn_label": self.label})
     
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent):
         self.hovered = True
@@ -199,7 +205,6 @@ class Button(QGraphicsObject):
             self.killTimer(ev.timerId())
             self.current_timer = 0
     
-
     def set_base_color(self, color: str):
         if isinstance(self.logic, CheckbuttonLogic):
             return
@@ -216,3 +221,23 @@ class Button(QGraphicsObject):
             self.logic = CheckbuttonLogic()
         else:
             self.logic = PushbuttonLogic("gray")
+
+    def set_pixmap(self, pixmap: QPixmap):
+        self.pixmap = pixmap.scaledToHeight(self.max_pixmap_height) if pixmap is not None else None
+        self.fit_to_contents()
+
+    def fit_to_contents(self):
+        self.prepareGeometryChange()
+        width = 2 * self.hor_margin
+        height = 2 * self.ver_margin + self.label.boundingRect().height()
+        if self.pixmap is not None:
+            width += max(self.pixmap.width(), self.label.boundingRect().width())
+            height += self.ver_margin + self.pixmap.height()
+        else:
+            width += self.label.boundingRect().width()
+        self.rect.setWidth(width)
+        self.rect.setHeight(height)
+
+        self.label.setPos(0.5 * width - 0.5 * self.label.boundingRect().width() + 0.0 * self.hor_margin,
+                          height - self.label.boundingRect().height() - self.ver_margin)
+        self.update()

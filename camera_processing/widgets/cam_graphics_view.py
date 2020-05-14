@@ -1,9 +1,7 @@
-from PyQt5.QtWidgets import QGraphicsView, QWidget, QSizePolicy, QGraphicsRectItem
-from PyQt5.QtGui import QPixmap, QPainter, QBrush, QPen, QColor, QWheelEvent, QResizeEvent, QMouseEvent
-from PyQt5.QtCore import Qt, QRectF, QPointF, pyqtSignal
+from PyQt5.QtCore import Qt, QRectF, pyqtSignal
+from PyQt5.QtGui import QPainter, QWheelEvent, QResizeEvent, QMouseEvent
+from PyQt5.QtWidgets import QGraphicsView, QWidget, QSizePolicy
 
-import sys
-from pathlib import Path
 from camera_processing.widgets.stick_link_manager import StickLinkManager
 
 
@@ -89,5 +87,6 @@ class CamGraphicsView(QGraphicsView):
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if not self.stick_link_manager.anchored:
+            #print("movee\n")
             self.stick_link_manager.set_target(self.mapToScene(event.pos()))
         QGraphicsView.mouseMoveEvent(self, event)

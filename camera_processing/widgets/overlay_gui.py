@@ -4,7 +4,7 @@ from pathlib import Path
 from PyQt5.Qt import QBrush, QColor, QPen
 from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QPainter, QPixmap
-from PyQt5.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsRectItem
+from PyQt5.QtWidgets import QGraphicsItem, QGraphicsObject
 
 from camera_processing.widgets.button_menu import ButtonMenu
 from camera_processing.widgets.cam_graphics_view import CamGraphicsView

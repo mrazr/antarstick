@@ -1,10 +1,8 @@
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, Optional
 
-from PyQt5.Qt import (QGraphicsItem, QGraphicsObject, QGraphicsSceneHoverEvent,
-                      QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem,
-                      pyqtSignal)
-from PyQt5.QtCore import QPointF, QRectF
-from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen
+from PyQt5.Qt import (QGraphicsItem, QGraphicsObject)
+from PyQt5.QtCore import QRectF
+from PyQt5.QtGui import QBrush, QColor, QPainter, QPen, QPixmap
 
 from camera_processing.widgets.button import Button
 
@@ -50,6 +48,8 @@ class ButtonMenu(QGraphicsObject):
         self._center_buttons()
     
     def _center_buttons(self):
+        if len(self.buttons) == 0:
+            return
         buttons = list(self.buttons.values())
         if self.layout_direction == "horizontal":
             menu_width = 2 * self.hor_padding + sum(map(lambda btn: btn.boundingRect().width(), buttons), 0)
@@ -61,11 +61,14 @@ class ButtonMenu(QGraphicsObject):
                 button.setPos(offset, y)
                 offset += button.boundingRect().width() + self.hor_padding
         else:
-            menu_height = 2 * self.ver_padding + sum(map(lambda btn: btn.boundingRect().height(), buttons), 0)
-            self.rect.setWidth(menu_height)
+            menu_height = self.ver_padding * (1 + len(self.buttons)) + sum(map(lambda btn: btn.boundingRect().height(), buttons), 0)
+            menu_width = 2 * self.hor_padding + max(map(lambda btn: btn.boundingRect().width(), self.buttons.values()))
+            self.rect.setHeight(menu_height)
+            self.rect.setWidth(menu_width)
             offset = self.ver_padding
-            x = self.rect.width() / 2 - buttons[0].boundingRect().width() / 2 + self.hor_padding
+            x_base = self.rect.width() / 2
             for i, button in enumerate(buttons):
+                x = x_base - button.boundingRect().width() / 2
                 button.setPos(x, offset)
                 offset += button.boundingRect().height() + self.ver_padding
         self.scene().update(self.boundingRect())
@@ -74,17 +77,40 @@ class ButtonMenu(QGraphicsObject):
         self.layout_direction = direction
         self._center_buttons()
     
-    def add_button(self, btn_id: str, label: str, base_color: str = "gray", is_checkable: bool = False, call_back: Optional[Callable[[], None]] = None):
-        btn = Button(label, self)
+    def add_button(self, btn_id: str, label: str, base_color: str = "gray", is_checkable: bool = False, call_back: Optional[Callable[[], None]] = None, pixmap: QPixmap = None) -> Button:
+        old_btn = self.remove_button(btn_id)
+        if old_btn is not None:
+            old_btn.setParentItem(None)
+            self.scene().removeItem(old_btn)
+            old_btn.deleteLater()
+        btn = Button(btn_id, label, self)
         btn.set_is_check_button(is_checkable)
         btn.set_base_color(base_color)
+        btn.set_pixmap(pixmap)
         if call_back is not None:
             btn.clicked.connect(call_back)
         self.buttons[btn_id] = btn
         self._center_buttons()
+        return btn
     
     def is_button_checked(self, button_id: str) -> bool:
         button = self.buttons[button_id]
         if button is None:
             return False
         return button.is_on()
+
+    def remove_button(self, btn_id: str) -> Button:
+        if btn_id not in self.buttons:
+            return None
+        btn = self.buttons[btn_id]
+        del self.buttons[btn_id]
+        if len(self.buttons) == 0:
+            self.rect.setWidth(0)
+            self.rect.setHeight(0)
+        self._center_buttons()
+        return btn
+
+    def get_button(self, btn_id: str) -> Button:
+        if btn_id in self.buttons:
+            return self.buttons[btn_id]
+        return None

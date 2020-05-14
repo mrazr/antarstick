@@ -73,12 +73,12 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         if len(self._dataset.cameras) > 1:
             self.camera_link_available.emit(True)
 
-    @Slot(int)
-    def handle_camera_removed(self, camera_id: int):
+    @Slot(Camera)
+    def handle_camera_removed(self, camera: Camera):
         camera_widget: CameraViewWidget = None
-        if self._camera_tab_map[camera_id] is not None:
-            camera_widget = self.widget(self._camera_tab_map[camera_id])
-            self.removeTab(self._camera_tab_map[camera_id])
+        if self._camera_tab_map[camera.id] is not None:
+            camera_widget = self.widget(self._camera_tab_map[camera.id])
+            self.removeTab(self._camera_tab_map[camera.id])
             camera_widget.deleteLater()
         if len(self._dataset.cameras) < 2:
             self.camera_link_available.emit(False)
@@ -87,13 +87,13 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
     def handle_tab_close_requested(self, tab_id: int):
         for cam_id, _tab_id in self._camera_tab_map.items():
             if _tab_id == tab_id:
-                camera_links = list(filter(lambda link: link[0] == cam_id or link[1] == cam_id, self._dataset.linked_cameras))
+                #camera_links = list(filter(lambda link: link[0] == cam_id or link[1] == cam_id, self._dataset.linked_cameras))
                 _cam_widget: CameraViewWidget = self.widget(tab_id)
-                for c1, c2 in camera_links:
-                    cam_w1: CameraViewWidget = self.widget(self._camera_tab_map[c1])
-                    cam_w1.remove_linked_camera("right", emit=True)
-                _cam_widget._destroy()
+                #for c1, c2 in camera_links:
+                #    cam_w1: CameraViewWidget = self.widget(self._camera_tab_map[c1])
+                #    cam_w1.remove_linked_camera("right", emit=True)
                 self._dataset.remove_camera(cam_id)
+                _cam_widget._destroy()
         self._camera_tab_map.clear()
 
         for i in range(self.count()):
@@ -162,7 +162,6 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
     def handle_link_broken_between(self, cam1: Camera, cam2: Camera, cam2_pos: str):
         cam1_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam1.id])
         cam2_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam2.id])
-        
 
         cam1_widget.sticks_changed.disconnect(cam2_widget.handle_sticks_changed)
         cam2_widget.sticks_changed.disconnect(cam1_widget.handle_sticks_changed)
@@ -175,6 +174,10 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
     
     @Slot()
     def handle_dataset_loading_finished(self):
+        for i in range(self.count()):
+            cam_widget: CameraViewWidget = self.widget(i)
+            cam_widget.initialize_link_menu()
+
         for (cam1, cam2) in self._dataset.linked_cameras:
             cam1_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam1])
             cam2_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam2])

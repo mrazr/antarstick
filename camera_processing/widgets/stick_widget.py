@@ -1,22 +1,18 @@
 from enum import Enum
-from multiprocessing import Process
-from typing import Any, Callable, List, Optional
+from typing import Optional
 
-import numpy as np
 import PyQt5
-from PyQt5.Qt import QMimeData, QPoint, QPointF, QRectF, QGraphicsDropShadowEffect
-from PyQt5.QtCore import QLine, QLineF, QRect, Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QBrush, QColor, QDrag, QFont, QPainter, QPen
+import numpy as np
+from PyQt5.Qt import (QPointF)
+from PyQt5.QtCore import QLine, QLineF, Qt, pyqtSignal, pyqtSlot
+from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PyQt5.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem,
                              QGraphicsLineItem, QGraphicsObject,
-                             QGraphicsRectItem, QGraphicsSceneDragDropEvent,
-                             QGraphicsSceneHoverEvent,
+                             QGraphicsRectItem, QGraphicsSceneHoverEvent,
                              QGraphicsSceneMouseEvent, QGraphicsTextItem,
                              QStyleOptionGraphicsItem)
 
-from camera import Camera
 from camera_processing.widgets.button import Button
-from dataset import Dataset
 from stick import Stick
 
 
@@ -33,6 +29,7 @@ class StickWidget(QGraphicsObject):
     link_initiated = pyqtSignal('PyQt_PyObject') # Actually StickWidget
     link_accepted = pyqtSignal('PyQt_PyObject')
     hovered = pyqtSignal(['PyQt_PyObject', 'PyQt_PyObject'])
+    stick_changed = pyqtSignal('PyQt_PyObject')
 
     handle_idle_brush = QBrush(QColor(0, 125, 125, 100))
     handle_hover_brush = QBrush(QColor(125, 125, 0, 150))
@@ -56,7 +53,7 @@ class StickWidget(QGraphicsObject):
 
         self.mode = StickMode.DISPLAY
 
-        self.btn_delete = Button("x", self)
+        self.btn_delete = Button("delete", "x", self)
         self.btn_delete.set_base_color("red")
         self.btn_delete.setVisible(False)
         btn_size = max(int(np.linalg.norm(self.stick.top - self.stick.bottom) / 5.0), 15)
@@ -81,7 +78,7 @@ class StickWidget(QGraphicsObject):
         self.hovered_handle: Optional[QGraphicsRectItem] = None
         self.handles = [self.top_handle, self.mid_handle, self.bottom_handle]
 
-        self.link_button = Button("Link to...", self)
+        self.link_button = Button("link", "Link to...", self)
         self.link_button.clicked.connect(lambda: self.link_initiated.emit(self))
         self.link_button.set_height(15)
 
@@ -98,6 +95,7 @@ class StickWidget(QGraphicsObject):
         self.handle_mouse_offset = QPointF(0, 0)
         self.available_for_linking = False
         self.highlight_color: QColor = None
+        self.is_linked = False
 
 
     @pyqtSlot()
@@ -119,7 +117,6 @@ class StickWidget(QGraphicsObject):
         pen.setWidth(1.0)
         painter.setPen(pen)
         painter.drawLine(self.line.p1(), self.line.p2())
-
 
     def boundingRect(self) -> PyQt5.QtCore.QRectF:
         return self.gline.boundingRect().united(self.top_handle.boundingRect()).united(self.mid_handle.boundingRect()).united(self.bottom_handle.boundingRect())
@@ -185,7 +182,6 @@ class StickWidget(QGraphicsObject):
         self.adjust_stick()
         self.scene().update()
 
-        
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent):
         if self.available_for_linking:
             self.hovered.emit(True, self)
@@ -223,6 +219,7 @@ class StickWidget(QGraphicsObject):
         self.stick.top[1] = self.pos().y() + self.line.p1().y()
         self.stick.bottom[0] = self.pos().x() + self.line.p2().x()
         self.stick.bottom[1] = self.pos().y() + self.line.p2().y()
+        self.stick_changed.emit(self)
 
     def adjust_handles(self):
         if self.line.p1().y() > self.line.p2().y():
@@ -249,13 +246,20 @@ class StickWidget(QGraphicsObject):
     
     def set_available_for_linking(self, value: bool):
         self.available_for_linking = value
-        if self.available_for_linking:
-            self.set_highlight_color(QColor(0, 255, 0, 100))
-        else:
-            self.set_highlight_color(None)
+        if not self.is_linked:
+            if self.available_for_linking:
+                self.set_highlight_color(QColor(0, 255, 0, 100))
+            else:
+                self.set_highlight_color(None)
     
     def set_highlight_color(self, color: Optional[QColor]):
         self.highlight_color = color
         self.update()
-    
-    
+
+    def set_is_linked(self, value: bool):
+        self.is_linked = value
+        if not self.is_linked:
+            if self.available_for_linking:
+                self.set_highlight_color(QColor(0, 255, 0, 100))
+            else:
+                self.set_highlight_color(None)

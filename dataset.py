@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import jsonpickle
 from numpy import zeros
@@ -65,8 +65,10 @@ class Dataset(QObject):
     """
 
     camera_added = Signal(Camera)
-    camera_removed = Signal(int)
+    camera_removed = Signal(Camera)
     camera_sticks_detected = Signal(Camera)
+    cameras_linked = Signal([Camera, Camera])
+    cameras_unlinked = Signal([Camera, Camera])
     stick_removed = Signal([Stick])
     sticks_linked = Signal([Stick, Stick])
     sticks_unlinked = Signal([Stick, Stick])
@@ -98,14 +100,21 @@ class Dataset(QObject):
         old_camera_count = len(self.cameras)
         camera: Camera = next(filter(lambda cam: cam.id == camera_id, self.cameras))
 
-        for stick in camera.sticks:
-            if stick.id in self.stick_views_map:
-                self.unlink_stick(stick.id)
-            self.remove_stick(stick)
+        camera_links  = list(filter(lambda link: link[0] == camera.id or link[1] == camera.id, self.linked_cameras))
+
+        for link in camera_links:
+            other_cam_id = link[1] if link[0] == camera.id else link[0]
+            camera2 = next(filter(lambda cam: cam.id == other_cam_id, self.cameras))
+            self.unlink_cameras(camera, camera2)
+
+        #for stick in camera.sticks:
+        #    if stick.id in self.stick_views_map:
+        #        self.unlink_stick(stick.id)
+        #    self.remove_stick(stick)
 
         self.cameras = list(filter(lambda camera: camera.id != camera_id, self.cameras))
         if old_camera_count > len(self.cameras):
-            self.camera_removed.emit(camera_id)
+            self.camera_removed.emit(camera)
 
     def save(self) -> bool:
         if self.path == Path("."):
@@ -142,7 +151,9 @@ class Dataset(QObject):
                     self.camera_added.emit(camera)
             self.loading_finished.emit()
             for k, v in stick_views_map.items():
-                self.link_sticks(int(k), v[2])
+                s1 = self.get_stick_by_id(int(k))
+                s2 = self.get_stick_by_id(v[2])
+                self.link_sticks(s1, s2)
             return True
         except OSError:  # TODO do actual handling
             return False
@@ -161,14 +172,19 @@ class Dataset(QObject):
     
     def link_cameras(self, cam1: Camera, cam2: Camera):
         self.linked_cameras.add((cam1.id, cam2.id))
+        self.cameras_linked.emit(cam1, cam2)
     
     def unlink_cameras(self, cam1: Camera, cam2: Camera):
-        self.linked_cameras.remove((cam1.id, cam2.id))
+        link = (cam1.id, cam2.id)
+        link2 = (cam2.id, cam1.id)
+        self.linked_cameras = set(filter(lambda _link: _link != link and _link != link2, self.linked_cameras))
+        #self.linked_cameras.remove((cam1.id, cam2.id))
         for stick in cam1.sticks:
             if stick.id in self.stick_views_map:
                 link = self.stick_views_map[stick.id]
                 if link[1] == cam2.id:
                     self.unlink_stick(stick)
+        self.cameras_unlinked.emit(cam1, cam2)
     
     def link_sticks(self, stick1: Stick, stick2: Stick):
         camera1: Camera = next(filter(lambda cam: cam.id == stick1.camera_id, self.cameras))
@@ -203,9 +219,20 @@ class Dataset(QObject):
     def remove_stick(self, stick: Stick):
         camera: Camera = next(filter(lambda cam: cam.id == stick.camera_id, self.cameras))
         if stick.id in self.stick_views_map:
-            print("unlinking")
             self.unlink_stick(stick)
         self.stick_removed.emit(stick)
         
         camera.sticks = list(filter(lambda s: s.id != stick.id, camera.sticks))
         self.unused_stick_ids.append(stick.id)
+    
+    def get_stick_by_id(self, id: int) -> Optional[Stick]:
+        for cam in self.cameras:
+            for stick in cam.sticks:
+                if stick.id == id:
+                    return stick
+        return None
+
+    def get_camera(self, id_or_path_str: Union[int, str]) -> Camera:
+        if isinstance(id_or_path_str, str):
+            return next(filter(lambda cam: str(cam.folder) == id_or_path_str, self.cameras))
+        return next(filter(lambda cam: cam.id == id_or_path_str, self.cameras))
