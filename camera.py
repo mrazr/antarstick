@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
+import numpy as np
+import cv2 as cv
 
 from stick import Stick
 
@@ -45,7 +47,9 @@ class Camera:
         else:
             self.measurements = pd.DataFrame()
             self.measurements_path = None
-        self.rep_image = self.folder / Path(listdir(self.folder)[0])
+        self.rep_image_path = self.folder / Path(listdir(self.folder)[0]) #TODO listdir - filter out non image files
+        self.rep_image: np.ndarray = cv.resize(cv.imread(str(self.rep_image_path)), (0, 0), fx=0.25, fy=0.25,
+                                               interpolation=cv.INTER_NEAREST)
 
     def __load_measuremets(self) -> pd.DataFrame:
         try:
@@ -64,6 +68,7 @@ class Camera:
         state = self.__dict__.copy()
         del state['measurements']
         del state['rep_image']
+        del state['rep_image_path']
         return state
 
     def get_folder_name(self) -> str:

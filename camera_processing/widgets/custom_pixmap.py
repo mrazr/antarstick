@@ -108,11 +108,12 @@ class CustomPixmap(QGraphicsPixmapItem):
 
     def initialise_with(self, camera: Camera) -> List[StickWidget]:
         self.camera = camera
-        img = cv.imread(str(camera.rep_image))
-        img = cv.resize(img, (0, 0), fx=0.25, fy=0.25)
+        #img = cv.imread(str(camera.rep_image_path))
+        #img = cv.resize(img, (0, 0), fx=0.25, fy=0.25)
+
 
         self.prepareGeometryChange()
-        self.set_image(img)
+        self.set_image(camera.rep_image)
 
         return self.update_stick_widgets()
 

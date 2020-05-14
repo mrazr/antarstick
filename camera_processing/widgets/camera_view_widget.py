@@ -486,7 +486,8 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.handle_camera_added(cam)
 
     def handle_camera_added(self, camera: Camera):
-        img = cv.resize(cv.imread(str(camera.rep_image)), dsize=(0, 0), fx=0.25, fy=0.25)
+        #img = cv.resize(cv.imread(str(camera.rep_image_path)), dsize=(0, 0), fx=0.25, fy=0.25)
+        img = camera.rep_image
         barray = QByteArray(img.tobytes())
         image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
         pixmap = QPixmap.fromImage(image)
