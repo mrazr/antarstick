@@ -21,6 +21,7 @@ class StickMode(Enum):
     EDIT = 1
     LINK = 2
 
+
 class StickWidget(QGraphicsObject):
 
     font: QFont = QFont("monospace", 16)
@@ -30,6 +31,7 @@ class StickWidget(QGraphicsObject):
     link_accepted = pyqtSignal('PyQt_PyObject')
     hovered = pyqtSignal(['PyQt_PyObject', 'PyQt_PyObject'])
     stick_changed = pyqtSignal('PyQt_PyObject')
+    sibling_changed = pyqtSignal(bool)
 
     handle_idle_brush = QBrush(QColor(0, 125, 125, 100))
     handle_hover_brush = QBrush(QColor(125, 125, 0, 150))
@@ -40,11 +42,10 @@ class StickWidget(QGraphicsObject):
 
     def __init__(self, stick: Stick, parent: Optional[QGraphicsItem] = None):
         QGraphicsObject.__init__(self, parent)
-        self.setPos(QPointF(0.5 * (stick.top[0] + stick.bottom[0]), 0.5 * (stick.top[1] + stick.bottom[1])))
         self.stick = stick
-        vec = 0.5 * (stick.top - stick.bottom)
-        self.line = QLine(vec[0], vec[1], -vec[0], -vec[1])
-        self.gline = QGraphicsLineItem(QLineF(self.line))
+        self.line = QLineF()
+        self.gline = QGraphicsLineItem(self.line)
+
         self.stick_label_text = QGraphicsTextItem(stick.label, self)
         self.stick_label_text.setFont(StickWidget.font)
         self.stick_label_text.setPos(-QPointF(0, self.stick_label_text.boundingRect().height()))
@@ -82,7 +83,8 @@ class StickWidget(QGraphicsObject):
         self.link_button.clicked.connect(lambda: self.link_initiated.emit(self))
         self.link_button.set_height(15)
 
-        self.adjust_handles()
+        self.adjust_line()
+
         self.setAcceptHoverEvents(True)
         self.top_handle.setZValue(4)
         self.bottom_handle.setZValue(4)
@@ -97,12 +99,17 @@ class StickWidget(QGraphicsObject):
         self.highlight_color: QColor = None
         self.is_linked = False
 
+        self.is_master = True
 
     @pyqtSlot()
     def handle_btn_delete_clicked(self):
-        self.btn_delete.deleteLater()
         self.delete_clicked.emit(self.stick)
-    
+
+    def prepare_for_deleting(self):
+        self.btn_delete.setParentItem(None)
+        self.scene().removeItem(self.btn_delete)
+        self.btn_delete.deleteLater()
+
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem,
               widget: Optional[PyQt5.QtWidgets.QWidget] = ...):
             
@@ -145,6 +152,7 @@ class StickWidget(QGraphicsObject):
             self.set_mode(StickMode.DISPLAY)
             self.link_button.setVisible(True)
         self.mode = mode
+        self.update()
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent):
         if self.mode != StickMode.EDIT:
@@ -167,6 +175,7 @@ class StickWidget(QGraphicsObject):
         if self.hovered_handle is not None:
             self.hovered_handle.setBrush(self.handle_hover_brush)
             self.hovered_handle.setPen(self.handle_idle_pen)
+            self.stick_changed.emit(self)
     
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent):
         if self.hovered_handle is None:
@@ -219,7 +228,6 @@ class StickWidget(QGraphicsObject):
         self.stick.top[1] = self.pos().y() + self.line.p1().y()
         self.stick.bottom[0] = self.pos().x() + self.line.p2().x()
         self.stick.bottom[1] = self.pos().y() + self.line.p2().y()
-        self.stick_changed.emit(self)
 
     def adjust_handles(self):
         if self.line.p1().y() > self.line.p2().y():
@@ -263,3 +271,12 @@ class StickWidget(QGraphicsObject):
                 self.set_highlight_color(QColor(0, 255, 0, 100))
             else:
                 self.set_highlight_color(None)
+
+    def adjust_line(self):
+        self.setPos(QPointF(0.5 * (self.stick.top[0] + self.stick.bottom[0]), 0.5 * (self.stick.top[1] + self.stick.bottom[1])))
+        vec = 0.5 * (self.stick.top - self.stick.bottom)
+        self.line.setP1(QPointF(vec[0], vec[1]))
+        self.line.setP2(-self.line.p1())
+        self.gline.setLine(self.line)
+        self.adjust_handles()
+        self.update()

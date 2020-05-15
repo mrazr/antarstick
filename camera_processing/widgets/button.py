@@ -8,21 +8,21 @@ from PyQt5.QtCore import (QEasingCurve, QPointF, QPropertyAnimation, QRectF,
 from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPixmap
 
 IDLE_COLORS = {
-    "gray" : QColor(50, 50, 50, 100),
-    "red" : QColor(255, 0, 0, 200),
-    "green" : QColor(0, 255, 0, 200),
+    "gray": QColor(50, 50, 50, 100),
+    "red": QColor(255, 0, 0, 200),
+    "green": QColor(0, 255, 0, 200),
 }
 
 HOVER_COLORS = {
-    "gray" : QColor(255, 125, 0, 150),
-    "red" : IDLE_COLORS["red"].lighter(120),
-    "green" : IDLE_COLORS["green"].lighter(120),
+    "gray": QColor(255, 125, 0, 150),
+    "red": IDLE_COLORS["red"].lighter(120),
+    "green": IDLE_COLORS["green"].lighter(120),
 }
 
 PRESS_COLORS = {
-    "gray" : HOVER_COLORS["gray"].darker(120),
-    "red" : IDLE_COLORS["red"].darker(120),
-    "green" : IDLE_COLORS["green"].darker(120),
+    "gray": HOVER_COLORS["gray"].darker(120),
+    "red": IDLE_COLORS["red"].darker(120),
+    "green": IDLE_COLORS["green"].darker(120),
 }
 
 
@@ -30,7 +30,7 @@ class CheckbuttonLogic:
 
     def __init__(self):
         self.down = False
-    
+
     def idle_color(self) -> QColor:
         if self.down:
             return IDLE_COLORS["green"]
@@ -38,52 +38,52 @@ class CheckbuttonLogic:
 
     def hover_left_color(self) -> QColor:
         return self.idle_color()
-    
+
     def hover_enter_color(self) -> QColor:
         if self.down:
             return HOVER_COLORS["green"]
         return HOVER_COLORS["gray"]
-    
+
     def press_color(self) -> QColor:
         if self.down:
             return PRESS_COLORS["green"]
         return PRESS_COLORS["gray"]
-    
+
     def release_color(self) -> QColor:
         if self.down:
             return HOVER_COLORS["green"]
         return HOVER_COLORS["gray"]
-    
+
     def is_down(self) -> bool:
         return self.down
-    
+
     def do_click(self):
         self.down = not self.down
-    
+
 
 class PushbuttonLogic:
 
     def __init__(self, color: str):
         self.color = color.lower()
-    
+
     def idle_color(self) -> QColor:
         return IDLE_COLORS[self.color]
 
     def hover_left_color(self) -> QColor:
         return self.idle_color()
-    
+
     def hover_enter_color(self) -> QColor:
         return HOVER_COLORS[self.color]
-    
+
     def press_color(self) -> QColor:
         return PRESS_COLORS[self.color]
-    
+
     def release_color(self) -> QColor:
         return HOVER_COLORS[self.color]
-    
+
     def is_down(self) -> bool:
         return False
-    
+
     def do_click(self):
         pass
 
@@ -130,12 +130,12 @@ class Button(QGraphicsObject):
         self.label.setFont(font)
         self.rect.setWidth(self.label.boundingRect().width() + 2 * self.hor_margin)
         self._reposition_text()
-    
+
     def set_width(self, w: int):
         self.rect.setWidth(w)
         self.hor_margin = self.ver_margin
         self._reposition_text()
-    
+
     def scale_button(self, factor: float):
         self.rect.setHeight(int(factor * self.rect.height()))
         self.rect.setWidth(int(factor * self.rect.width()))
@@ -147,14 +147,14 @@ class Button(QGraphicsObject):
 
     def boundingRect(self):
         return self.rect
-    
+
     def paint(self, painter: QPainter, options, widget=None):
         painter.setBrush(QBrush(self.fill_color_current))
         painter.setPen(QPen(QColor(0, 0, 0, 0)))
         if self.pixmap is not None:
             painter.drawPixmap(self.hor_margin, self.ver_margin, self.pixmap)
         painter.drawRoundedRect(self.rect, 5, 5)
-    
+
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent):
         self.fill_color_current = self.logic.press_color()
         self.scene().update()
@@ -165,7 +165,7 @@ class Button(QGraphicsObject):
         if self.scene() is not None:
             self.scene().update(self.sceneBoundingRect())
         self.clicked.emit({"btn_id": self.btn_id, "btn_label": self.label})
-    
+
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent):
         self.hovered = True
         self.color_animation.setDuration(200)
@@ -176,7 +176,7 @@ class Button(QGraphicsObject):
             self.killTimer(self.current_timer)
         self.color_animation.start()
         self.current_timer = self.startTimer(self.color_animation.duration() // 80)
-    
+
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent):
         self.hovered = False
         self.color_animation.setDuration(200)
@@ -187,24 +187,24 @@ class Button(QGraphicsObject):
             self.killTimer(self.current_timer)
         self.color_animation.start()
         self.current_timer = self.startTimer(self.color_animation.duration() // 80)
-    
+
     def hoverMoveEvent(self, event: QGraphicsSceneHoverEvent):
         pass
 
     @pyqtProperty(QColor)
     def current_fill_color(self):
         return self.fill_color_current
-    
+
     @current_fill_color.setter
     def current_fill_color(self, color: QColor):
         self.fill_color_current = color
-    
+
     def timerEvent(self, ev: QTimerEvent):
         self.scene().update()
         if self.color_animation.state() == QPropertyAnimation.Stopped:
             self.killTimer(ev.timerId())
             self.current_timer = 0
-    
+
     def set_base_color(self, color: str):
         if isinstance(self.logic, CheckbuttonLogic):
             return
@@ -212,10 +212,10 @@ class Button(QGraphicsObject):
             return
         self.logic.color = color.lower()
         self.fill_color_current = self.logic.idle_color()
-    
+
     def is_on(self):
         return self.logic.is_down()
-    
+
     def set_is_check_button(self, value: bool):
         if value:
             self.logic = CheckbuttonLogic()

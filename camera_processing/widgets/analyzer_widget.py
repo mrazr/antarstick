@@ -28,6 +28,7 @@ class AnalyzerWidget(QtWidgets.QTabWidget):
     camera_tab_map : Dict[int, int]
         mapping between Camera.id and QTab id
     """
+
     def __init__(self, dataset: Dataset):
         QtWidgets.QTabWidget.__init__(self)
         self.setTabsClosable(True)
@@ -54,7 +55,7 @@ class AnalyzerWidget(QtWidgets.QTabWidget):
         camera_widget.initialise_with(camera)
         self.camera_link_available.connect(camera_widget.gpixmap.set_link_cameras_enabled)
         camera_widget.ui.detectionSensitivitySlider.valueChanged.emit(0)
-        #camera_widget.show_image(img)
+        # camera_widget.show_image(img)
         if len(self.dataset.cameras) > 1:
             self.camera_link_available.emit(True)
 
@@ -77,7 +78,7 @@ class AnalyzerWidget(QtWidgets.QTabWidget):
         camera_widget_id = self.camera_tab_map[camera.id]
         camera_widget: CameraViewWidget = self.widget(camera_widget_id)
         camera_widget.stick_widgets.clear()
-        #for stick in camera.sticks:
+        # for stick in camera.sticks:
         #    stick_widget = StickWidget(stick)
         #    camera_widget.stick_widgets.append(stick_widget)
 

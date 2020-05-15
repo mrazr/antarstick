@@ -221,7 +221,7 @@ def draw_lines_on_img(img, lines):
 
 
 def bbox_contains(bbox: Tuple[int, int, int, int], point: Tuple[int, int]) -> bool:
-    return point[0] >= bbox[1] and point[0] < bbox[3] and point[1] >= bbox[0] and point[1] < bbox[2]
+    return bbox[1] <= point[0] < bbox[3] and bbox[0] <= point[1] < bbox[2]
 
 
 def show_imgs_(images: List[np.ndarray], names: List[str]) -> int:

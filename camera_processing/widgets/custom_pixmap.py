@@ -1,26 +1,29 @@
 from typing import Callable, List, Optional
 
-import cv2 as cv
 import PyQt5
-from numpy import ndarray
-from PyQt5.QtCore import QByteArray, QLine, QMarginsF, QPoint
+from PyQt5.QtCore import QByteArray, QLine, QMarginsF, QPoint, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsPixmapItem,
                              QGraphicsRectItem, QGraphicsSceneHoverEvent,
                              QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem,
-                             QWidget)
+                             QWidget, QGraphicsObject)
+from numpy import ndarray
 
 from camera import Camera
 from camera_processing.widgets.link_camera_button import LinkCameraButton
-from camera_processing.widgets.stick_widget import StickWidget
+from camera_processing.widgets.stick_widget import StickWidget, StickMode
+from dataset import Dataset
+from stick import Stick
 
 
-class CustomPixmap(QGraphicsPixmapItem):
+class CustomPixmap(QGraphicsObject):
 
     font: QFont = QFont("monospace", 16)
+    stick_link_requested = pyqtSignal(StickWidget)
 
-    def __init__(self, parent: Optional[QGraphicsItem] = None):
-        QGraphicsPixmapItem.__init__(self, parent)
+    def __init__(self, dataset: Dataset, parent: Optional[QGraphicsItem] = None):
+        QGraphicsObject.__init__(self, parent)
+        self.gpixmap = QGraphicsPixmapItem(self)
         self.stick_widgets: List[StickWidget] = []
         self.reference_line = QLine()
         self.link_cam_text = QGraphicsSimpleTextItem("Link camera...", self)
@@ -48,7 +51,7 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.setAcceptHoverEvents(True)
         self.stick_edit_mode = False
 
-        self.original_pixmap = self.pixmap()
+        self.original_pixmap = self.gpixmap.pixmap()
 
         self.hovered = False
 
@@ -56,20 +59,18 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.click_handler = None
         self.double_click_handler: Callable[[int, int], None] = None
 
+        self.dataset = dataset
+
+        self.stick_widget_mode = StickMode.DISPLAY
+
     def paint(self, painter: QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
-        QGraphicsPixmapItem.paint(self, painter, option, widget)
-        if self.pixmap().isNull():
+        if self.gpixmap.pixmap().isNull():
             return
         painter.setRenderHint(QPainter.Antialiasing, True)
-        QGraphicsPixmapItem.paint(self, painter, option, widget)
 
         if self.show_stick_widgets:
             brush = QBrush(QColor(255, 255, 255, 100))
             painter.fillRect(self.boundingRect(), brush)
-
-            #for sw in self.stick_widgets:
-            #    painter.drawPixmap(sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)),
-            #                       self.pixmap(), sw.gline.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)))
 
         if self.mode and self.hovered:
             pen = QPen(QColor(0, 125, 200, 255))
@@ -80,9 +81,9 @@ class CustomPixmap(QGraphicsPixmapItem):
         painter.drawLine(self.reference_line)
 
     def set_reference_line_percentage(self, percentage: float):
-        if self.pixmap().isNull():
+        if self.gpixmap.pixmap().isNull():
             return
-        pixmap = self.pixmap()
+        pixmap = self.gpixmap.pixmap()
         self.reference_line.setP1(QPoint(int(pixmap.width() * 0.5), int(pixmap.height() - 1.0)))
         self.reference_line.setP2(QPoint(int(pixmap.width() * 0.5), int(pixmap.height() * (1 - percentage))))
         self.scene().update()
@@ -91,8 +92,8 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.show_add_buttons = value
         if self.show_add_buttons:
             offset = 0.5 * self.right_add_button.radius
-            self.right_add_button.setPos(self.pixmap().width() - offset, self.pixmap().height() * 0.5 - offset)
-            self.left_add_button.setPos(-offset, self.pixmap().height() * 0.5 - offset)
+            self.right_add_button.setPos(self.gpixmap.pixmap().width() - offset, self.gpixmap.pixmap().height() * 0.5 - offset)
+            self.left_add_button.setPos(-offset, self.gpixmap.pixmap().height() * 0.5 - offset)
             self.right_add_button.setVisible(True)
             self.left_add_button.setVisible(True)
         else:
@@ -101,19 +102,17 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.scene().update()
 
     def boundingRect(self) -> PyQt5.QtCore.QRectF:
-        #return QGraphicsPixmapItem.boundingRect(self).united(self.title_rect.boundingRect().translated(
-        #    QPoint(0, - 0 * self.title.boundingRect().height())
-        #))
-        return QGraphicsPixmapItem.boundingRect(self)
+        return self.gpixmap.boundingRect()
 
     def initialise_with(self, camera: Camera) -> List[StickWidget]:
         self.camera = camera
-        #img = cv.imread(str(camera.rep_image_path))
-        #img = cv.resize(img, (0, 0), fx=0.25, fy=0.25)
-
-
         self.prepareGeometryChange()
         self.set_image(camera.rep_image)
+        self.camera.stick_added.connect(self.handle_stick_created)
+        self.camera.sticks_added.connect(self.handle_sticks_added)
+        self.camera.stick_removed.connect(self.handle_stick_removed)
+        self.camera.sticks_removed.connect(self.handle_sticks_removed)
+        self.camera.stick_changed.connect(self.handle_stick_changed)
 
         return self.update_stick_widgets()
 
@@ -121,9 +120,9 @@ class CustomPixmap(QGraphicsPixmapItem):
         barray = QByteArray(img.tobytes())
         image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
         self.original_pixmap = QPixmap.fromImage(image)
-        self.setPixmap(self.original_pixmap)
+        self.gpixmap.setPixmap(self.original_pixmap)
 
-        self.title_rect.setRect(0, 0, self.pixmap().width(), self.title.boundingRect().height())
+        self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
         self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
         self.title_rect.setVisible(True)
 
@@ -136,29 +135,23 @@ class CustomPixmap(QGraphicsPixmapItem):
         self.title_rect.setVisible(value)
         self.title.setVisible(value)
 
-    def update_stick_widgets(self) -> List[StickWidget]:
-        self._remove_stick_widgets()
-
+    def update_stick_widgets(self):
         for stick in self.camera.sticks:
             sw = StickWidget(stick, self)
-            sw.set_edit_mode(self.stick_edit_mode)
+            sw.set_mode(self.stick_widget_mode)
+            self.connect_stick_widget_signals(sw)
             self.stick_widgets.append(sw)
-        
-        if len(self.stick_widgets) > 0:
-            self.show_stick_widgets = True
-            _f = self.stick_widgets[0]
 
         self.scene().update()
-        return self.stick_widgets
 
     def scale_item(self, factor: float):
         self.prepareGeometryChange()
         pixmap = self.original_pixmap.scaledToHeight(int(self.original_pixmap.height() * factor))
-        self.setPixmap(pixmap)
+        self.gpixmap.setPixmap(pixmap)
         self.__update_title()
 
     def __update_title(self):
-        self.title_rect.setRect(0, 0, self.pixmap().width(), self.title.boundingRect().height())
+        self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
         self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2, 0)
 
@@ -183,8 +176,12 @@ class CustomPixmap(QGraphicsPixmapItem):
             self.click_handler(self.camera)
 
     def mouseDoubleClickEvent(self, event: QGraphicsSceneMouseEvent):
-        if self.stick_edit_mode:
-            self.double_click_handler(event.pos().toPoint().x(), event.pos().toPoint().y())
+        if self.stick_widget_mode == StickMode.EDIT:
+            x = event.pos().toPoint().x()
+            y = event.pos().toPoint().y()
+            stick = self.dataset.create_new_stick(self.camera)
+            stick.set_endpoints(x, y - 50, x, y + 50)
+            self.camera.add_stick(stick)
 
     def set_button_mode(self, click_handler: Callable[[Camera], None], data: str):
         self.mode = 1 # TODO make a proper ENUM
@@ -215,3 +212,77 @@ class CustomPixmap(QGraphicsPixmapItem):
     
     def set_stick_edit_mode(self, value: bool):
         self.stick_edit_mode = value
+
+    def handle_stick_created(self, stick: Stick):
+        if stick.camera_id != self.camera.id:
+            return
+        sw = StickWidget(stick, self)
+        sw.set_mode(self.stick_widget_mode)
+        self.stick_widgets.append(sw)
+        self.update()
+
+    def handle_stick_removed(self, stick: Stick):
+        if stick.camera_id != self.camera.id:
+            return
+        stick_widget = next(filter(lambda sw: sw.stick.id == stick.id, self.stick_widgets))
+        self.disconnect_stick_widget_signals(stick_widget)
+        self.stick_widgets.remove(stick_widget)
+        stick_widget.setParentItem(None)
+        self.scene().removeItem(stick_widget)
+        stick_widget.deleteLater()
+        self.update()
+
+    def handle_sticks_removed(self, sticks: List[Stick]):
+        if sticks[0].camera_id != self.camera.id:
+            return
+        for stick in sticks:
+            to_remove: StickWidget = None
+            for sw in self.stick_widgets:
+                if sw.stick.id == stick.id:
+                    to_remove = sw
+                    break
+            self.stick_widgets.remove(to_remove)
+            to_remove.setParentItem(None)
+            self.scene().removeItem(to_remove)
+            to_remove.deleteLater()
+        self.update()
+
+    def handle_sticks_added(self, sticks: List[Stick]):
+        if sticks[0].camera_id != self.camera.id:
+            return
+        for stick in sticks:
+            sw = StickWidget(stick, self)
+            sw.set_mode(self.stick_widget_mode)
+            self.connect_stick_widget_signals(sw)
+            self.stick_widgets.append(sw)
+        self.update()
+
+    def connect_stick_widget_signals(self, stick_widget: StickWidget):
+        stick_widget.delete_clicked.connect(self.handle_stick_widget_delete_clicked)
+        stick_widget.stick_changed.connect(self.handle_stick_widget_changed)
+        stick_widget.link_initiated.connect(self.handle_stick_link_initiated)
+
+    def disconnect_stick_widget_signals(self, stick_widget: StickWidget):
+        stick_widget.delete_clicked.disconnect(self.handle_stick_widget_delete_clicked)
+        stick_widget.stick_changed.disconnect(self.handle_stick_widget_changed)
+        stick_widget.link_initiated.disconnect(self.handle_stick_link_initiated)
+
+    def handle_stick_widget_delete_clicked(self, stick: Stick):
+        self.camera.remove_stick(stick)
+
+    def set_stick_widgets_mode(self, mode: StickMode):
+        self.stick_widget_mode = mode
+        for sw in self.stick_widgets:
+            sw.set_mode(mode)
+
+    def handle_stick_widget_changed(self, stick_widget: StickWidget):
+        self.camera.stick_changed.emit(stick_widget.stick)
+
+    def handle_stick_changed(self, stick: Stick):
+        if stick.camera_id != self.camera.id:
+            return
+        sw = next(filter(lambda _sw: _sw.stick.id == stick.id, self.stick_widgets))
+        sw.adjust_line()
+
+    def handle_stick_link_initiated(self, stick_widget: StickWidget):
+        self.stick_link_requested.emit(stick_widget)

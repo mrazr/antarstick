@@ -5,11 +5,12 @@ from typing import Dict, List, Optional
 import pandas as pd
 import numpy as np
 import cv2 as cv
+from PyQt5.QtCore import QObject, pyqtSignal
 
 from stick import Stick
 
 
-class Camera:
+class Camera(QObject):
     """Class for representing a particular photo folder
     comprised of photos from one camera.
 
@@ -37,7 +38,15 @@ class Camera:
     get_folder_name() -> str
         Returns the name of this Camera's photos folder.
     """
+
+    stick_added = pyqtSignal(Stick)
+    stick_removed = pyqtSignal(Stick)
+    sticks_added = pyqtSignal('PyQt_PyObject')
+    sticks_removed = pyqtSignal('PyQt_PyObject')
+    stick_changed = pyqtSignal(Stick)
+
     def __init__(self, folder: Path, _id: int, measurements_path: Optional[Path] = None):
+        super(Camera, self).__init__()
         self.folder = Path(folder)
         self.sticks: List[Stick] = []
         self.id = _id
@@ -87,3 +96,31 @@ class Camera:
         camera.sticks = sticks
 
         return camera
+
+    def add_stick(self, stick: Stick):
+        stick.camera_id = self.id
+        self.sticks.append(stick)
+        self.stick_added.emit(stick)
+
+    def remove_stick(self, stick: Stick):
+        if stick.camera_id != self.id:
+            return
+        self.sticks = list(filter(lambda s: s.id != stick.id, self.sticks))
+        self.stick_removed.emit(stick)
+
+    def add_sticks(self, sticks: List[Stick]):
+        for stick in sticks:
+            stick.camera_id = self.id
+            self.sticks.append(stick)
+        self.sticks_added.emit(sticks)
+
+    def remove_sticks(self, sticks: Optional[List[Stick]] = None):
+        if len(self.sticks) == 0:
+            return
+        if sticks is None:
+            sticks = self.sticks.copy()
+            self.sticks.clear()
+        else:
+            for stick in sticks:
+                self.sticks.remove(stick)
+        self.sticks_removed.emit(sticks)

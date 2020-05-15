@@ -102,40 +102,6 @@ class StickLinkManager(QGraphicsObject):
 
     def paint(self, painter: QPainter, options: QStyleOptionGraphicsItem, widget=None):
         pass
-        #if self.source is not None:
-        #    if self.anchored:
-        #        pen = QPen(QColor(0, 255, 20, 255))
-        #    else:
-        #        pen = QPen(QColor(180, 200, 0, 255))
-        #    pen.setWidth(2)
-        #    painter.setPen(pen)
-        #    painter.drawLine(self.source.mapToScene(self.source.mid_handle.rect().center()), self.target_point)
-        
-        #if len(self.links) > 0:
-        #    hue_step = int(360 / len(self.links))
-        #    hue = 0
-
-        #    for sw in self.primary_camera.stick_widgets:
-        #        if sw.stick.id not in self.dataset.stick_views_map:
-        #            continue
-        #        link = self.dataset.stick_views_map[sw.stick.id]
-        #        for cam in self.secondary_cameras:
-        #            if link[1] != cam.camera.id:
-        #                continue
-        #            pen = QPen(QColor(0, 0, 0, 200))
-        #            pen.setWidth(4)
-        #            painter.setPen(pen)
-        #            sw2 = next(filter(lambda _sw: _sw.stick.id == link[2], cam.stick_widgets))
-        #            p1 = sw.mapToScene(sw.mid_handle.rect().center())
-        #            p2 = sw2.mapToScene(sw2.mid_handle.rect().center())
-        #            color = QColor.fromHsv(hue, 100, 255, 255)
-        #            sw.set_highlight_color(color)
-        #            sw2.set_highlight_color(color)
-        #            pen.setColor(color)
-        #            hue += hue_step
-        #            pen.setWidth(2)
-        #            painter.setPen(pen)
-        #            painter.drawLine(p1, p2)
 
     def handle_stick_widget_link_requested(self, stick: StickWidget):
         self.cancel()
@@ -146,23 +112,12 @@ class StickLinkManager(QGraphicsObject):
         if self.current_link_item is not None:
             self.current_link_item.set_temporary_target(point)
             self.update()
-        #if self.source is not None:
-        #    self.target_point = point
-        #    self.update()
-    
+
     def accept(self):
         if self.current_link_item is not None:
             if self.current_link_item.stick2 is not None:
                 self.dataset.link_sticks(self.current_link_item.stick1.stick, self.current_link_item.stick2.stick)
                 self.cancel()
-        #if self.source is not None and self.target is not None:
-        #    self.dataset.link_sticks(self.source.stick, self.target.stick)
-        #    self.links = self.dataset.get_cameras_stick_links(self.camera)
-        #    link = StickLink(self.source, self.target, self)
-        #    link.setZValue(10)
-        #    self.links.append(link)
-        #    link.set_color(QColor(0, 255, 0, 255))
-        #    self.cancel()
 
     def cancel(self):
         if self.current_link_item is not None:
@@ -170,9 +125,6 @@ class StickLinkManager(QGraphicsObject):
             self.current_link_item.setEnabled(False)
             self.current_link_item.deleteLater()
             self.current_link_item = None
-        #for cam in self.secondary_cameras:
-        #    for sw in cam.stick_widgets:
-        #        sw.set_available_for_linking(False)
         self.anchored = False
         self.update()
     
@@ -189,11 +141,8 @@ class StickLinkManager(QGraphicsObject):
             return
         self.anchored = entered
         if self.anchored:
-            #self.target = stick_widget
-            #self.target_point = self.target.mapToScene(self.target.mid_handle.rect().center())
             self.current_link_item.set_target_stick(stick_widget)
         else:
-            #self.target = None
             self.current_link_item.set_temporary_target(stick_widget.mapToScene(stick_widget.mid_handle.rect().center()))
         self.update()
     
@@ -248,10 +197,7 @@ class StickLinkManager(QGraphicsObject):
         link.deleteLater()
         self.color_stick_links()
         self.update()
-        #if stick1.camera_id != self.camera.id and stick2.camera_id != self.camera.id:
-        #    return
-        #self.update_links()
-    
+
     def start(self):
         self.setVisible(True)
 

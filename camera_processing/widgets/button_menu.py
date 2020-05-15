@@ -21,7 +21,6 @@ class ButtonMenu(QGraphicsObject):
         self.fill_brush = QBrush(QColor(100, 100, 100, 200))
         self.outline_pen = QPen(QColor(255, 150, 0, 200))
         self.outline_pen.setWidth(2)
-        self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
         self.setAcceptHoverEvents(True)
     

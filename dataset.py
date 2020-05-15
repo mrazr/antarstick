@@ -70,6 +70,9 @@ class Dataset(QObject):
     cameras_linked = Signal([Camera, Camera])
     cameras_unlinked = Signal([Camera, Camera])
     stick_removed = Signal([Stick])
+    stick_created = Signal([Stick])
+    all_sticks_removed = Signal([Camera])
+    new_sticks_created = Signal('PyQt_PyObject')
     sticks_linked = Signal([Stick, Stick])
     sticks_unlinked = Signal([Stick, Stick])
     loading_finished = Signal()
@@ -94,6 +97,8 @@ class Dataset(QObject):
             camera.measurements_path = self.path.parent / f"camera{camera.id}.csv"
         self.cameras.append(camera)
         self.next_camera_id += 1
+        camera.stick_removed.connect(self.handle_stick_removed)
+        camera.sticks_removed.connect(self.handle_sticks_removed)
         self.camera_added.emit(camera)
 
     def remove_camera(self, camera_id: int):
@@ -107,11 +112,8 @@ class Dataset(QObject):
             camera2 = next(filter(lambda cam: cam.id == other_cam_id, self.cameras))
             self.unlink_cameras(camera, camera2)
 
-        #for stick in camera.sticks:
-        #    if stick.id in self.stick_views_map:
-        #        self.unlink_stick(stick.id)
-        #    self.remove_stick(stick)
-
+        camera.remove_sticks()
+        self.disconnect_camera_signals(camera)
         self.cameras = list(filter(lambda camera: camera.id != camera_id, self.cameras))
         if old_camera_count > len(self.cameras):
             self.camera_removed.emit(camera)
@@ -144,12 +146,19 @@ class Dataset(QObject):
                 stick_views_map = decoded['stick_views_map']
                 self.stick_views_map = dict({})
                 self.next_camera_id = decoded['next_camera_id']
-                self.linked_cameras = decoded['linked_cameras']
+                linked_cameras = decoded['linked_cameras']
                 self.unused_stick_ids = list(map(int, decoded['unused_stick_ids']))
                 self.cameras = [Camera.build_from_state(camera_state) for camera_state in decoded['cameras']]
                 for camera in self.cameras:
+                    self.connect_camera_signals(camera)
                     self.camera_added.emit(camera)
+
             self.loading_finished.emit()
+            for left_cam_id, right_cam_id in linked_cameras:
+                left_cam = self.get_camera(left_cam_id)
+                right_cam = self.get_camera(right_cam_id)
+                self.link_cameras(left_cam, right_cam)
+
             for k, v in stick_views_map.items():
                 s1 = self.get_stick_by_id(int(k))
                 s2 = self.get_stick_by_id(v[2])
@@ -178,7 +187,6 @@ class Dataset(QObject):
         link = (cam1.id, cam2.id)
         link2 = (cam2.id, cam1.id)
         self.linked_cameras = set(filter(lambda _link: _link != link and _link != link2, self.linked_cameras))
-        #self.linked_cameras.remove((cam1.id, cam2.id))
         for stick in cam1.sticks:
             if stick.id in self.stick_views_map:
                 link = self.stick_views_map[stick.id]
@@ -201,19 +209,19 @@ class Dataset(QObject):
         self.sticks_linked.emit(stick1, stick2)
     
     def unlink_stick(self, stick: Stick):
-        link = self.stick_views_map[stick.id]
+        link = self.stick_views_map.get(stick.id)
+        if link is None:
+            return
         stick2_id = link[2]
         camera2: Camera = next(filter(lambda cam: cam.id == link[1], self.cameras))
         stick2 = next(filter(lambda s: s.id == stick2_id, camera2.sticks))
 
         del self.stick_views_map[stick.id]
         del self.stick_views_map[stick2_id]
-
         self.sticks_unlinked.emit(stick, stick2)
     
     def get_cameras_stick_links(self, camera: Camera) -> List[Tuple[int, int, int]]:
         camera_links = filter(lambda k_v: k_v[1][0] == camera.id, self.stick_views_map.items())
-        #print(list(camera_links))
         return list(map(lambda t: (t[0], t[1][1], t[1][2]), camera_links))
     
     def remove_stick(self, stick: Stick):
@@ -236,3 +244,19 @@ class Dataset(QObject):
         if isinstance(id_or_path_str, str):
             return next(filter(lambda cam: str(cam.folder) == id_or_path_str, self.cameras))
         return next(filter(lambda cam: cam.id == id_or_path_str, self.cameras))
+
+    def handle_stick_removed(self, stick: Stick):
+        self.unlink_stick(stick)
+        self.unused_stick_ids.append(stick.id)
+
+    def handle_sticks_removed(self, sticks: List[Stick]):
+        for stick in sticks:
+            self.handle_stick_removed(stick)
+
+    def connect_camera_signals(self, camera: Camera):
+        camera.stick_removed.connect(self.handle_stick_removed)
+        camera.sticks_removed.connect(self.handle_sticks_removed)
+
+    def disconnect_camera_signals(self, camera: Camera):
+        camera.stick_removed.disconnect(self.handle_stick_removed)
+        camera.sticks_removed.disconnect(self.handle_sticks_removed)
