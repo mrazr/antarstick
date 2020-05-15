@@ -1,4 +1,3 @@
-import os
 from typing import List, Dict
 
 import cv2 as cv
@@ -9,10 +8,8 @@ from PyQt5.QtCore import (QMarginsF, QModelIndex, QPointF, QRectF, Qt,
 from PyQt5.QtCore import pyqtSlot as Slot
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import QGraphicsScene
-from numpy import ndarray
 
 from camera import Camera
-from camera_processing import antarstick_processing as antar
 from camera_processing.antarstick_processing import (
     get_lines_from_preprocessed, get_non_snow_images,
     preprocess_phase)
@@ -31,8 +28,6 @@ from stick import Stick
 class CameraViewWidget(QtWidgets.QWidget):
 
     sticks_changed = pyqtSignal()
-    #link_initiated_between = pyqtSignal([Camera, Camera, str])
-    #link_broken_between = pyqtSignal([Camera, Camera, str])
 
     def __init__(self, dataset: Dataset):
         QtWidgets.QWidget.__init__(self)
@@ -97,22 +92,6 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.link_menu.setVisible(False)
         self.link_menu.set_layout_direction("vertical")
 
-    #@Slot()
-    #def handle_find_non_snow_clicked(self):
-    #    for entry in os.scandir(self.camera.folder):
-    #        if entry.is_dir():
-    #            continue
-    #        img = cv.resize(cv.imread(entry.path), (0, 0), fx=0.5, fy=0.5)
-    #        hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
-    #        if antar.is_non_snow(hsv):
-    #            self.pixmap.load(str(entry.path))
-    #            self.gpixmap.set_image(img)
-    #            self.cam_view.fitInView(self.gpixmap.boundingRect().toRect(), Qt.KeepAspectRatio)
-    #            break
-
-    #def show_image(self, img: ndarray):
-    #    raise NotImplementedError
-
     def initialise_with(self, camera: Camera):
         self.camera = camera
         self.stick_link_manager.camera = self.camera
@@ -142,34 +121,6 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.initialize_link_menu()
 
-    #def handle_link_camera_button_clicked_(self, btn_position: str, button_role: str):
-    #    if button_role.lower() == "unlink":
-    #        #self.remove_linked_camera(btn_position, emit=True)
-    #        self.dataset.unlink_cameras(self.camera, self.left_link.camera if btn_position == "left" else self.right_link.camera)
-    #        return
-
-    #    other_cameras = list(filter(lambda c: c.folder != self.camera.folder, self.dataset.cameras))
-
-    #    self.link_menus[btn_position] = LinkCameraMenu(btn_position)
-
-    #    link_menu = self.link_menus[btn_position]
-
-    #    self.graphics_scene.addItem(link_menu)
-    #    link_menu.setZValue(900)
-    #    link_menu.initialise_with(other_cameras, self.handle_link_camera_clicked)
-
-    #    pos = self.gpixmap.left_add_button.sceneBoundingRect().center()
-
-    #    link_menu.position = btn_position
-    #    if btn_position == "right":
-    #        pos = self.gpixmap.right_add_button.sceneBoundingRect().center()
-    #        pos = pos - QPointF(link_menu.boundingRect().width(), link_menu.boundingRect().height() * 0.5)
-    #    else:
-    #        pos = pos - QPointF(0.0 * link_menu.sceneBoundingRect().width() * 0.5,
-    #                            link_menu.sceneBoundingRect().height() * 0.5)
-    #    self.gpixmap.disable_link_button(btn_position)
-    #    link_menu.setPos(pos)
-    
     @Slot(bool)
     def link_cameras_enabled(self, value: bool):
         self.gpixmap.set_link_cameras_enabled(value)
@@ -222,28 +173,6 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.cam_view.fitInView(rect_to_view, Qt.KeepAspectRatio)
         self.graphics_scene.update(rect_to_view)
     
-    #def handle_link_camera_clicked_(self, camera: Camera, menu_position: str):
-    #    link_menu = self.link_menus[menu_position]
-    #    c_pixmap: CustomPixmap = list(filter(lambda pixmap: pixmap.camera.id == camera.id, link_menu.camera_pixmaps))[0]
-
-    #    link_menu.camera_pixmaps.remove(c_pixmap)
-
-    #    c_pixmap.setParentItem(None)
-    #    self.graphics_scene.removeItem(c_pixmap)
-    #    self.graphics_scene.removeItem(link_menu)
-    #    link_menu.deleteLater()
-    #    del self.link_menus[menu_position]
-
-    #    self.gpixmap.enable_link_button(menu_position)
-
-    #    self.add_linked_camera(camera, menu_position, emit=True)
-
-    #def handle_link_camera_clicked(self, camera: Camera, menu_position: str):
-    #    cam1 = self.camera if menu_position == "right" else camera
-    #    cam2 = camera if cam1 == self.camera else self.camera
-
-    #    self.dataset.link_cameras(cam1, cam2)
-
     @Slot(int, int)
     def handle_splitter_moved(self, pos: int, index: int):
         self._recenter_view()
@@ -253,21 +182,13 @@ class CameraViewWidget(QtWidgets.QWidget):
         image_path = self.image_list.data(current, Qt.UserRole)
         self.current_viewed_image = cv.pyrDown(cv.imread(str(image_path)))
         self.gpixmap.set_image(cv.resize(self.current_viewed_image, (0, 0), fx=0.5, fy=0.5))
-        #print("list model changed")
-        #self.gpixmap.update_stick_widgets()
-    
+
     @Slot()
     def handle_edit_sticks_clicked(self):
         edit_sticks_on = self.overlay_gui.edit_sticks_button_pushed()
-        #self.gpixmap.set_stick_edit_mode(edit_sticks_on)
-        #for s in self.stick_widgets:
-        #    s.set_edit_mode(edit_sticks_on)
         if edit_sticks_on:
-            #self.stick_widgets_set_mode(StickMode.EDIT)
             self.gpixmap.set_stick_widgets_mode(StickMode.EDIT)
         else:
-            #self.stick_widgets_set_mode(StickMode.DISPLAY)
-            #self.sticks_changed.emit()
             self.gpixmap.set_stick_widgets_mode(StickMode.DISPLAY)
         self.graphics_scene.update()
     
@@ -280,64 +201,6 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.sync_stick_link_manager()
         self.graphics_scene.update()
     
-    #def add_linked_camera(self, camera: Camera, position: str, emit: bool = False):
-    #    c_pixmap = CustomPixmap()
-    #    self.graphics_scene.addItem(c_pixmap)
-    #    c_pixmap.initialise_with(camera)
-    #    c_pixmap.setAcceptHoverEvents(False)
-
-    #    c_pixmap.set_display_mode()
-    #    c_pixmap.set_show_stick_widgets(True)
-
-    #    pos: QPointF  = self.gpixmap.pos()
-    #    if position == "left":
-    #        pos.setX(pos.x() - self.gpixmap.boundingRect().width())
-    #        if self.left_link is not None:
-    #            self.remove_linked_camera(position, emit=True)
-    #        self.gpixmap.left_add_button.set_role("UNLINK")
-    #        self.left_link = c_pixmap
-    #    else:
-    #        pos.setX(pos.x() + self.gpixmap.boundingRect().width())
-    #        if self.right_link is not None:
-    #            self.remove_linked_camera(position, emit=True)
-    #        self.gpixmap.right_add_button.set_role("UNLINK")
-    #        self.right_link = c_pixmap
-
-    #    c_pixmap.setPos(pos)
-
-    #    self._recenter_view()
-    #    if emit:
-    #        self.link_initiated_between.emit(self.camera, camera, position)
-    #    self.sync_stick_link_manager()
-    
-    #def remove_linked_camera(self, position: str, emit: bool = False):
-    #    if position == "left":
-    #        self.left_link.setParentItem(None)
-    #        self.graphics_scene.removeItem(self.left_link)
-    #        if emit:
-    #            self.link_broken_between.emit(self.camera, self.left_link.camera, "left")
-    #        self.left_link = None
-    #        self.gpixmap.left_add_button.set_role("LINK")
-    #    elif position == "right":
-    #        if emit:
-    #            self.link_broken_between.emit(self.camera, self.right_link.camera, "right")
-    #        self.right_link.setParentItem(None)
-    #        self.graphics_scene.removeItem(self.right_link)
-    #        self.right_link = None
-    #        self.gpixmap.right_add_button.set_role("LINK")
-    #    self._recenter_view()
-    #    self.sync_stick_link_manager()
-
-    #def double_click_handler(self, x: int, y: int):
-    #    stick = self.dataset.create_new_stick(self.camera)
-    #    stick.set_endpoints(x, y-50, x, y+50)
-    #    self.camera.add_stick(stick)
-    #    #self.camera.sticks.append(stick)
-    #    #self.stick_widgets = self.gpixmap.update_stick_widgets()
-    #    #self.connect_stick_widget_signals()
-    #    #self.sticks_changed.emit()
-    #    #self.gpixmap.update()
-
     @Slot('PyQt_PyObject')
     def handle_stick_link_requested(self, stick_widget: StickWidget):
         for sw in self.stick_widgets:
@@ -354,14 +217,6 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.stick_link_manager.handle_stick_widget_link_requested(stick_widget)
         self.graphics_scene.update()
 
-    #def connect_stick_widget_signals(self):
-    #    for sw in self.stick_widgets:
-    #        sw.delete_clicked.connect(self.handle_stick_delete_clicked)
-    #        sw.link_initiated.connect(self.handle_stick_link_requested)
-
-    #def handle_link_accepted(self, stick_widget: StickWidget):
-    #    self.stick_link_manager.accept_link_by(stick_widget)
-    
     def stick_widgets_set_mode(self, mode: StickMode):
         for sw in self.stick_widgets:
             sw.set_mode(mode)
@@ -472,7 +327,6 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.handle_camera_added(cam)
 
     def handle_camera_added(self, camera: Camera):
-        #img = cv.resize(cv.imread(str(camera.rep_image_path)), dsize=(0, 0), fx=0.25, fy=0.25)
         img = camera.rep_image
         barray = QByteArray(img.tobytes())
         image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
@@ -500,10 +354,3 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.link_menu_position = None
         self.link_menu.setVisible(False)
-
-    #def get_synchronized_stick_widgets(self) -> List[StickWidget]:
-    #    stick_widgets: List[StickWidget] = []
-    #    for sw in self.stick_widgets:
-    #        sw_ = StickWidget(sw.stick)
-    #        sw_.is_master = False
-    #        sw
