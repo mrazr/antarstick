@@ -39,7 +39,6 @@ class OverlayGui(QGraphicsObject):
         self.mouse_pan_pic = QPixmap(str(path / "mouse_pan.png"))
         self.mouse_pan_pic = self.mouse_pan_pic.scaledToWidth(80, Qt.SmoothTransformation)
 
-
         self.top_menu.add_button("edit_sticks", "Edit sticks", is_checkable=True, call_back=self.edit_sticks_clicked.emit)
         self.top_menu.add_button("link_sticks", "Link sticks", is_checkable=True, call_back=self.link_sticks_clicked.emit)
         self.top_menu.add_button("show_overaly", "Show overlay")

@@ -12,7 +12,6 @@ import camera_processing.antarstick_processing as antar
 from camera import Camera
 from camera_processing.widgets.camera_view_widget import CameraViewWidget
 from dataset import Dataset
-from stick import Stick
 
 
 class CameraProcessingWidget(QtWidgets.QTabWidget):
@@ -40,24 +39,6 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
     camera_link_available = Signal(bool)
 
-    #@Slot(Camera)
-    #def _handle_camera_added(self, camera: Camera):
-    #    camera_widget = CameraViewWidget(self.dataset)
-    #    camera_widget.ui.btnFindNonSnow.clicked.connect(self.handle_detect_sticks_clicked)
-    #    pics = self.find_non_snow_pics_in_camera(camera, 1)
-    #    if len(pics) == 0:
-    #        self.camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
-    #        return
-    #    img = pics[0]
-    #    self.camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
-    #    self.setCurrentIndex(self.camera_tab_map[camera.id])
-    #    camera_widget.initialise_with(camera)
-    #    self.camera_link_available.connect(camera_widget.gpixmap.set_link_cameras_enabled)
-    #    camera_widget.ui.detectionSensitivitySlider.valueChanged.emit(0)
-    #    #camera_widget.show_image(img)
-    #    if len(self.dataset.cameras) > 1:
-    #        self.camera_link_available.emit(True)
-    
     @Slot(Camera)
     def handle_camera_added(self, camera: Camera):
         camera_widget = CameraViewWidget(self._dataset)
@@ -67,9 +48,6 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self.setCurrentIndex(self._camera_tab_map[camera.id])
 
         camera_widget.initialise_with(camera)
-
-        #camera_widget.link_initiated_between.connect(self.handle_link_initiated_between)
-        #camera_widget.link_broken_between.connect(self.handle_link_broken_between)
 
         if len(self._dataset.cameras) > 1:
             self.camera_link_available.emit(True)
@@ -88,11 +66,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
     def handle_tab_close_requested(self, tab_id: int):
         for cam_id, _tab_id in self._camera_tab_map.items():
             if _tab_id == tab_id:
-                #camera_links = list(filter(lambda link: link[0] == cam_id or link[1] == cam_id, self._dataset.linked_cameras))
                 _cam_widget: CameraViewWidget = self.widget(tab_id)
-                #for c1, c2 in camera_links:
-                #    cam_w1: CameraViewWidget = self.widget(self._camera_tab_map[c1])
-                #    cam_w1.remove_linked_camera("right", emit=True)
                 self._dataset.remove_camera(cam_id)
                 _cam_widget._destroy()
         self._camera_tab_map.clear()
@@ -114,34 +88,9 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
                     break
         return images
 
-    #@Slot(Camera, Camera, str)
-    #def handle_link_broken_between(self, cam1: Camera, cam2: Camera, cam2_pos: str):
-    #    cam1_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam1.id])
-    #    cam2_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam2.id])
-
-    #    cam1_widget.sticks_changed.disconnect(cam2_widget.handle_sticks_changed)
-    #    cam2_widget.sticks_changed.disconnect(cam1_widget.handle_sticks_changed)
-    #    cam2_widget.remove_linked_camera("left" if cam2_pos == "right" else "right")
-
-    #    if cam2_pos == "right":
-    #        self._dataset.unlink_cameras(cam1, cam2)
-    #    else:
-    #        self._dataset.unlink_cameras(cam2, cam1)
-    
     @Slot()
     def handle_dataset_loading_finished(self):
         for i in range(self.count()):
             cam_widget: CameraViewWidget = self.widget(i)
             cam_widget.initialize_link_menu()
-
-        #for (cam1, cam2) in self._dataset.linked_cameras:
-        #    cam1_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam1])
-        #    cam2_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam2])
-
-        #    #cam1_widget.add_linked_camera(cam2_widget.camera, "right", emit=True)
-
-    def handle_cameras_linked(self, cam1: Camera, cam2: Camera):
-        cam1_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam1.id])
-        cam2_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam2.id])
-
 
