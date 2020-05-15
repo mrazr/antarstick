@@ -20,6 +20,7 @@ class CustomPixmap(QGraphicsObject):
 
     font: QFont = QFont("monospace", 16)
     stick_link_requested = pyqtSignal(StickWidget)
+    stick_widgets_out_of_sync = pyqtSignal('PyQt_PyObject')
 
     def __init__(self, dataset: Dataset, parent: Optional[QGraphicsItem] = None):
         QGraphicsObject.__init__(self, parent)
@@ -218,7 +219,9 @@ class CustomPixmap(QGraphicsObject):
             return
         sw = StickWidget(stick, self)
         sw.set_mode(self.stick_widget_mode)
+        self.connect_stick_widget_signals(sw)
         self.stick_widgets.append(sw)
+        self.stick_widgets_out_of_sync.emit(self)
         self.update()
 
     def handle_stick_removed(self, stick: Stick):
@@ -255,6 +258,7 @@ class CustomPixmap(QGraphicsObject):
             sw.set_mode(self.stick_widget_mode)
             self.connect_stick_widget_signals(sw)
             self.stick_widgets.append(sw)
+        self.stick_widgets_out_of_sync.emit(self)
         self.update()
 
     def connect_stick_widget_signals(self, stick_widget: StickWidget):

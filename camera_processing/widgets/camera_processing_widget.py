@@ -101,36 +101,6 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
             camera_widget: CameraViewWidget = self.widget(i)
             self._camera_tab_map[camera_widget.camera.id] = i
 
-
-
-    #@Slot(Camera)
-    #def handle_camera_sticks_detected(self, camera: Camera):
-    #    camera_widget_id = self.camera_tab_map[camera.id]
-    #    camera_widget: CameraViewWidget = self.widget(camera_widget_id)
-    #    camera_widget.stick_widgets.clear()
-    #    #for stick in camera.sticks:
-    #    #    stick_widget = StickWidget(stick)
-    #    #    camera_widget.stick_widgets.append(stick_widget)
-
-    #@Slot()
-    #def handle_detect_sticks_clicked(self):
-    #    camera_widget: CameraViewWidget = self.currentWidget()
-    #    camera = camera_widget.camera
-    #    non_snow_pics = self.find_non_snow_pics_in_camera(camera, 2)
-    #    if len(non_snow_pics) == 0:
-    #        return
-    #    img = cv.cvtColor(non_snow_pics[0], cv.COLOR_BGR2GRAY)
-    #    line_height_perc = camera_widget.ui.detectionSensitivitySlider.value() / 100.0
-    #    lines = antar.detect_sticks_hmt(img, line_height_perc)
-    #    if len(lines) == 0:
-    #        return
-    #    sticks = list(map(lambda line_: Stick(0, np.array(line_[0]), np.array(line_[1])), lines))
-    #    sticks = sorted(sticks, key=lambda stick_: stick_.length_px, reverse=True)
-    #    camera.sticks.clear()
-    #    camera.sticks.extend(sticks)
-    #    camera_widget.detected_sticks = sticks
-    #    camera_widget.update_stick_widgets()
-
     def find_non_snow_pics_in_camera(self, camera: Camera, count: int) -> List[np.ndarray]:
         images = []
         for entry in scandir(camera.folder):
@@ -143,22 +113,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
                 if len(images) == count:
                     break
         return images
-    
-    #@Slot(Camera, Camera, str)
-    #def handle_link_initiated_between(self, cam1: Camera, cam2: Camera, cam2_pos: str):
-    #    cam1_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam1.id])
-    #    cam2_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam2.id])
 
-    #    cam2_widget.add_linked_camera(cam1, "left" if cam2_pos == "right" else "right")
-    #    if cam2_pos == "right":
-    #        self._dataset.link_cameras(cam1, cam2)
-    #    else:
-    #        self._dataset.link_cameras(cam2, cam1)
-
-    #    cam1_widget.sticks_changed.connect(cam2_widget.handle_sticks_changed)
-    #    cam2_widget.sticks_changed.connect(cam1_widget.handle_sticks_changed)
-        
-    
     #@Slot(Camera, Camera, str)
     #def handle_link_broken_between(self, cam1: Camera, cam2: Camera, cam2_pos: str):
     #    cam1_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam1.id])

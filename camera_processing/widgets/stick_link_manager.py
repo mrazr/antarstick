@@ -147,8 +147,11 @@ class StickLinkManager(QGraphicsObject):
         self.update()
     
     def set_secondary_cameras(self, cameras: List[CustomPixmap]):
+        for cam in self.secondary_cameras:
+            cam.stick_widgets_out_of_sync.disconnect(self.handle_stick_widgets_out_of_sync)
         self.secondary_cameras = cameras
         for cam in self.secondary_cameras:
+            cam.stick_widgets_out_of_sync.connect(self.handle_stick_widgets_out_of_sync)
             for sw in cam.stick_widgets:
                 sw.hovered.connect(self.handle_stick_widget_hover)
     
@@ -236,3 +239,7 @@ class StickLinkManager(QGraphicsObject):
             return
         to_remove = cam2 if cam1.id == self.camera.id else cam1
         self.secondary_cameras = list(filter(lambda pix: pix.camera.id != to_remove.id, self.secondary_cameras))
+
+    def handle_stick_widgets_out_of_sync(self, cp: CustomPixmap):
+        for sw in cp.stick_widgets:
+            sw.hovered.connect(self.handle_stick_widget_hover)
