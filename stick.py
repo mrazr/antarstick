@@ -38,6 +38,7 @@ class Stick:
     top: ndarray
     bottom: ndarray
     length_px: float = field(init=False)
+    length_cm: int = 60
     label: str = "stick"
     scale_: float = 1.0
 

@@ -15,6 +15,7 @@ class OverlayGui(QGraphicsObject):
     reset_view_requested = pyqtSignal()
     edit_sticks_clicked = pyqtSignal()
     link_sticks_clicked = pyqtSignal()
+    #sticks_length_clicked = pyqtSignal()
 
     def __init__(self, view: CamGraphicsView, parent: QGraphicsItem = None):
         QGraphicsObject.__init__(self, parent)
@@ -41,7 +42,8 @@ class OverlayGui(QGraphicsObject):
 
         self.top_menu.add_button("edit_sticks", "Edit sticks", is_checkable=True, call_back=self.edit_sticks_clicked.emit)
         self.top_menu.add_button("link_sticks", "Link sticks", is_checkable=True, call_back=self.link_sticks_clicked.emit)
-        self.top_menu.add_button("show_overaly", "Show overlay")
+        #self.top_menu.add_button("sticks_length", "Stick length: not set", call_back=self.sticks_length_clicked.emit)
+        self.top_menu.add_button("show_overlay", "Show overlay")
         self.top_menu.add_button("show_linked_cameras", "Show linked cameras")
         self.top_menu.add_button("reset_view", "Reset view", call_back=self.reset_view_requested.emit)
         self.top_menu.set_height(40)

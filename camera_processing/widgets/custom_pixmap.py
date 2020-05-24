@@ -1,7 +1,7 @@
 from typing import Callable, List, Optional
 
 import PyQt5
-from PyQt5.QtCore import QByteArray, QLine, QMarginsF, QPoint, pyqtSignal
+from PyQt5.QtCore import QByteArray, QLine, QMarginsF, QPoint, pyqtSignal, QPointF, Qt
 from PyQt5.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsPixmapItem,
                              QGraphicsRectItem, QGraphicsSceneHoverEvent,
@@ -11,7 +11,9 @@ from numpy import ndarray
 
 from camera import Camera
 from camera_processing.widgets.link_camera_button import LinkCameraButton
+from camera_processing.widgets.stick_length_input import StickLengthInput
 from camera_processing.widgets.stick_widget import StickWidget, StickMode
+from camera_processing.widgets.button import Button
 from dataset import Dataset
 from stick import Stick
 
@@ -63,6 +65,17 @@ class CustomPixmap(QGraphicsObject):
         self.dataset = dataset
 
         self.stick_widget_mode = StickMode.DISPLAY
+
+        self.stick_length_lbl = QGraphicsSimpleTextItem(" - sticks length: ", self.title_rect)
+        self.stick_length_lbl.setFont(Button.font)
+        self.stick_length_lbl.setBrush(QBrush(Qt.white))
+        self.stick_length_btn = Button("btn_stick_length", "60 cm", self.title_rect)
+        self.stick_length_btn.clicked.connect(self.handle_stick_length_clicked)
+        self.stick_length_btn.set_is_check_button(True)
+
+        self.stick_length_input = StickLengthInput(self)
+        self.stick_length_input.input_entered.connect(self.handle_stick_length_input_entered)
+        self.stick_length_input.input_cancelled.connect(self.handle_stick_length_input_cancelled)
 
     def paint(self, painter: QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
         if self.gpixmap.pixmap().isNull():
@@ -122,7 +135,9 @@ class CustomPixmap(QGraphicsObject):
         image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
         self.original_pixmap = QPixmap.fromImage(image)
         self.gpixmap.setPixmap(self.original_pixmap)
+        self.layout_title_area()
 
+    def layout_title_area(self):
         self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
         self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
         self.title_rect.setVisible(True)
@@ -131,6 +146,14 @@ class CustomPixmap(QGraphicsObject):
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2,
                           0)
         self.title.setVisible(True)
+        self.stick_length_lbl.setPos(self.title.pos() + QPointF(self.title.boundingRect().width(), 0))
+        self.stick_length_btn.set_height(self.title_rect.boundingRect().height())
+        self.stick_length_btn.setPos(self.stick_length_lbl.pos() + QPointF(self.stick_length_lbl.boundingRect().width(), 0))
+
+        self.stick_length_input.adjust_layout()
+        self.stick_length_input.setPos(QPointF(0.5 * self.boundingRect().width(),
+                                               0.5 * self.boundingRect().height()))
+        self.stick_length_input.setVisible(self.stick_length_btn.is_on())
 
     def set_show_title(self, value: bool):
         self.title_rect.setVisible(value)
@@ -155,6 +178,7 @@ class CustomPixmap(QGraphicsObject):
         self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
         self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2, 0)
+        self.stick_length_btn.setPos(self.title.pos() + QPointF(self.title.boundingRect().width(), 0))
 
     def set_show_stick_widgets(self, value: bool):
         for sw in self.stick_widgets:
@@ -287,6 +311,27 @@ class CustomPixmap(QGraphicsObject):
             return
         sw = next(filter(lambda _sw: _sw.stick.id == stick.id, self.stick_widgets))
         sw.adjust_line()
+        self.stick_length_btn.set_label(str(stick.length_cm) + " cm")
+        self.layout_title_area()
 
     def handle_stick_link_initiated(self, stick_widget: StickWidget):
         self.stick_link_requested.emit(stick_widget)
+
+    def handle_stick_length_clicked(self):
+        self.stick_length_input.setVisible(self.stick_length_btn.is_on())
+
+    def handle_stick_length_input_entered(self):
+        length = self.stick_length_input.get_length()
+        self.stick_length_btn.set_label(str(length) + " cm")
+        self.layout_title_area()
+        self.stick_length_btn.click_button(artificial_emit=True)
+        # TODO actually set the sticks lengths
+        for stick in self.camera.sticks:
+            stick.length_cm = length
+        self.camera.stick_changed.emit(self.camera.sticks[0])
+
+    def handle_stick_length_input_cancelled(self):
+        old_length = int(self.stick_length_btn.label.text()[:-3])
+        self.stick_length_input.set_length(old_length)
+        self.layout_title_area()
+        self.stick_length_btn.click_button(artificial_emit=True)

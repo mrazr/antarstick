@@ -4,8 +4,9 @@ from PyQt5.Qt import (QGraphicsItem, QGraphicsObject, QGraphicsSceneHoverEvent,
                       QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem,
                       pyqtSignal)
 from PyQt5.QtCore import (QEasingCurve, QPointF, QPropertyAnimation, QRectF,
-                          QTimerEvent, pyqtProperty)
+                          QTimerEvent, pyqtProperty, Qt)
 from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPixmap
+from PyQt5.QtWidgets import QGraphicsTextItem
 
 IDLE_COLORS = {
     "gray": QColor(50, 50, 50, 100),
@@ -97,6 +98,8 @@ class Button(QGraphicsObject):
         QGraphicsObject.__init__(self, parent)
         self.label = QGraphicsSimpleTextItem(label, self)
         self.label.setFont(Button.font)
+        #self.label.setDefaultTextColor(QColor(255, 255, 255, 255))
+        #self.label.setTextInteractionFlags(Qt.TextEditable)
         self.label.setBrush(QBrush(QColor(255, 255, 255, 255)))
         self.btn_id = btn_id
         self.rect = QRectF(0, 0, 0, 0)
@@ -160,11 +163,7 @@ class Button(QGraphicsObject):
         self.scene().update()
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
-        self.logic.do_click()
-        self.fill_color_current = self.logic.release_color()
-        if self.scene() is not None:
-            self.scene().update(self.sceneBoundingRect())
-        self.clicked.emit({"btn_id": self.btn_id, "btn_label": self.label})
+        self.click_button()
 
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent):
         self.hovered = True
@@ -241,3 +240,14 @@ class Button(QGraphicsObject):
         self.label.setPos(0.5 * width - 0.5 * self.label.boundingRect().width() + 0.0 * self.hor_margin,
                           height - self.label.boundingRect().height() - self.ver_margin)
         self.update()
+
+    def set_label(self, text: str):
+        self.label.setText(text)
+        self.fit_to_contents()
+
+    def click_button(self, artificial_emit: bool = False):
+        self.logic.do_click()
+        self.fill_color_current = self.logic.release_color() if not artificial_emit else self.logic.idle_color()
+        if self.scene() is not None:
+            self.scene().update(self.sceneBoundingRect())
+        self.clicked.emit({"btn_id": self.btn_id, "btn_label": self.label})

@@ -7,7 +7,7 @@ from PyQt5.QtCore import (QMarginsF, QModelIndex, QPointF, QRectF, Qt,
                           pyqtSignal, QByteArray)
 from PyQt5.QtCore import pyqtSlot as Slot
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import QGraphicsScene
+from PyQt5.QtWidgets import QGraphicsScene, QSpinBox
 
 from camera import Camera
 from camera_processing.antarstick_processing import (
@@ -23,6 +23,7 @@ from camera_processing.widgets.stick_widget import StickMode, StickWidget
 from dataset import Dataset
 from image_list_model import ImageListModel
 from stick import Stick
+from camera_processing.widgets.stick_length_input import StickLengthInput
 
 
 class CameraViewWidget(QtWidgets.QWidget):
@@ -82,7 +83,20 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.reset_view_requested.connect(self._recenter_view)
         self.overlay_gui.edit_sticks_clicked.connect(self.handle_edit_sticks_clicked)
         self.overlay_gui.link_sticks_clicked.connect(self.handle_link_sticks_clicked)
+        #self.overlay_gui.sticks_length_clicked.connect(self.handle_sticks_length_clicked)
+
+        #self.sticks_length_input = QSpinBox(None)
+        ##self.sticks_length_input.setStyleSheet("border: 1px solid red; border-radius: 5px 5px;")
+        #self.g_sticks_length_input = self.graphics_scene.addWidget(self.sticks_length_input)
+        #self.g_sticks_length_input.setVisible(False)
         self.graphics_scene.addItem(self.overlay_gui)
+        #self.stick_length_input = StickLengthInput()
+        #self.graphics_scene.addItem(self.stick_length_input)
+        #self.stick_length_input.adjust_layout()
+        #self.stick_length_input.setVisible(False)
+        #self.stick_length_input.setZValue(15)
+        #self.stick_length_input.input_entered.connect(self.handle_sticks_length_clicked)
+        #self.stick_length_input.input_cancelled.connect(self.handle_sticks_length_clicked)
         self.overlay_gui.initialize()
 
         self.link_menu = ButtonMenu()
