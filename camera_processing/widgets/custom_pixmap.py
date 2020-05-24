@@ -160,12 +160,16 @@ class CustomPixmap(QGraphicsObject):
         self.title.setVisible(value)
 
     def update_stick_widgets(self):
+        stick_length = 60
         for stick in self.camera.sticks:
             sw = StickWidget(stick, self)
             sw.set_mode(self.stick_widget_mode)
             self.connect_stick_widget_signals(sw)
             self.stick_widgets.append(sw)
-
+            stick_length = stick.length_cm
+        self.stick_length_btn.set_label(str(stick_length) + " cm")
+        self.stick_length_input.set_length(stick_length)
+        self.layout_title_area()
         self.scene().update()
 
     def scale_item(self, factor: float):
@@ -319,6 +323,7 @@ class CustomPixmap(QGraphicsObject):
 
     def handle_stick_length_clicked(self):
         self.stick_length_input.setVisible(self.stick_length_btn.is_on())
+        self.stick_length_input.set_focus()
 
     def handle_stick_length_input_entered(self):
         length = self.stick_length_input.get_length()
