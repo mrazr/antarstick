@@ -66,11 +66,13 @@ class CustomPixmap(QGraphicsObject):
 
         self.stick_widget_mode = StickMode.DISPLAY
 
-        self.stick_length_lbl = QGraphicsSimpleTextItem(" - sticks length: ", self.title_rect)
+        self.stick_length_lbl = QGraphicsSimpleTextItem("sticks length: ", self.title_rect)
         self.stick_length_lbl.setFont(Button.font)
         self.stick_length_lbl.setBrush(QBrush(Qt.white))
+        self.stick_length_lbl.setVisible(False)
         self.stick_length_btn = Button("btn_stick_length", "60 cm", self.title_rect)
         self.stick_length_btn.clicked.connect(self.handle_stick_length_clicked)
+        self.stick_length_btn.setVisible(False)
         self.stick_length_btn.set_is_check_button(True)
 
         self.stick_length_input = StickLengthInput(self)
@@ -122,6 +124,8 @@ class CustomPixmap(QGraphicsObject):
         self.camera = camera
         self.prepareGeometryChange()
         self.set_image(camera.rep_image)
+        self.stick_length_btn.setVisible(True)
+        self.stick_length_lbl.setVisible(True)
         self.camera.stick_added.connect(self.handle_stick_created)
         self.camera.sticks_added.connect(self.handle_sticks_added)
         self.camera.stick_removed.connect(self.handle_stick_removed)
@@ -138,17 +142,20 @@ class CustomPixmap(QGraphicsObject):
         self.layout_title_area()
 
     def layout_title_area(self):
+        self.title.setText(str(self.camera.folder.name))
         self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
         self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
         self.title_rect.setVisible(True)
 
-        self.title.setText(str(self.camera.folder.name))
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2,
                           0)
         self.title.setVisible(True)
-        self.stick_length_lbl.setPos(self.title.pos() + QPointF(self.title.boundingRect().width(), 0))
-        self.stick_length_btn.set_height(self.title_rect.boundingRect().height())
-        self.stick_length_btn.setPos(self.stick_length_lbl.pos() + QPointF(self.stick_length_lbl.boundingRect().width(), 0))
+        self.stick_length_btn.set_height(self.title_rect.boundingRect().height() - 4)
+        self.stick_length_btn.setPos(self.title_rect.boundingRect().width() - 5 - self.stick_length_btn.boundingRect().width(),
+                                     2)
+        #self.stick_length_btn.setPos(self.stick_length_lbl.pos() + QPointF(self.stick_length_lbl.boundingRect().width(), 0))
+        #self.stick_length_lbl.setPos(self.title.pos() + QPointF(self.title.boundingRect().width(), 0))
+        self.stick_length_lbl.setPos(self.stick_length_btn.pos().x() - self.stick_length_lbl.boundingRect().width(), 0)
 
         self.stick_length_input.adjust_layout()
         self.stick_length_input.setPos(QPointF(0.5 * self.boundingRect().width(),
@@ -333,7 +340,7 @@ class CustomPixmap(QGraphicsObject):
         # TODO actually set the sticks lengths
         for stick in self.camera.sticks:
             stick.length_cm = length
-        self.camera.stick_changed.emit(self.camera.sticks[0])
+        self.camera.stick_changed.emit(self.camera.sticks[0]) #TODO handle empty stick list
 
     def handle_stick_length_input_cancelled(self):
         old_length = int(self.stick_length_btn.label.text()[:-3])

@@ -53,6 +53,7 @@ class LinkCameraButton(QGraphicsObject):
         self.text_rect.setBrush(QBrush(QColor(50, 50, 50, 100)))
         self.text_rect.setPen(QPen(QColor()))
         self.role = "LINK"
+        self.setVisible(False)
 
     def paint(self, painter: PyQt5.QtGui.QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: Optional[PyQt5.QtWidgets.QWidget]=...):
         pass

@@ -99,7 +99,9 @@ class Dataset(QObject):
         self.next_camera_id += 1
         camera.stick_removed.connect(self.handle_stick_removed)
         camera.sticks_removed.connect(self.handle_sticks_removed)
+        print('emitting')
         self.camera_added.emit(camera)
+        print('emitted')
 
     def remove_camera(self, camera_id: int):
         old_camera_count = len(self.cameras)

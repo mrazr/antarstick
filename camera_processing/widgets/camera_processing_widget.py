@@ -1,17 +1,31 @@
 # This Python file uses the following encoding: utf-8
 from os import scandir
 from typing import Dict, List
+import multiprocessing
+
 
 import cv2 as cv
 import numpy as np
 from PyQt5 import QtWidgets
-from PyQt5.QtCore import pyqtSignal as Signal
+from PyQt5.QtCore import pyqtSignal as Signal, QRunnable, QThreadPool
 from PyQt5.QtCore import pyqtSlot as Slot
 
 import camera_processing.antarstick_processing as antar
 from camera import Camera
 from camera_processing.widgets.camera_view_widget import CameraViewWidget
 from dataset import Dataset
+
+
+
+class Worker(QRunnable):
+
+    def __init__(self, cam_widget: CameraViewWidget, camera: Camera) -> None:
+        QRunnable.__init__(self)
+        self.cam_widget = cam_widget
+        self.camera = camera
+
+    def run(self) -> None:
+        self.cam_widget.initialise_with(self.camera)
 
 
 class CameraProcessingWidget(QtWidgets.QTabWidget):
@@ -47,8 +61,16 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self._camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
         self.setCurrentIndex(self._camera_tab_map[camera.id])
 
-        camera_widget.initialise_with(camera)
+        camera_widget.initialization_done.connect(self.handle_camera_widget_initialization_done)
 
+        #process = multiprocessing.Process(target=camera_widget.initialise_with, args=(camera,))
+        #process.run()
+        #camera_widget.initialise_with(camera)
+        #print(self.count())
+        #kself.update()
+        #worker = Worker(camera_widget, camera)
+        #QThreadPool.globalInstance().start(worker)
+        camera_widget.initialise_with(camera)
         if len(self._dataset.cameras) > 1:
             self.camera_link_available.emit(True)
 
@@ -94,3 +116,13 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
             cam_widget: CameraViewWidget = self.widget(i)
             cam_widget.initialize_link_menu()
 
+    @Slot(Camera)
+    def handle_camera_widget_initialization_done(self, camera: Camera):
+        if len(self._dataset.cameras) > 1:
+            self.camera_link_available.emit(True)
+
+        for cam_id, widget_id in self._camera_tab_map.items():
+            if cam_id == camera.id:
+                continue
+            cam_widget: CameraViewWidget = self.widget(widget_id)
+            cam_widget.handle_camera_added(camera)

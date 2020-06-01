@@ -11,6 +11,7 @@ from os import scandir
 from pathlib import Path
 from time import time
 from typing import Dict, List, Optional, Tuple
+from queue import Queue
 
 import cv2 as cv
 import numpy as np
@@ -22,14 +23,30 @@ import skimage.morphology
 import skimage.transform
 from skimage.measure import regionprops
 from skimage.util import img_as_ubyte
-
+from sklearn.svm import LinearSVC
 from stick import Stick
+from my_thread_worker import MyThreadWorker
+
+import threading
+
+from PyQt5.QtCore import QThreadPool
+import pickle
 
 Area = float
 Height = float
 Ecc = float
 Label = int
 Centroid = Tuple[int, int]
+
+
+hog_detect = cv.HOGDescriptor()
+if hog_detect.load('/home/radoslav/jupyterLabs/stick_hog_svm'):
+    print("COOL")
+
+#lin_svc: LinearSVC = None
+#with open("/home/radoslav/jupyterLabs/lin_svc.p", "rb") as f:
+#    lin_svc = pickle.load(f)
+
 
 
 def rect_se(width: int, height: int) -> np.ndarray:
@@ -325,6 +342,7 @@ bdb_se = np.zeros((3, 3), dtype=np.int8)
 bdb_se = np.pad(bdb_se, ((0, 0), (1, 1)), 'constant', constant_values=-1)
 bdb_se = np.pad(bdb_se, ((0, 0), (2, 2)), 'constant', constant_values=1)
 
+
 def uhmt(img: np.ndarray, se: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     e_se = (1 * (se == 1)).astype(np.uint8)
     d_se = (1 * (se == 0)).astype(np.uint8)
@@ -370,14 +388,17 @@ def detect_sticks_hmt(img: np.ndarray, height_perc: float) -> List[List[int]]:
     return lines
     #return merge_lines(lines)
 
-def get_non_snow_images(path: Path, count: int = 1) -> Optional[List[np.ndarray]]:
+
+def get_non_snow_images_(path: Path, count: int = 1) -> Optional[List[np.ndarray]]:
     image_list: List[np.ndarray] = []
 
     for file in scandir(path):
         if file.name[-3:].lower() != "jpg": # TODO handle JPEG
             continue
-        img = cv.imread(str(file.path))
+        img = cv.imread(str(file.path))[:-50, :, :]
         img = cv.pyrDown(img)
+        if is_night(img):
+            continue
         hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
         if is_non_snow(hsv):
             image_list.append(img)
@@ -385,6 +406,7 @@ def get_non_snow_images(path: Path, count: int = 1) -> Optional[List[np.ndarray]
                 return image_list
     
     return None
+
 
 def detect_sticks_hmt2(img: np.ndarray, height_percentage: float) -> List[List[int]]:
     print(height_percentage)
@@ -500,8 +522,8 @@ def preprocess_phase(img: np.ndarray) -> np.ndarray:
 
     rankd = skimage.filters.rank.percentile(mask, skimage.morphology.rectangle(7, 3), p0=0.8)
     rankd2 = skimage.filters.rank.percentile(mask2, skimage.morphology.rectangle(7, 3), p0=0.8)
-    closed = cv.morphologyEx(rankd, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (1, 13)))
-    closed2 = cv.morphologyEx(rankd2, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (1, 13)))
+    closed = cv.morphologyEx(rankd, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (3, 15)))
+    closed2 = cv.morphologyEx(rankd2, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (3, 15)))
 
     thin = skimage.morphology.thin(closed)
     thin2 = skimage.morphology.thin(closed2)
@@ -510,8 +532,8 @@ def preprocess_phase(img: np.ndarray) -> np.ndarray:
     area_opened2 = skimage.morphology.remove_small_objects(thin2, min_size=8, connectivity=2)
     area_opened = np.bitwise_or(area_opened, area_opened2)
 
-    up = cv.resize(prep, (0, 0), fx=2, fy=2)
-    overlaid = cv.cvtColor(img, cv.COLOR_GRAY2BGR)
+    #up = cv.resize(prep, (0, 0), fx=2, fy=2)
+    #overlaid = cv.cvtColor(img, cv.COLOR_GRAY2BGR)
 
     return area_opened, area_opened2
 
@@ -524,16 +546,282 @@ def detect_sticks_from_preprocessed(img: np.ndarray, height_percentage: float) -
 
     return lines
 
-def get_lines_from_preprocessed(img: np.ndarray) -> List[List[np.ndarray]]:
+def get_lines_from_preprocessed(img: np.ndarray, _img: np.ndarray) -> List[List[np.ndarray]]:
     labels, num_labels = skimage.measure.label(img, connectivity=2, return_num=True)
     reg_props = skimage.measure.regionprops(labels)
 
     lines = []
+    start = time()
     for reg_prop in reg_props:
         coords = reg_prop.coords
-        min_y_coord = min(coords, key=lambda c: c[0])
-        max_y_coord = max(coords, key=lambda c: c[0])
+        coords[:, 0] = coords[:, 0] + 64
+        coords[:, 1] = coords[:, 1] + 32
+        coords[:, [0, 1]] = coords[:, [1, 0]]
+        #if not verify_lines(list(coords), cv.copyMakeBorder(_img, 64, 64, 64, 64, cv.BORDER_REFLECT)):
+        #    continue
+        min_y_coord = min(reg_prop.coords, key=lambda c: c[0])
+        max_y_coord = max(reg_prop.coords, key=lambda c: c[0])
 
         lines.append([np.array([min_y_coord[1], min_y_coord[0]]), np.array([max_y_coord[1], max_y_coord[0]])])
-    
+
+    print(f"total verification time is {time() - start} secs")
     return lines
+
+
+def verify_line(coords: List[Tuple[int, int]], img: np.ndarray) -> bool:
+    res = (64, 128)
+    f_vec_length = 4212
+    features = np.zeros((len(coords), f_vec_length), dtype=np.float)
+
+    #individual_predicts = 0
+    building_features = time()
+    for i, (y, x) in enumerate(coords):
+        y += 60
+        x += 24
+        patch = img[y - res[0]//2:y + res[0]//2, x - res[1]//2: x + res[1]//2]
+        #f_ = skimage.feature.hog(patch)
+        #print(f"featu.shape = {features.shape} f_.shape = {f_.shape}")
+        features[i] = skimage.feature.hog(patch)
+        #start = time()
+        #pre = lin_svc.predict([features[i]])
+        #individual_predicts += (time() - start)
+    building_features = time() - building_features
+    start = time()
+    predicts = lin_svc.predict(features)
+    print(f"batch predictions took {time() - start} secs")
+    print(f"building features took {building_features} secs")
+    #print(f"individual predictions took {individual_predicts} secs")
+
+    return True
+
+
+def verify_lines(coords: List[Tuple[int, int]], img: np.ndarray) -> bool:
+    _, weights = hog_detect.detect(img, searchLocations=coords)
+    if len(weights) == 0:
+        return False
+    return True
+    #valid_points = np.count_nonzero(weights.ravel() > 0.1)
+    #return (valid_points / weights.shape[0]) >= 0.75
+
+
+def is_night(img: np.ndarray) -> bool:
+    g = img[:, :, 1]
+    return np.abs(np.mean(img[:, :, 2] - g)) < 10.0 and np.abs(np.mean(img[:, :, 0] - g)) < 10.0
+
+
+def find_sticks(imgs: List[np.ndarray]) -> List[List[np.ndarray]]:
+    heat_map = None
+    box_heights = None
+    imgs_stats = []
+    for i, img in enumerate(imgs):
+        img = cv.cvtColor(cv.pyrDown(img), cv.COLOR_BGR2GRAY)
+        d_img = cv.pyrUp(cv.pyrDown(img))
+        d_img = cv.copyMakeBorder(d_img, 15, 15, 15, 15, cv.BORDER_CONSTANT, value=0)
+        if heat_map is None:
+            heat_map = np.zeros(d_img.shape, dtype=np.uint8)
+            box_heights = np.zeros(d_img.shape, dtype=np.uint16)
+        prep, _ = img_as_ubyte(preprocess_phase(d_img))
+        n, labels, stats, centroids = cv.connectedComponentsWithStats(prep)
+        imgs_stats.append((n, labels, stats, centroids))
+        for i in range(1, n):
+            stat = stats[i]
+            x = stat[cv.CC_STAT_LEFT] - 1
+            y = stat[cv.CC_STAT_TOP] - 1
+            w = stat[cv.CC_STAT_WIDTH] + 1
+            h = stat[cv.CC_STAT_HEIGHT] + 1
+            heat_map[y:y + h, x:x + w] += 1
+            box_heights[y:y + h, x:x + w] = np.maximum(box_heights[y:y + h, x:x + w], h)
+
+    box_heights = box_heights / np.max(box_heights)
+    heat_map = heat_map * (1 + box_heights)
+    _, stick_regions = cv.threshold(heat_map, len(imgs) - 1, 255.0, cv.THRESH_BINARY)
+
+    match_lines_to_stick_regions(stick_regions, imgs_stats)
+
+
+def match_lines_to_stick_regions(stick_regions: np.ndarray, imgs_stats: Tuple[int, np.ndarray, np.ndarray, np.ndarray]):
+    # Find connected components in stick_regions
+    n, label_img, stats, centroids = cv.connectedComponentsWithStats(stick_regions)
+    labels = range(1, n)
+    # Sort labels by the height in descending order, assuming that the longest regions represent stick regions
+    labels = list(sorted(labels, key=lambda l: stats[l][cv.CC_STAT_HEIGHT], reverse=True))
+
+    target_centroid = centroids[labels[0]]
+    target_height = stats[labels[0]][cv.CC_STAT_HEIGHT]
+
+    centroids_heights = np.array(list(map(lambda l: [centroids[l][0], centroids[l][1], stats[l][cv.CC_STAT_HEIGHT]],
+                                         labels)))
+
+    img = imgs_stats[1]
+    img_labels = range(1, imgs_stats[0])
+    img_stats = imgs_stats[2]
+    img_centroids = imgs_stats[3]
+    img_labels = list(sorted(img_labels, key=lambda l: img_stats[l][cv.CC_STAT_HEIGHT], reverse=True))
+
+    img_centroids_heights = np.array(list(map(lambda l: [img_centroids[l][0], img_centroids[l][1], img_stats[l][cv.CC_STAT_HEIGHT]],
+                                          img_labels)))
+
+    shifts: List[np.ndarray] = []
+    errors: List[int] = []
+
+def find_sticks(imgs: List[np.ndarray]) -> List[List[np.ndarray]]:
+    heat_map = None
+    box_heights = None
+    imgs_stats = []
+    for i, img in enumerate(imgs):
+        img = cv.cvtColor(cv.pyrDown(img), cv.COLOR_BGR2GRAY)
+        d_img = cv.pyrUp(cv.pyrDown(img))[:-50]
+        d_img = cv.copyMakeBorder(d_img, 15, 15, 15, 15, cv.BORDER_CONSTANT, value=0)
+        if heat_map is None:
+            heat_map = np.zeros(d_img.shape, dtype=np.uint8)
+            box_heights = np.zeros(d_img.shape, dtype=np.uint16)
+        prep, _ = img_as_ubyte(preprocess_phase(d_img))
+        n, labels, stats, centroids = cv.connectedComponentsWithStats(prep)
+        # imgs_stats.append((n, prep, stats, centroids))
+        imgs_stats.append((1, prep))
+        for i in range(1, n):
+            stat = stats[i]
+            x = stat[cv.CC_STAT_LEFT] - 1
+            y = stat[cv.CC_STAT_TOP] - 1
+            w = stat[cv.CC_STAT_WIDTH] + 1
+            h = stat[cv.CC_STAT_HEIGHT] + 1
+            heat_map[y:y + h, x:x + w] += 1
+            box_heights[y:y + h, x:x + w] = np.maximum(box_heights[y:y + h, x:x + w], h)
+
+    box_heights = box_heights / np.max(box_heights)
+    heat_map = heat_map * (1 + box_heights)
+    _, stick_regions = cv.threshold(heat_map.astype(np.uint8), len(imgs) - 2, 255, cv.THRESH_BINARY)
+
+    # for i in range(len(imgs_stats)):
+    #    match_lines_to_stick_regions(stick_regions, imgs_stats[i])
+
+    return heat_map, stick_regions, imgs_stats
+
+
+def update_stick_heat_map(stick_img: np.ndarray, heat_map: np.ndarray, stick_lengths: np.ndarray) -> List[np.ndarray]:
+    """
+    Updates stick heat map `heat_map` with the according to line structures in `stick_img` and also updates
+    the image `stick_lengths`.
+    For every connected component (ideally line) in `stick_img` the following is performed:
+        1. compute its bounding box
+        2. increment values in `heat_map` located by the bounding box
+        3. perform point-wise maximum of the bounding box height and the values in `stick_lengths` located by the
+           bounding box
+    :param stick_img: np.ndarray: preprocessed image retrieved from `preprocess_phase` method
+    :param heat_map: np.ndarray: heat map specifying the likelihood of a stick at a certain position. Same shape as stick_img.
+    :param stick_lengths: np.ndarray: maximum length of sticks located at certain position. Same shape as stick_img.
+    :return: List[np.ndarray]: `heat_map`, `stick_lengths`, stats of connected components of `stick_img` retrieved by
+            cv2.connectedComponentsWithStats
+    """
+    n, _, stick_img_stats, _ = cv.connectedComponentsWithStats(stick_img)
+    for i in range(1, n):
+        x = stick_img_stats[i][cv.CC_STAT_LEFT] - 1
+        y = stick_img_stats[i][cv.CC_STAT_TOP] - 1
+        w = stick_img_stats[i][cv.CC_STAT_WIDTH] + 1
+        h = stick_img_stats[i][cv.CC_STAT_HEIGHT] + 1
+        heat_map[y:y + h, x:x + w] += 1
+        stick_lengths[y:y + h, x:x + w] = np.maximum(stick_lengths[y:y + h, x:x + w], h)
+
+    return [heat_map, stick_lengths, stick_img_stats]
+
+
+def filter_sticks(stick_img: np.ndarray, stick_img_stats: np.ndarray, stick_regions: np.ndarray) -> List[np.ndarray]:
+    stick_regions_d = cv.dilate(stick_regions, cv.getStructuringElement(cv.MORPH_RECT, (5, 1)))
+    n, labels, stats, _ = cv.connectedComponentsWithStats(stick_regions_d)
+
+    labels_sticks: Dict[int, np.ndarray] = dict({})
+
+    for l in range(1, stick_img_stats.shape[0]):
+        stat = stick_img_stats[l]
+        x = stat[cv.CC_STAT_LEFT]
+        y = stat[cv.CC_STAT_TOP]
+        w = stat[cv.CC_STAT_WIDTH]
+        h = stat[cv.CC_STAT_HEIGHT]
+        stick_box = stick_img[y:y + h, x:x + w]
+        labels_box = labels[y:y + h, x:x + w]
+        if not np.any(labels_box):
+            continue
+        non_zero_coords = np.argwhere(stick_box > 0)
+        top_idx = np.argmin(non_zero_coords[:, 0])
+        bottom_idx = np.argmax(non_zero_coords[:, 0])
+        top = non_zero_coords[top_idx] + np.array([y - 15, x - 15]) #TODO 15 is a border expansion, handle it maybe in the caller?
+        bottom = non_zero_coords[bottom_idx] + np.array([y - 15, x - 15])
+        target_label = np.max(labels_box)
+
+        if target_label not in labels_sticks:
+            labels_sticks[target_label] = np.array([[10000, 10000], [-10000, -10000]])
+        label_entry = labels_sticks[target_label]
+
+        if label_entry[0][0] > top[0]:
+            label_entry[0] = top
+        if label_entry[1][0] < bottom[0]:
+            label_entry[1] = bottom
+        labels_sticks[target_label] = label_entry
+
+    return list(labels_sticks.values())
+
+
+def get_non_snow_images(path: Path, queue: Queue, count: int = 9) -> None:
+    nights = 0
+    images_loaded = 0
+    for file in scandir(path):
+        if file.name[-3:].lower() != "jpg": # TODO handle JPEG
+            continue
+        img = cv.imread(str(file.path))
+        img = cv.pyrDown(img)
+        if is_night(img):
+            nights += 1
+            continue
+        hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+        if is_non_snow(hsv):
+            queue.put_nowait((file.path, img))
+            images_loaded += 1
+            if images_loaded == count:
+                break
+    queue.put_nowait(None)
+
+
+def get_sticks_in_folder(folder: Path) -> Tuple[List[np.ndarray], np.ndarray]:
+    queue = Queue(maxsize=10)
+    #thread = threading.Thread(target=get_non_snow_images, args=(folder, queue, 9))
+    worker = MyThreadWorker(task=get_non_snow_images, args=(folder, queue, 9), kwargs={})
+
+    heat_map = None
+    stick_lengths = None
+    imgs: List[Tuple[Path, np.ndarray, np.ndarray, np.ndarray]] = []
+    QThreadPool.globalInstance().start(worker)
+
+    path_img: Tuple[Path, np.ndarray] = queue.get()
+    while path_img is not None:
+        img = path_img[1]
+        gray = cv.cvtColor(cv.pyrDown(img), cv.COLOR_BGR2GRAY)
+        gray = cv.pyrUp(cv.pyrDown(gray))[:-50]
+        gray = cv.copyMakeBorder(gray, 15, 15, 15, 15, cv.BORDER_CONSTANT, value=0)
+        prep, _ = preprocess_phase(gray)
+        prep = (255 * prep).astype(np.uint8)
+        if heat_map is None:
+            heat_map = np.zeros(prep.shape, dtype=np.uint8)
+            stick_lengths = np.zeros(prep.shape, dtype=np.uint16)
+        heat_map, stick_lengths, img_stats = update_stick_heat_map(prep, heat_map, stick_lengths)
+        imgs.append((path_img[0], img, prep, img_stats))
+        path_img = queue.get()
+
+    stick_lengths = stick_lengths / np.max(stick_lengths)
+    heat_map = heat_map * (1 + stick_lengths)
+    _, stick_regions = cv.threshold(heat_map.astype(np.uint8), len(imgs) - 3, 255, cv.THRESH_BINARY)
+
+    stick_scores = []
+    sticks_list: List[List[np.ndarray]] = []
+    for j in range(len(imgs)):
+        sticks_ = filter_sticks(imgs[j][2], imgs[j][3], stick_regions)
+        sticks_list.append(sticks_)
+        stick_score = sum((map(lambda s: np.linalg.norm(s[0] - s[1]), sticks_)))
+        stick_scores.append([stick_score, len(sticks_), j])
+
+    # Sort according to number of sticks and total stick lengths
+    stick_scores = sorted(stick_scores, key=lambda c: (c[1], c[0]), reverse=True)
+
+    # Most likely stick configuration is identified by the index which sits in stick_scores[0][2]
+    idx = stick_scores[0][2]
+
+    return sticks_list[idx], imgs[idx][0]

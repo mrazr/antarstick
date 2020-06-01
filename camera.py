@@ -56,9 +56,11 @@ class Camera(QObject):
         else:
             self.measurements = pd.DataFrame()
             self.measurements_path = None
-        self.rep_image_path = self.folder / Path(listdir(self.folder)[0]) #TODO listdir - filter out non image files
-        self.rep_image: np.ndarray = cv.resize(cv.imread(str(self.rep_image_path)), (0, 0), fx=0.25, fy=0.25,
-                                               interpolation=cv.INTER_NEAREST)
+        #self.rep_image_path = self.folder / Path(listdir(self.folder)[0]) #TODO listdir - filter out non image files
+        #self.rep_image: np.ndarray = cv.resize(cv.imread(str(self.rep_image_path)), (0, 0), fx=0.25, fy=0.25,
+        #                                      interpolation=cv.INTER_NEAREST)
+        self.rep_image_path = None
+        self.rep_image = None
 
     def __load_measuremets(self) -> pd.DataFrame:
         try:

@@ -1,19 +1,19 @@
+from queue import Queue
 from typing import List, Dict
 
 import cv2 as cv
 import numpy as np
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import (QMarginsF, QModelIndex, QPointF, QRectF, Qt,
-                          pyqtSignal, QByteArray)
+                          pyqtSignal, QByteArray, QThreadPool)
 from PyQt5.QtCore import pyqtSlot as Slot
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QBrush, QColor, QFont, QPen
 from PyQt5.QtWidgets import QGraphicsScene, QSpinBox
 
 from camera import Camera
-from camera_processing.antarstick_processing import (
-    get_lines_from_preprocessed, get_non_snow_images,
-    preprocess_phase)
+from camera_processing.antarstick_processing import get_sticks_in_folder
 from camera_processing.widgets import ui_camera_view
+from camera_processing.widgets.button import Button
 from camera_processing.widgets.button_menu import ButtonMenu
 from camera_processing.widgets.cam_graphics_view import CamGraphicsView
 from camera_processing.widgets.custom_pixmap import CustomPixmap
@@ -22,6 +22,7 @@ from camera_processing.widgets.stick_link_manager import StickLinkManager
 from camera_processing.widgets.stick_widget import StickMode, StickWidget
 from dataset import Dataset
 from image_list_model import ImageListModel
+from my_thread_worker import MyThreadWorker
 from stick import Stick
 from camera_processing.widgets.stick_length_input import StickLengthInput
 
@@ -29,6 +30,7 @@ from camera_processing.widgets.stick_length_input import StickLengthInput
 class CameraViewWidget(QtWidgets.QWidget):
 
     sticks_changed = pyqtSignal()
+    initialization_done = pyqtSignal(Camera)
 
     def __init__(self, dataset: Dataset):
         QtWidgets.QWidget.__init__(self)
@@ -41,6 +43,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.image_list = ImageListModel()
         self.ui.image_list.setModel(self.image_list)
         self.ui.image_list.selectionModel().currentChanged.connect(self.handle_list_model_current_changed)
+        self.ui.image_list.setEnabled(False)
 
         self.ui.splitter.setStretchFactor(0, 1)
         self.ui.splitter.setStretchFactor(1, 12)
@@ -106,11 +109,20 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.link_menu.setVisible(False)
         self.link_menu.set_layout_direction("vertical")
 
+        self.return_queue = Queue()
+
     def initialise_with(self, camera: Camera):
         self.camera = camera
         self.stick_link_manager.camera = self.camera
         self.stick_link_manager.update_links()
         self.image_list.initialize(self.camera.folder)
+        if len(self.camera.sticks) == 0:
+            print('detecting')
+            self._detect_sticks()
+        else:
+            self.initialize_rest_of_gui()
+
+    def initialize_rest_of_gui(self):
         self.ui.image_list.setModel(self.image_list)
         viewport_rect = self.cam_view.viewport().rect()
         _re = self.cam_view.mapToScene(viewport_rect)
@@ -130,41 +142,65 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.stick_link_manager.primary_camera = self.gpixmap
 
-        if len(self.gpixmap.stick_widgets) == 0:
-            self._detect_sticks()
+        #if len(self.gpixmap.stick_widgets) == 0:
+        #    self._detect_sticks()
 
         self.initialize_link_menu()
+        self.ui.image_list.setEnabled(True)
+        self.initialization_done.emit(self.camera)
 
     @Slot(bool)
     def link_cameras_enabled(self, value: bool):
         self.gpixmap.set_link_cameras_enabled(value)
-        
+
+
     def _detect_sticks(self):
-        non_snow = self.current_viewed_image
-        if non_snow is None:
-            non_snow = get_non_snow_images(self.camera.folder)
-            if non_snow is None:
-                return
-            non_snow = non_snow[0]
+        #img_sticks = get_sticks_in_folder(self.camera.folder)
 
-        img = cv.cvtColor(non_snow, cv.COLOR_BGR2GRAY)
-        img = cv.pyrDown(img)
-        perc = self.ui.detectionSensitivitySlider.value() / 100.0
-        height = perc * img.shape[0]
-        prep, _ = preprocess_phase(img)
-        lines = get_lines_from_preprocessed(prep)
-        lines = list(filter(lambda l: np.linalg.norm(l[0] - l[1]) >= height, lines))
+        worker = MyThreadWorker(get_sticks_in_folder, args=(self.camera.folder,), kwargs={'return_queue': self.return_queue})
+        worker.signals.finished.connect(self.handle_first_time_init_done)
+        QThreadPool.globalInstance().start(worker)
 
-        if len(lines) == 0:
-            return
+        #self.camera.rep_image_path = img_sticks[1]
+        #self.camera.rep_image = cv.imread(str(self.camera.rep_image_path))
+        #self.camera.rep_image = cv.resize(self.camera.rep_image, (0, 0), fx=0.25, fy=0.25)
+
+        #lines = img_sticks[0]
+        #sticks: List[Stick] = self.dataset.create_new_sticks(self.camera, len(lines))
+        #for i, stick in enumerate(sticks):
+        #    line = lines[i]
+        #    print(line)
+        #    stick.set_endpoints(*(line[0]), *(line[1]))
+        #self.camera.add_sticks(sticks)
+
+        #print(sticks)
         
-        self.camera.remove_sticks()
+    #def _detect_sticks(self):
+    #    non_snow = self.current_viewed_image
+    #    if non_snow is None:
+    #        non_snow = get_non_snow_images(self.camera.folder)
+    #        if non_snow is None:
+    #            return
+    #        non_snow = non_snow[0]
 
-        sticks: List[Stick] = self.dataset.create_new_sticks(self.camera, len(lines))
-        for i, stick in enumerate(sticks):
-            line = lines[i]
-            stick.set_endpoints(*(line[0]), *(line[1]))
-        self.camera.add_sticks(sticks)
+    #    img = cv.cvtColor(non_snow, cv.COLOR_BGR2GRAY)
+    #    img = cv.pyrDown(img)
+    #    perc = self.ui.detectionSensitivitySlider.value() / 100.0
+    #    height = perc * img.shape[0]
+    #    prep, _ = preprocess_phase(img)
+    #    lines = get_lines_from_preprocessed(prep, img)
+    #    lines = list(filter(lambda l: np.linalg.norm(l[0] - l[1]) >= height, lines))
+
+    #    if len(lines) == 0:
+    #        return
+    #
+    #    self.camera.remove_sticks()
+
+    #    sticks: List[Stick] = self.dataset.create_new_sticks(self.camera, len(lines))
+    #    for i, stick in enumerate(sticks):
+    #        line = lines[i]
+    #        stick.set_endpoints(*(line[0]), *(line[1]))
+    #    self.camera.add_sticks(sticks)
 
     @Slot()
     def _handle_slider_released(self):
@@ -193,6 +229,7 @@ class CameraViewWidget(QtWidgets.QWidget):
     
     @Slot(QModelIndex, QModelIndex)
     def handle_list_model_current_changed(self, current: QModelIndex, previous: QModelIndex):
+        print('list model current changed')
         image_path = self.image_list.data(current, Qt.UserRole)
         self.current_viewed_image = cv.pyrDown(cv.imread(str(image_path)))
         self.gpixmap.set_image(cv.resize(self.current_viewed_image, (0, 0), fx=0.5, fy=0.5))
@@ -316,8 +353,13 @@ class CameraViewWidget(QtWidgets.QWidget):
                                         self.left_link.camera if btn_position == "left" else self.right_link.camera)
             return
 
+        self.link_menu_position = btn_position
+        self.adjust_link_menu_position()
+        self.link_menu.setVisible(True)
+
+    def adjust_link_menu_position(self):
         pos = self.gpixmap.left_add_button.sceneBoundingRect().center()
-        if btn_position == "right":
+        if self.link_menu_position == "right":
             self.gpixmap.left_add_button.link_cam_text.setVisible(False)
             if self.link_menu_position is not None:
                 self.gpixmap.left_add_button.setVisible(True)
@@ -329,10 +371,9 @@ class CameraViewWidget(QtWidgets.QWidget):
                 self.gpixmap.right_add_button.setVisible(True)
             pos = pos - QPointF(0.0 * self.link_menu.sceneBoundingRect().width() * 0.5,
                                 self.link_menu.boundingRect().height() * 0.5)
-        self.link_menu_position = btn_position
-        self.gpixmap.disable_link_button(btn_position)
+        self.gpixmap.disable_link_button(self.link_menu_position)
         self.link_menu.setPos(pos)
-        self.link_menu.setVisible(True)
+        #self.link_menu.setVisible(True)
 
     def initialize_link_menu(self):
         for cam in self.dataset.cameras:
@@ -342,11 +383,35 @@ class CameraViewWidget(QtWidgets.QWidget):
 
     def handle_camera_added(self, camera: Camera):
         img = camera.rep_image
-        barray = QByteArray(img.tobytes())
-        image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
-        pixmap = QPixmap.fromImage(image)
-        btn = self.link_menu.add_button(btn_id=str(camera.folder), label=str(camera.folder.name), pixmap=pixmap)
-        btn.clicked.connect(self.handle_camera_button_clicked)
+        pixmap = None
+        if img is None:
+            pixmap = QPixmap(170, 128)
+            painter = QPainter()
+            pixmap.fill(QColor(0, 125, 125, 100))
+            painter.begin(pixmap)
+            painter.setRenderHint(QPainter.TextAntialiasing)
+            font = QFont(Button.font)
+            font.setPixelSize(14)
+            painter.setFont(font)
+            brush = QBrush(QColor(255, 255, 255, 100))
+            pen = QPen()
+            pen.setWidth(1.5)
+            pen.setBrush(brush)
+            painter.setPen(pen)
+            painter.drawText(pixmap.rect(), Qt.AlignCenter, "initializing")
+            painter.end()
+        else:
+            barray = QByteArray(img.tobytes())
+            image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
+            pixmap = QPixmap.fromImage(image)
+        btn = self.link_menu.get_button(btn_id=str(camera.folder))
+        if btn is None:
+            btn = self.link_menu.add_button(btn_id=str(camera.folder), label=str(camera.folder.name), pixmap=pixmap)
+            btn.clicked.connect(self.handle_camera_button_clicked)
+        else:
+            btn.set_pixmap(pixmap)
+            self.link_menu.set_layout_direction(self.link_menu.layout_direction)
+        self.adjust_link_menu_position()
 
     def handle_camera_removed(self, camera: Camera):
         if self.camera.id == camera.id:
@@ -368,3 +433,19 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.link_menu_position = None
         self.link_menu.setVisible(False)
+
+    def handle_first_time_init_done(self):
+        img_sticks = self.return_queue.get()
+
+        self.camera.rep_image_path = img_sticks[1]
+        self.camera.rep_image = cv.imread(str(self.camera.rep_image_path))
+        self.camera.rep_image = cv.resize(self.camera.rep_image, (0, 0), fx=0.25, fy=0.25)
+
+        lines = img_sticks[0]
+        sticks: List[Stick] = self.dataset.create_new_sticks(self.camera, len(lines))
+        for i, stick in enumerate(sticks):
+            line = lines[i]
+            stick.set_endpoints(*(line[0]), *(line[1]))
+        self.camera.add_sticks(sticks)
+
+        self.initialize_rest_of_gui()

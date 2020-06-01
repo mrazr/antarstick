@@ -20,7 +20,7 @@ class NumberInputWidget(QGraphicsTextItem):
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if len(event.text()) == 0:
             return
-        allowed_keys = [Qt.Key_Backspace, Qt.Key_Escape, Qt.Key_Return, Qt.Key_Enter, Qt.Key_Direction_R, Qt.Key_Direction_L, Qt.Key_Delete]
+        allowed_keys = [Qt.Key_Backspace, Qt.Key_Escape, Qt.Key_Return, Qt.Key_Enter, Qt.Key_Right, Qt.Key_Direction_L, Qt.Key_Delete]
         text = event.text()
         if (48 > ord(text) or ord(text) > 57) and event.key() not in allowed_keys:
             return
@@ -47,7 +47,6 @@ class NumberInputWidget(QGraphicsTextItem):
         if len(text) == 0:
             return None
         return int(text)
-
 
 class StickLengthInput(QGraphicsObject):
 
@@ -79,6 +78,7 @@ class StickLengthInput(QGraphicsObject):
         self.cm_text.setFont(Button.font)
         self.cm_text.setPlainText("cm")
         self.cm_text.setDefaultTextColor(Qt.white)
+        self.setVisible(False)
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: Optional[QWidget] = ...) -> None:
         pass
