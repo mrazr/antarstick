@@ -3,7 +3,7 @@ from pathlib import Path
 
 from PyQt5.Qt import QBrush, QColor, QPen
 from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QPainter, QPixmap
+from PyQt5.QtGui import QPainter, QPixmap, QFontMetrics
 from PyQt5.QtWidgets import QGraphicsItem, QGraphicsObject
 
 from camera_processing.widgets.button_menu import ButtonMenu
@@ -30,6 +30,8 @@ class OverlayGui(QGraphicsObject):
         self.mouse_pan_pic = QPixmap()
         self.icons_rect = QRectF(0, 0, 0, 0)
         self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+        self.top_menu.setVisible(False)
+        self.loading_screen_shown = True
 
     def initialize(self):
         path = Path(sys.argv[0]).parent / "camera_processing/gui_resources/"
@@ -42,8 +44,7 @@ class OverlayGui(QGraphicsObject):
 
         self.top_menu.add_button("edit_sticks", "Edit sticks", is_checkable=True, call_back=self.edit_sticks_clicked.emit)
         self.top_menu.add_button("link_sticks", "Link sticks", is_checkable=True, call_back=self.link_sticks_clicked.emit)
-        #self.top_menu.add_button("sticks_length", "Stick length: not set", call_back=self.sticks_length_clicked.emit)
-        self.top_menu.add_button("show_overlay", "Show overlay")
+        #self.top_menu.add_button("show_overlay", "Show overlay")
         self.top_menu.add_button("show_linked_cameras", "Show linked cameras")
         self.top_menu.add_button("reset_view", "Reset view", call_back=self.reset_view_requested.emit)
         self.top_menu.set_height(40)
@@ -84,11 +85,23 @@ class OverlayGui(QGraphicsObject):
                          Qt.AlignHCenter, "Pan view")
         painter.drawText(QRectF(15, 2.6 * rect.height(), rect.width(), 30),
                          Qt.AlignHCenter, "Zoom in/out")
+
+        if self.loading_screen_shown:
+            painter.fillRect(0, 0, self.boundingRect().width(), self.boundingRect().height(), QBrush(QColor(255, 255, 255, 255)))
+            fm = QFontMetrics(font)
+            font.setPixelSize(int(self.boundingRect().width() / 15))
+            painter.setFont(font)
+            painter.drawText(self.boundingRect(), Qt.AlignCenter, 'initializing')
         painter.setWorldMatrixEnabled(True)
         painter.restore()
-    
+
     def edit_sticks_button_pushed(self) -> bool:
         return self.top_menu.is_button_checked("edit_sticks")
     
     def link_sticks_button_pushed(self) -> bool:
         return self.top_menu.is_button_checked("link_sticks")
+
+    def show_loading_screen(self, show: bool):
+        self.loading_screen_shown = show
+        self.top_menu.setVisible(not self.loading_screen_shown)
+        self.update()

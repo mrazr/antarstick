@@ -118,7 +118,7 @@ class CustomPixmap(QGraphicsObject):
         self.scene().update()
 
     def boundingRect(self) -> PyQt5.QtCore.QRectF:
-        return self.gpixmap.boundingRect()
+        return self.gpixmap.boundingRect().united(self.title_rect.boundingRect().translated(self.title_rect.pos()))
 
     def initialise_with(self, camera: Camera) -> List[StickWidget]:
         self.camera = camera
@@ -142,9 +142,10 @@ class CustomPixmap(QGraphicsObject):
         self.layout_title_area()
 
     def layout_title_area(self):
+        self.prepareGeometryChange()
         self.title.setText(str(self.camera.folder.name))
         self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
-        self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
+        self.title_rect.setPos(0, self.gpixmap.boundingRect().height())
         self.title_rect.setVisible(True)
 
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2,
@@ -153,14 +154,13 @@ class CustomPixmap(QGraphicsObject):
         self.stick_length_btn.set_height(self.title_rect.boundingRect().height() - 4)
         self.stick_length_btn.setPos(self.title_rect.boundingRect().width() - 5 - self.stick_length_btn.boundingRect().width(),
                                      2)
-        #self.stick_length_btn.setPos(self.stick_length_lbl.pos() + QPointF(self.stick_length_lbl.boundingRect().width(), 0))
-        #self.stick_length_lbl.setPos(self.title.pos() + QPointF(self.title.boundingRect().width(), 0))
         self.stick_length_lbl.setPos(self.stick_length_btn.pos().x() - self.stick_length_lbl.boundingRect().width(), 0)
 
         self.stick_length_input.adjust_layout()
         self.stick_length_input.setPos(QPointF(0.5 * self.boundingRect().width(),
                                                0.5 * self.boundingRect().height()))
         self.stick_length_input.setVisible(self.stick_length_btn.is_on())
+        self.update()
 
     def set_show_title(self, value: bool):
         self.title_rect.setVisible(value)
@@ -230,13 +230,13 @@ class CustomPixmap(QGraphicsObject):
     def disable_link_button(self, btn_position: str):
         if btn_position == "left":
             self.left_add_button.setVisible(False)
-        else:
+        elif btn_position == "right":
             self.right_add_button.setVisible(False)
     
     def enable_link_button(self, btn_position: str):
         if btn_position == "left":
             self.left_add_button.setVisible(True)
-        else:
+        elif btn_position == "right":
             self.right_add_button.setVisible(True)
 
     def _remove_stick_widgets(self):

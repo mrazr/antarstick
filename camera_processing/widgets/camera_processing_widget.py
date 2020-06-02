@@ -52,6 +52,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self._camera_tab_map: Dict[int, int] = dict({})
 
     camera_link_available = Signal(bool)
+    camera_added = Signal(Camera)
 
     @Slot(Camera)
     def handle_camera_added(self, camera: Camera):
@@ -63,16 +64,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
         camera_widget.initialization_done.connect(self.handle_camera_widget_initialization_done)
 
-        #process = multiprocessing.Process(target=camera_widget.initialise_with, args=(camera,))
-        #process.run()
-        #camera_widget.initialise_with(camera)
-        #print(self.count())
-        #kself.update()
-        #worker = Worker(camera_widget, camera)
-        #QThreadPool.globalInstance().start(worker)
         camera_widget.initialise_with(camera)
-        if len(self._dataset.cameras) > 1:
-            self.camera_link_available.emit(True)
 
     @Slot(Camera)
     def handle_camera_removed(self, camera: Camera):

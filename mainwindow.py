@@ -59,12 +59,6 @@ class MainWindow(QMainWindow):
         file_dialog.setFileMode(QFileDialog.Directory)
         if file_dialog.exec_():
             self.setWindowTitle(file_dialog.selectedFiles()[0])
-            #process = multiprocessing.Process(target=self.dataset.add_camera, args=(Path(file_dialog.selectedFiles()[0]),))
-            #self.workers.append(process)
-            #process.start()
-            #print('triggered')
-            #worker = CameraLoadWorker(self.dataset, Path(file_dialog.selectedFiles()[0]))
-            #self.thread_pool.start(worker)
             self.dataset.add_camera(Path(file_dialog.selectedFiles()[0]))
 
     def handle_open_dataset_triggered(self, checked: bool):
@@ -73,9 +67,7 @@ class MainWindow(QMainWindow):
         file_dialog.setFileMode(QFileDialog.AnyFile)
         if file_dialog.exec_():
             file_path = Path(file_dialog.selectedFiles()[0])
-            process = multiprocessing.Process(target=self.dataset.load_from, args=(file_path,))
-            process.start()
-            #self.dataset.load_from(Path(file_path))  # TODO handle the bool return value
+            self.dataset.load_from(Path(file_path))  # TODO handle the bool return value
             self.setWindowTitle(str(self.dataset.path))
 
     def connect_dataset_signals(self):

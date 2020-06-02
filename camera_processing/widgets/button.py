@@ -251,3 +251,7 @@ class Button(QGraphicsObject):
         if self.scene() is not None:
             self.scene().update(self.sceneBoundingRect())
         self.clicked.emit({"btn_id": self.btn_id, "btn_label": self.label})
+
+    def set_opacity(self, opacity: float):
+        self.setOpacity(opacity)
+        self.update()

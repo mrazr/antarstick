@@ -9,9 +9,9 @@ Created on Thu Mar 26 12:20:07 2020
 import math
 from os import scandir
 from pathlib import Path
+from queue import Queue
 from time import time
 from typing import Dict, List, Optional, Tuple
-from queue import Queue
 
 import cv2 as cv
 import numpy as np
@@ -21,32 +21,18 @@ import skimage.filters
 import skimage.measure
 import skimage.morphology
 import skimage.transform
+from PyQt5.QtCore import QThreadPool
 from skimage.measure import regionprops
 from skimage.util import img_as_ubyte
-from sklearn.svm import LinearSVC
-from stick import Stick
+
 from my_thread_worker import MyThreadWorker
-
-import threading
-
-from PyQt5.QtCore import QThreadPool
-import pickle
+from stick import Stick
 
 Area = float
 Height = float
 Ecc = float
 Label = int
 Centroid = Tuple[int, int]
-
-
-hog_detect = cv.HOGDescriptor()
-if hog_detect.load('/home/radoslav/jupyterLabs/stick_hog_svm'):
-    print("COOL")
-
-#lin_svc: LinearSVC = None
-#with open("/home/radoslav/jupyterLabs/lin_svc.p", "rb") as f:
-#    lin_svc = pickle.load(f)
-
 
 
 def rect_se(width: int, height: int) -> np.ndarray:
@@ -530,7 +516,7 @@ def preprocess_phase(img: np.ndarray) -> np.ndarray:
 
     area_opened = skimage.morphology.remove_small_objects(thin, min_size=8, connectivity=2)
     area_opened2 = skimage.morphology.remove_small_objects(thin2, min_size=8, connectivity=2)
-    area_opened = np.bitwise_or(area_opened, area_opened2)
+    #area_opened = np.bitwise_or(area_opened, area_opened2)
 
     #up = cv.resize(prep, (0, 0), fx=2, fy=2)
     #overlaid = cv.cvtColor(img, cv.COLOR_GRAY2BGR)

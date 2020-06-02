@@ -52,7 +52,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.dataset = dataset
         self.dataset.cameras_linked.connect(self.handle_cameras_linked)
         self.dataset.cameras_unlinked.connect(self.handle_cameras_unlinked)
-        self.dataset.camera_added.connect(self.handle_camera_added)
+        #self.dataset.camera_added.connect(self.handle_camera_added)
         self.dataset.camera_removed.connect(self.handle_camera_removed)
         self.camera: Camera = None
         self.graphics_scene = QGraphicsScene()
@@ -117,9 +117,11 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.stick_link_manager.update_links()
         self.image_list.initialize(self.camera.folder)
         if len(self.camera.sticks) == 0:
-            print('detecting')
             self._detect_sticks()
         else:
+            if self.camera.rep_image is None:
+                self.camera.rep_image = cv.resize(cv.imread(str(self.camera.rep_image_path)),
+                                                  (0, 0), fx=0.25, fy=0.25)
             self.initialize_rest_of_gui()
 
     def initialize_rest_of_gui(self):
@@ -147,10 +149,12 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.initialize_link_menu()
         self.ui.image_list.setEnabled(True)
+        self.overlay_gui.show_loading_screen(False)
         self.initialization_done.emit(self.camera)
 
     @Slot(bool)
     def link_cameras_enabled(self, value: bool):
+        print('link_cameras_enabled')
         self.gpixmap.set_link_cameras_enabled(value)
 
 
@@ -211,7 +215,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.gpixmap.set_reference_line_percentage(value / 100.0)
     
     def _recenter_view(self):
-        rect_to_view = self.gpixmap.sceneBoundingRect()
+        #rect_to_view = self.gpixmap.sceneBoundingRect()
+        rect_to_view = self.gpixmap.mapToScene(self.gpixmap.boundingRect()).boundingRect()
 
         if self.left_link is not None:
             rect_to_view = rect_to_view.united(self.left_link.sceneBoundingRect())
@@ -229,7 +234,6 @@ class CameraViewWidget(QtWidgets.QWidget):
     
     @Slot(QModelIndex, QModelIndex)
     def handle_list_model_current_changed(self, current: QModelIndex, previous: QModelIndex):
-        print('list model current changed')
         image_path = self.image_list.data(current, Qt.UserRole)
         self.current_viewed_image = cv.pyrDown(cv.imread(str(image_path)))
         self.gpixmap.set_image(cv.resize(self.current_viewed_image, (0, 0), fx=0.5, fy=0.5))
@@ -365,7 +369,7 @@ class CameraViewWidget(QtWidgets.QWidget):
                 self.gpixmap.left_add_button.setVisible(True)
             pos = self.gpixmap.right_add_button.sceneBoundingRect().center()
             pos = pos - QPointF(self.link_menu.boundingRect().width(), self.link_menu.boundingRect().height() * 0.5)
-        else:
+        elif self.link_menu_position == "left":
             self.gpixmap.right_add_button.link_cam_text.setVisible(False)
             if self.link_menu_position is not None:
                 self.gpixmap.right_add_button.setVisible(True)
@@ -373,7 +377,6 @@ class CameraViewWidget(QtWidgets.QWidget):
                                 self.link_menu.boundingRect().height() * 0.5)
         self.gpixmap.disable_link_button(self.link_menu_position)
         self.link_menu.setPos(pos)
-        #self.link_menu.setVisible(True)
 
     def initialize_link_menu(self):
         for cam in self.dataset.cameras:

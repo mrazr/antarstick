@@ -59,7 +59,7 @@ class Camera(QObject):
         #self.rep_image_path = self.folder / Path(listdir(self.folder)[0]) #TODO listdir - filter out non image files
         #self.rep_image: np.ndarray = cv.resize(cv.imread(str(self.rep_image_path)), (0, 0), fx=0.25, fy=0.25,
         #                                      interpolation=cv.INTER_NEAREST)
-        self.rep_image_path = None
+        self.rep_image_path: Path = None
         self.rep_image = None
 
     def __load_measuremets(self) -> pd.DataFrame:
@@ -79,7 +79,6 @@ class Camera(QObject):
         state = self.__dict__.copy()
         del state['measurements']
         del state['rep_image']
-        del state['rep_image_path']
         return state
 
     def get_folder_name(self) -> str:
@@ -96,6 +95,7 @@ class Camera(QObject):
         measurements_path = state['measurements_path']
         camera = Camera(path, _id, measurements_path)
         camera.sticks = sticks
+        camera.rep_image_path = state['rep_image_path']
 
         return camera
 

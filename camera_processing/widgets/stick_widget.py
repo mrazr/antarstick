@@ -62,6 +62,7 @@ class StickWidget(QGraphicsObject):
         self.btn_delete.set_width(btn_size)
         self.btn_delete.clicked.connect(self.handle_btn_delete_clicked)
         self.btn_delete.setPos(self.line.p1() - QPointF(0.5 * self.btn_delete.boundingRect().width(), 1.1 * self.btn_delete.boundingRect().height()))
+        self.btn_delete.set_opacity(0.7)
 
         self.top_handle = QGraphicsRectItem(0, 0, self.handle_size, self.handle_size, self)
         self.mid_handle = QGraphicsRectItem(0, 0, self.handle_size, self.handle_size, self)
@@ -119,11 +120,24 @@ class StickWidget(QGraphicsObject):
             painter.setPen(pen)
             painter.drawLine(self.line.p1(), self.line.p2())
 
-        pen = QPen(QColor(0, 125, 125, 255))
-        pen.setStyle(Qt.DotLine)
-        pen.setWidth(1.0)
-        painter.setPen(pen)
-        painter.drawLine(self.line.p1(), self.line.p2())
+        pen = QPen(QColor(0, 255, 255, 255))
+        if self.mode != StickMode.EDIT:
+            pen.setStyle(Qt.DotLine)
+            pen.setWidth(1.0)
+            painter.setPen(pen)
+            painter.drawEllipse(self.line.p1(), 6, 6)
+            painter.drawEllipse(self.line.p2(), 6, 6)
+            pen.setBrush(QBrush(QColor(255, 0, 0, 255)))
+            painter.setPen(pen)
+            #painter.drawEllipse(self.line.p1(), 1, 1)
+            #painter.drawEllipse(self.line.p2(), 1, 1)
+            off = 2
+            painter.drawLine(self.line.p1() - QPointF(0, off), self.line.p1() + QPointF(0, off))
+            painter.drawLine(self.line.p1() - QPointF(off, 0), self.line.p1() + QPointF(off, 0))
+            painter.drawLine(self.line.p2() - QPointF(0, off), self.line.p2() + QPointF(0, off))
+            painter.drawLine(self.line.p2() - QPointF(off, 0), self.line.p2() + QPointF(off, 0))
+        else:
+            painter.drawLine(self.line.p1(), self.line.p2())
 
     def boundingRect(self) -> PyQt5.QtCore.QRectF:
         return self.gline.boundingRect().united(self.top_handle.boundingRect()).united(self.mid_handle.boundingRect()).united(self.bottom_handle.boundingRect())
@@ -161,8 +175,17 @@ class StickWidget(QGraphicsObject):
             return
 
         self.hovered_handle.setBrush(self.handle_press_brush)
+        if self.hovered_handle == self.mid_handle:
+            self.bottom_handle.setBrush(self.handle_press_brush)
+            self.bottom_handle.setPen(self.handle_press_pen)
+            self.bottom_handle.setOpacity(0.5)
+            self.top_handle.setBrush(self.handle_press_brush)
+            self.top_handle.setPen(self.handle_press_pen)
+            self.top_handle.setOpacity(0.5)
         self.hovered_handle.setPen(self.handle_press_pen)
+        self.hovered_handle.setOpacity(0.5)
         self.handle_mouse_offset = self.hovered_handle.rect().center() - event.pos()
+        self.btn_delete.setVisible(False)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
         if self.available_for_linking:
@@ -175,7 +198,16 @@ class StickWidget(QGraphicsObject):
         if self.hovered_handle is not None:
             self.hovered_handle.setBrush(self.handle_hover_brush)
             self.hovered_handle.setPen(self.handle_idle_pen)
+            self.hovered_handle.setOpacity(1.0)
+            if self.hovered_handle == self.mid_handle:
+                self.bottom_handle.setBrush(self.handle_idle_brush)
+                self.bottom_handle.setPen(self.handle_idle_pen)
+                self.bottom_handle.setOpacity(1.0)
+                self.top_handle.setBrush(self.handle_idle_brush)
+                self.top_handle.setPen(self.handle_idle_pen)
+                self.top_handle.setOpacity(1.0)
             self.stick_changed.emit(self)
+        self.btn_delete.setVisible(True)
     
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent):
         if self.hovered_handle is None:
@@ -249,7 +281,9 @@ class StickWidget(QGraphicsObject):
         rect = self.mid_handle.rect()
         rect.moveCenter(self.line.center())
         self.mid_handle.setRect(rect)
-        self.btn_delete.setPos(self.line.p1() - QPointF(0.5 * self.btn_delete.boundingRect().width(), 1.1 * self.btn_delete.boundingRect().height()))
+        #self.btn_delete.setPos(self.line.p1() - QPointF(0.5 * self.btn_delete.boundingRect().width(), 1.1 * self.btn_delete.boundingRect().height()))
+        self.btn_delete.setPos(self.top_handle.rect().center() - QPointF(self.btn_delete.boundingRect().width() / 2,
+                                                               self.btn_delete.boundingRect().height() + self.top_handle.boundingRect().height() / 2))
         self.link_button.setPos(self.bottom_handle.rect().bottomRight() - QPointF(self.link_button.boundingRect().width() / 2, 0))
     
     def set_available_for_linking(self, value: bool):
