@@ -1,7 +1,8 @@
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union, Any
 
 import jsonpickle
+import json
 from numpy import zeros
 from PyQt5.QtCore import QObject
 from PyQt5.QtCore import pyqtSignal as Signal
@@ -79,33 +80,69 @@ class Dataset(QObject):
 
     def __init__(self, path: Optional[Path] = None):
         super(Dataset, self).__init__()
+        self.path: Path = None
         if path is not None:
             if path.exists():
                 self.load_from(path)
         else:
             self.path = Path(".")
         self.stick_views_map: Dict[int, Tuple[int, int, int]] = dict({})
+        #self.camera_folders: List[Path] = []
+        self.cameras_ids: Dict[str, int] = dict({})
+        #self.cameras: Dict[int, Camera] = dict({})
         self.cameras: List[Camera] = []
         self.next_camera_id = 0
         self.next_stick_id = 0
         self.linked_cameras: Set[Tuple[int, int]] = set()
         self.unused_stick_ids: List[int] = []
 
-    def add_camera(self, folder: Path):
-        camera = Camera(folder, self.next_camera_id)
-        if self.path:
-            camera.measurements_path = self.path.parent / f"camera{camera.id}.csv"
+    def add_camera(self, folder: Path, camera_id: int = -1, first_time_add: bool = True) -> bool:
+        camera = Camera.load_from_path(folder)
+        if first_time_add:
+            camera_id = self.next_camera_id
+            self.next_camera_id += 1
+            self.cameras_ids[str(folder)] = camera_id
+        if camera is None:  # We didn't find camera.json file in `folder`
+            # If this is the first time this dataset is adding this camera, meaning that `dataset.camera_folders`
+            # does not contain `folder` we create a brand new camera.json and a corresponding Camera object
+            # All future attempts to add this Camera, even when working with other Dataset than this one will result in
+            # reading from the file `folder/camera.json` that is now being created.
+            if first_time_add:
+                camera = Camera(folder, camera_id)
+                if self.path:
+                    camera.measurements_path = self.path.parent / f"camera{camera.id}.csv"
+                #self.camera_folders.append(folder)
+            else:
+                # And this is a case when dataset contains `folder` in `self.camera_folders`, so `folder/camera.json`
+                # should exist but it does not. This should then offer the user to locate the `camera.json` file
+                # manually through file dialog, or let the application create a new camera.json and possibly re-measure
+                # all the photos. I'm going to handle these cases for I guess there might be a time when a user wants to
+                # share the measurements with a fellow scientist, so they ideally only share the dataset.json file with
+                # the measurements csv files and camera.json files without the actual gigabytes of photos. It might even
+                # be that camera.json files will not be necessary for the visualization part.
+                # TODO handle case when loading camera referenced in dataset file, and the camera.json is not found
+                raise NotImplementedError
+        #else:
+        #    if first_time_add:
+        #        self.camera_folders.append(folder)
+        #        camera.id = self.next_camera_id
+        #        self.next_camera_id += 1
+        camera.id = camera_id
         self.cameras.append(camera)
-        self.next_camera_id += 1
+        for stick in camera.sticks:
+            stick.camera_id = camera.id
         camera.stick_removed.connect(self.handle_stick_removed)
         camera.sticks_removed.connect(self.handle_sticks_removed)
         self.camera_added.emit(camera)
+        return True
 
     def remove_camera(self, camera_id: int):
         old_camera_count = len(self.cameras)
         camera: Camera = next(filter(lambda cam: cam.id == camera_id, self.cameras))
 
-        camera_links  = list(filter(lambda link: link[0] == camera.id or link[1] == camera.id, self.linked_cameras))
+        del self.cameras_ids[str(camera.folder)]
+
+        camera_links = list(filter(lambda link: link[0] == camera.id or link[1] == camera.id, self.linked_cameras))
 
         for link in camera_links:
             other_cam_id = link[1] if link[0] == camera.id else link[0]
@@ -126,9 +163,16 @@ class Dataset(QObject):
                 for camera in self.cameras:
                     path = self.path.parent / f"camera{camera.id}.csv"
                     camera.save_measurements(path)
+                    camera.save()
                 state = self.__dict__.copy()
                 state['cameras'] = [camera.get_state() for camera in self.cameras]
                 output_file.write(jsonpickle.encode(state))
+
+            with open(self.path, "w") as output_file:
+                for camera in self.cameras:
+                    camera.save()
+                state = self.get_state()
+                json.dump(state, output_file, indent=1)
         except OSError as err:
             print(f"Could not open {self.path} for writing: {err.strerror}")
             return False
@@ -141,17 +185,37 @@ class Dataset(QObject):
     def load_from(self, path: Path) -> bool:
         try:
             with open(path, "r") as dataset_file:
-                decoded = jsonpickle.decode(dataset_file.read())
-                self.path = decoded['path']
-                stick_views_map = decoded['stick_views_map']
-                self.stick_views_map = dict({})
-                self.next_camera_id = decoded['next_camera_id']
-                linked_cameras = decoded['linked_cameras']
-                self.unused_stick_ids = list(map(int, decoded['unused_stick_ids']))
-                self.cameras = [Camera.build_from_state(camera_state) for camera_state in decoded['cameras']]
-                for camera in self.cameras:
-                    self.connect_camera_signals(camera)
-                    self.camera_added.emit(camera)
+                state = json.load(dataset_file)
+                #decoded = jsonpickle.decode(dataset_file.read())
+                #self.path = decoded['path']
+                #stick_views_map = decoded['stick_views_map']
+                #self.stick_views_map = dict({})
+                #self.next_camera_id = decoded['next_camera_id']
+                #linked_cameras = decoded['linked_cameras']
+                #self.unused_stick_ids = list(map(int, decoded['unused_stick_ids']))
+                #cameras = [Camera.build_from_state(camera_state) for camera_state in decoded['cameras']]
+
+                self.path = Path(state['path'])
+                stick_views_map = state['stick_views_map']
+                self.next_camera_id = state['next_camera_id']
+                linked_cameras = set(state['linked_cameras'])
+                self.unused_stick_ids = state['unused_stick_ids']
+                self.next_stick_id = state['next_stick_id']
+                self.cameras_ids = state['cameras_ids']
+
+                #for camera_folder in state['camera_folders']:
+                #    if not self.add_camera(Path(camera_folder), first_time_add=False):
+                #        raise NotImplementedError
+
+                for path_str, cam_id in self.cameras_ids.items():
+                    if not self.add_camera(Path(path_str), camera_id=cam_id, first_time_add=False):
+                        raise NotImplementedError
+
+                #for cam in cameras:
+                #    camera = Camera.load_from_path(cam.folder)
+                #    self.cameras.append(camera)
+                #    self.connect_camera_signals(camera)
+                #    self.camera_added.emit(camera)
 
             self.loading_finished.emit()
             for left_cam_id, right_cam_id in linked_cameras:
@@ -260,3 +324,15 @@ class Dataset(QObject):
     def disconnect_camera_signals(self, camera: Camera):
         camera.stick_removed.disconnect(self.handle_stick_removed)
         camera.sticks_removed.disconnect(self.handle_sticks_removed)
+
+    def get_state(self) -> Dict[str, Any]:
+        return {
+            'next_camera_id': self.next_camera_id,
+            'next_stick_id': self.next_stick_id,
+            'path': str(self.path),
+            #'camera_folders': list(map(lambda path: str(path), self.camera_folders)),
+            'cameras_ids': self.cameras_ids,
+            'linked_cameras': list(self.linked_cameras),
+            'stick_views_map': self.stick_views_map,
+            'unused_stick_ids': self.unused_stick_ids,
+        }

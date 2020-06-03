@@ -9,6 +9,8 @@ from PyQt5.QtCore import QObject, pyqtSignal
 
 from stick import Stick
 
+import json
+
 
 class Camera(QObject):
     """Class for representing a particular photo folder
@@ -45,7 +47,7 @@ class Camera(QObject):
     sticks_removed = pyqtSignal('PyQt_PyObject')
     stick_changed = pyqtSignal(Stick)
 
-    def __init__(self, folder: Path, _id: int, measurements_path: Optional[Path] = None):
+    def __init__(self, folder: Path, _id: int = -1, measurements_path: Optional[Path] = None):
         super(Camera, self).__init__()
         self.folder = Path(folder)
         self.sticks: List[Stick] = []
@@ -126,3 +128,31 @@ class Camera(QObject):
             for stick in sticks:
                 self.sticks.remove(stick)
         self.sticks_removed.emit(sticks)
+
+    def save(self):
+        stick_states = list(map(lambda s: s.get_state(), self.sticks))
+        state = {
+            'folder': str(self.folder),
+            'rep_image_path': str(self.rep_image_path),
+            'sticks': stick_states,
+            'measurements_path': str(self.measurements_path)
+        }
+
+        with open(self.folder / 'camera.json', 'w') as f:
+            json.dump(state, f, indent=1)
+
+    @staticmethod
+    def load_from_path(folder: Path) -> Optional['Camera']:
+        camera_json = folder / 'camera.json'
+        if not camera_json.exists():
+            return None
+        camera = None
+        with open(str(camera_json), 'r') as f:
+            state = json.load(f)
+            camera = Camera(Path(state['folder']))
+            camera.rep_image_path = Path(state['rep_image_path'])
+            camera.measurements_path = Path(state['measurements_path'])
+            sticks = list(map(lambda stick_state: Stick.build_from_state(stick_state), state['sticks']))
+
+            camera.sticks = sticks
+        return camera

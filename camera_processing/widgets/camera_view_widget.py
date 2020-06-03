@@ -450,5 +450,6 @@ class CameraViewWidget(QtWidgets.QWidget):
             line = lines[i]
             stick.set_endpoints(*(line[0]), *(line[1]))
         self.camera.add_sticks(sticks)
+        self.camera.save()
 
         self.initialize_rest_of_gui()
