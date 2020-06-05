@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import numpy as np
 from numpy import ndarray
@@ -37,8 +37,9 @@ class Stick:
     """
 
     local_id: int
-    top: ndarray
-    bottom: ndarray
+    stick_views: List['Stick']
+    top: ndarray = np.zeros((2,))
+    bottom: ndarray = np.zeros((2,))
     camera_id: int = -1
     id: int = -1
     length_px: float = field(init=False)
@@ -49,6 +50,7 @@ class Stick:
     def __post_init__(self):
         self.length_px = np.linalg.norm(self.top - self.bottom)
         self.label = str(self.id)
+        self.stick_views = []
 
     def scale(self, factor: float):
         """
@@ -91,7 +93,7 @@ class Stick:
         top = np.array(state['top'])
         bottom = np.array(state['bottom'])
 
-        stick = Stick(local_id, top, bottom)
+        stick = Stick(local_id, stick_views=[], top=top, bottom=bottom)
         stick.length_px = state['length_px']
         stick.length_cm = state['length_cm']
         stick.label = state['label']
