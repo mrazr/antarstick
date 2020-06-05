@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 from PyQt5.Qt import (QColor, QGraphicsItem, QGraphicsLineItem,
                       QGraphicsObject, QLineF,
@@ -91,7 +91,9 @@ class StickLinkManager(QGraphicsObject):
         self.primary_camera: CustomPixmap = None
         self.secondary_cameras: List[CustomPixmap] = []
         self.links: List[Tuple[int, int, int]] = []
-        self.stick_links: List[StickLink] = []
+        #self.stick_links: List[StickLink] = []
+        self.stick_links: Dict[int, Tuple[List[StickLink], QColor]] = dict({})
+        self.unused_colors: List[QColor] = []
         self.current_link_item: StickLink = None
         self.dataset.sticks_linked.connect(self.handle_sticks_linked)
         self.dataset.sticks_unlinked.connect(self.handle_sticks_unlinked)
@@ -116,7 +118,19 @@ class StickLinkManager(QGraphicsObject):
     def accept(self):
         if self.current_link_item is not None:
             if self.current_link_item.stick2 is not None:
-                self.dataset.link_sticks(self.current_link_item.stick1.stick, self.current_link_item.stick2.stick)
+                stick1 = self.current_link_item.stick1.stick
+                stick2 = self.current_link_item.stick2.stick
+
+                # Unlink stick1 from other sticks to which it might be linked
+                self.dataset.unlink_stick(self.current_link_item.stick1.stick)
+
+                # Also destroy a potential link between stick2 and some other stick from the same
+                # camera as stick1
+                stick2_view = self.dataset.get_stick_view_from_camera(self.current_link_item.stick2.stick,
+                                                                      self.dataset.get_camera(stick1.camera_id))
+                if stick2_view is not None:
+                    self.dataset.unlink_sticks(stick2, stick2_view)
+                self.dataset.link_sticks_(self.current_link_item.stick1.stick, self.current_link_item.stick2.stick)
                 self.cancel()
 
     def cancel(self):
@@ -166,65 +180,115 @@ class StickLinkManager(QGraphicsObject):
             self.stick_links.append(self.current_link_item)
             self.current_link_item = None
         else:
-            source = stick1 if stick1.camera_id == self.camera.id else stick2
-            target = stick2 if source == stick1 else stick1
+            source = stick2 if stick1.camera_id == self.camera.id else stick1
+            target = stick2 if source.id == stick1.id else stick1
 
-            source_sw = next(filter(lambda sw: sw.stick.id == source.id, self.primary_camera.stick_widgets))
-            target_sw = None
-
+            source_sw = None
             for pixmap in self.secondary_cameras:
-                if pixmap.camera.id != target.camera_id:
+                if pixmap.camera.id != source.camera_id:
                     continue
-                target_sw = next(filter(lambda sw: sw.stick.id == target.id, pixmap.stick_widgets))
+                source_sw = next(filter(lambda sw: sw.stick.id == source.id, pixmap.stick_widgets))
+
+            if source_sw is None:
+                return
+            #target_sw = None
+
+            target_sw = next(filter(lambda sw: sw.stick.id == target.id, self.primary_camera.stick_widgets))
+
+            if target.id not in self.stick_links:
+                color = self.get_new_link_group_color()
+                self.stick_links[target.id] = ([], color)
+
+            links, color = self.stick_links[target.id]
 
             link = StickLink(source_sw, target_sw, self)
+            link.set_color(color)
             link.btn_break_link.setVisible(True)
             link.break_link_clicked.connect(self.handle_break_link_clicked)
             source_sw.stick_changed.connect(link.handle_stick_changed)
             source_sw.set_is_linked(True)
             target_sw.set_is_linked(True)
-            self.stick_links.append(link)
-        self.color_stick_links()
+            #self.stick_links.append(link)
+            links.append(link)
+            self.stick_links[target.id] = (links, color)
+        #self.color_stick_links()
         self.cancel()
         
     def handle_sticks_unlinked(self, stick1: Stick, stick2: Stick):
         if stick1.camera_id != self.camera.id and stick2.camera_id != self.camera.id:
             return
-        link: StickLink = next(filter(lambda l: l.stick1.stick.id == stick1.id or l.stick2.stick.id == stick1.id, self.stick_links))
+        primary_stick = stick1 if stick1.camera_id == self.camera.id else stick2
+
+        # Check whether we are handling event that is relevant to this StickLinkManager, if not, return
+        # A camera configuration such as this can occur:
+        # M3 <- M4 -> M1
+        # symmetrically we would also have on other camera tabs:
+        #       M3 -> M4
+        # M4 <- M1
+        # And on tab for M4 we would connect some stick from M4 to a stick from both M3 and M1.
+        # In Dataset this is represented as equivalence between those three sticks, because obviously it is the same
+        # stick in real world seen from three cameras.
+        # When we break any of the stick links now, say between M3 and M4, all three tabs M1, M3 and M4 will receive
+        # signal that the two sticks were unlinked. Obviously, this event is relevant only to M3 and M4 though, so M1
+        # should exit, which happens in the IF that follows.
+        if primary_stick.id not in self.stick_links:
+            return
+        secondary_stick = stick2 if primary_stick.id == stick1.id else stick1
+        link_list, color = self.stick_links[primary_stick.id]
+        #link_list: List[StickLink] = list(filter(lambda l: l.stick1.stick.id == stick1.id or l.stick2.stick.id == stick1.id, self.stick_links))
+        link = list(filter(lambda l: l.stick1.stick.id == secondary_stick.id, link_list))
+        if len(link) == 0:
+            return
+        link = link[0]
         link.stick1.set_is_linked(False)
         link.stick2.set_is_linked(False)
-        self.stick_links.remove(link)
+        #link.stick1.set_is_linked(False)
+        #link.stick2.set_is_linked(False)
+        #self.stick_links.remove(link)
+
         self.scene().removeItem(link)
         link.setEnabled(False)
         link.setParentItem(None)
         link.deleteLater()
-        self.color_stick_links()
+
+        link_list = list(filter(lambda l: l.stick1.stick.id != secondary_stick.id and l.stick2.stick.id != secondary_stick.id, link_list))
+        if len(link_list) == 0:
+            del self.stick_links[primary_stick.id]
+            self.unused_colors.append(color)
+        else:
+            self.stick_links[primary_stick.id] = (link_list, color)
+        #self.color_stick_links()
         self.update()
 
     def start(self):
         self.setVisible(True)
 
         for sw in self.primary_camera.stick_widgets:
-            sw.set_mode(StickMode.LINK)
-            sw.set_available_for_linking(False)
-        
+            #sw.set_mode(StickMode.LINK)
+            sw.hovered.connect(self.handle_stick_widget_hover)
+            sw.set_available_for_linking(True)
+
         for cam in self.secondary_cameras:
             for sw in cam.stick_widgets:
-                sw.set_available_for_linking(True)
+                sw.set_mode(StickMode.LINK)
+                sw.set_available_for_linking(False)
 
     def stop(self):
         self.cancel()
         for sw in self.primary_camera.stick_widgets:
-            sw.set_mode(StickMode.DISPLAY)
-        
+            sw.set_available_for_linking(False)
+            #sw.set_mode(StickMode.DISPLAY)
+            sw.hovered.disconnect(self.handle_stick_widget_hover)
+
         for cam in self.secondary_cameras:
             for sw in cam.stick_widgets:
-                sw.set_available_for_linking(False)
+                sw.set_mode(StickMode.DISPLAY)
+                #sw.set_available_for_linking(False)
         
         self.setVisible(False)
     
     def handle_break_link_clicked(self, sw: StickWidget):
-        self.dataset.unlink_stick(sw.stick)
+        self.dataset.unlink_stick_(sw.stick)
     
     def color_stick_links(self):
         if len(self.stick_links) == 0:
@@ -243,3 +307,12 @@ class StickLinkManager(QGraphicsObject):
     def handle_stick_widgets_out_of_sync(self, cp: CustomPixmap):
         for sw in cp.stick_widgets:
             sw.hovered.connect(self.handle_stick_widget_hover)
+
+    def get_new_link_group_color(self) -> QColor:
+        if len(self.unused_colors) > 0:
+            return self.unused_colors.pop()
+        num_groups = len(self.stick_links.keys())
+        step = 60
+        offset = 0 if num_groups < 6 else step / ((num_groups + 6) // 6)
+        hue = (num_groups % 6) * step + offset
+        return QColor.fromHsvF(hue / 360.0, 1.0, 1.0, 1.0)

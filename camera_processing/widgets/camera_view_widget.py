@@ -1,5 +1,5 @@
 from queue import Queue
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import cv2 as cv
 import numpy as np
@@ -79,8 +79,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.stick_widgets: List[StickWidget] = []
         self.detected_sticks: List[Stick] = []
         self.link_menus = dict({"right": None, "left": None})
-        self.left_link: CustomPixmap = None
-        self.right_link: CustomPixmap = None
+        self.left_link: Optional[CustomPixmap] = None
+        self.right_link: Optional[CustomPixmap] = None
 
         self.overlay_gui = OverlayGui(self.cam_view)
         self.overlay_gui.reset_view_requested.connect(self._recenter_view)
@@ -134,7 +134,7 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.gpixmap.set_show_title(True)
 
-        self.gpixmap.stick_link_requested.connect(self.stick_link_manager.handle_stick_widget_link_requested)
+        #self.gpixmap.stick_link_requested.connect(self.stick_link_manager.handle_stick_widget_link_requested)
 
         x_center = self.cam_view.viewport().rect().width() / 2
         self.gpixmap.setPos(x_center - self.gpixmap.boundingRect().width() / 2, 0)
@@ -331,20 +331,25 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.right_link = c_pixmap
 
         c_pixmap.setPos(pos)
+        c_pixmap.stick_link_requested.connect(self.stick_link_manager.handle_stick_widget_link_requested)
 
         self._recenter_view()
 
         self.sync_stick_link_manager()
 
     def handle_cameras_unlinked(self, cam1: Camera, cam2: Camera):
+        if cam1.id != self.camera.id and cam2.id != self.camera.id:
+            return
         to_remove = cam1 if cam2.id == self.camera.id else cam2
 
         if self.left_link is not None and self.left_link.camera.id == to_remove.id:
+            self.left_link.stick_link_requested.disconnect(self.stick_link_manager.handle_stick_widget_link_requested)
             self.left_link.setParentItem(None)
             self.graphics_scene.removeItem(self.left_link)
             self.left_link = None
             self.gpixmap.left_add_button.set_role("LINK")
         elif self.right_link is not None and self.right_link.camera.id == to_remove.id:
+            self.right_link.stick_link_requested.disconnect(self.stick_link_manager.handle_stick_widget_link_requested)
             self.right_link.setParentItem(None)
             self.graphics_scene.removeItem(self.right_link)
             self.right_link = None
@@ -445,10 +450,12 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.camera.rep_image = cv.resize(self.camera.rep_image, (0, 0), fx=0.25, fy=0.25)
 
         lines = img_sticks[0]
-        sticks: List[Stick] = self.dataset.create_new_sticks(self.camera, len(lines))
-        for i, stick in enumerate(sticks):
-            line = lines[i]
-            stick.set_endpoints(*(line[0]), *(line[1]))
-        self.camera.add_sticks(sticks)
+        #sticks: List[Stick] = self.dataset.create_new_sticks(self.camera, len(lines))
+        sticks: List[Stick] = self.camera.create_new_sticks(lines)
+        #for i, stick in enumerate(sticks):
+        #    line = lines[i]
+        #    stick.set_endpoints(*(line[0]), *(line[1]))
+        #self.camera.add_sticks(sticks)
+        self.camera.save()
 
         self.initialize_rest_of_gui()

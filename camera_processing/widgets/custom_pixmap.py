@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsPixmapItem,
                              QGraphicsRectItem, QGraphicsSceneHoverEvent,
                              QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem,
                              QWidget, QGraphicsObject)
-from numpy import ndarray
+import numpy as np
 
 from camera import Camera
 from camera_processing.widgets.link_camera_button import LinkCameraButton
@@ -134,7 +134,7 @@ class CustomPixmap(QGraphicsObject):
 
         return self.update_stick_widgets()
 
-    def set_image(self, img: ndarray):
+    def set_image(self, img: np.ndarray):
         barray = QByteArray(img.tobytes())
         image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
         self.original_pixmap = QPixmap.fromImage(image)
@@ -167,7 +167,9 @@ class CustomPixmap(QGraphicsObject):
         self.title.setVisible(value)
 
     def update_stick_widgets(self):
+        print('updating stick widgets')
         stick_length = 60
+        print(self.camera.sticks)
         for stick in self.camera.sticks:
             sw = StickWidget(stick, self)
             sw.set_mode(self.stick_widget_mode)
@@ -215,9 +217,9 @@ class CustomPixmap(QGraphicsObject):
         if self.stick_widget_mode == StickMode.EDIT:
             x = event.pos().toPoint().x()
             y = event.pos().toPoint().y()
-            stick = self.dataset.create_new_stick(self.camera)
-            stick.set_endpoints(x, y - 50, x, y + 50)
-            self.camera.add_stick(stick)
+            _ = self.camera.create_new_sticks([np.array([[y - 50, x], [y + 50, x]])])[0] #self.dataset.create_new_stick(self.camera)
+            #stick.set_endpoints(x, y - 50, x, y + 50)
+            #self.camera.add_stick(stick)
 
     def set_button_mode(self, click_handler: Callable[[Camera], None], data: str):
         self.mode = 1 # TODO make a proper ENUM
@@ -286,6 +288,7 @@ class CustomPixmap(QGraphicsObject):
         self.update()
 
     def handle_sticks_added(self, sticks: List[Stick]):
+        print('adding stickwidgets')
         if sticks[0].camera_id != self.camera.id:
             return
         for stick in sticks:

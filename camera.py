@@ -9,6 +9,8 @@ from PyQt5.QtCore import QObject, pyqtSignal
 
 from stick import Stick
 
+import json
+
 
 class Camera(QObject):
     """Class for representing a particular photo folder
@@ -39,17 +41,19 @@ class Camera(QObject):
         Returns the name of this Camera's photos folder.
     """
 
-    stick_added = pyqtSignal(Stick)
+    stick_added = pyqtSignal([Stick])
     stick_removed = pyqtSignal(Stick)
-    sticks_added = pyqtSignal('PyQt_PyObject')
+    sticks_added = pyqtSignal(['PyQt_PyObject', 'PyQt_PyObject'])
     sticks_removed = pyqtSignal('PyQt_PyObject')
     stick_changed = pyqtSignal(Stick)
 
-    def __init__(self, folder: Path, _id: int, measurements_path: Optional[Path] = None):
+    def __init__(self, folder: Path, _id: int = -1, measurements_path: Optional[Path] = None):
         super(Camera, self).__init__()
         self.folder = Path(folder)
         self.sticks: List[Stick] = []
         self.id = _id
+        self.next_stick_id = 0
+        self.unused_stick_ids = []
         if measurements_path:
             self.measurements_path = measurements_path
             self.measurements = self.__load_measuremets()
@@ -107,7 +111,8 @@ class Camera(QObject):
     def remove_stick(self, stick: Stick):
         if stick.camera_id != self.id:
             return
-        self.sticks = list(filter(lambda s: s.id != stick.id, self.sticks))
+        self.sticks = list(filter(lambda s: s.local_id != stick.local_id, self.sticks))
+        self.unused_stick_ids.append(stick.local_id)
         self.stick_removed.emit(stick)
 
     def add_sticks(self, sticks: List[Stick]):
@@ -125,4 +130,57 @@ class Camera(QObject):
         else:
             for stick in sticks:
                 self.sticks.remove(stick)
+        self.unused_stick_ids.extend(map(lambda stick: stick.local_id, sticks))
         self.sticks_removed.emit(sticks)
+
+    def save(self):
+        stick_states = list(map(lambda s: s.get_state(), self.sticks))
+        state = {
+            'folder': str(self.folder),
+            'rep_image_path': str(self.rep_image_path),
+            'sticks': stick_states,
+            'measurements_path': str(self.measurements_path),
+            'next_stick_id': self.next_stick_id,
+            'unused_stick_ids': self.unused_stick_ids,
+        }
+
+        with open(self.folder / 'camera.json', 'w') as f:
+            json.dump(state, f, indent=1)
+
+    @staticmethod
+    def load_from_path(folder: Path) -> Optional['Camera']:
+        camera_json = folder / 'camera.json'
+        if not camera_json.exists():
+            return None
+        camera = None
+        with open(str(camera_json), 'r') as f:
+            state = json.load(f)
+            camera = Camera(Path(state['folder']))
+            camera.rep_image_path = Path(state['rep_image_path'])
+            camera.measurements_path = Path(state['measurements_path'])
+            camera.next_stick_id = state['next_stick_id']
+            camera.unused_stick_ids = state['unused_stick_ids']
+            sticks = list(map(lambda stick_state: Stick.build_from_state(stick_state), state['sticks']))
+
+            camera.sticks = sticks
+        return camera
+
+    def get_stick_by_id(self, stick_id: int) -> Stick:
+        return next(filter(lambda s: s.local_id == stick_id, self.sticks))
+
+    def create_new_sticks(self, lines: List[np.ndarray]) -> List[Stick]:
+        count = len(lines)
+        sticks = []
+        for i in range(count):
+            if len(self.unused_stick_ids) > 0:
+                id_to_assign = self.unused_stick_ids.pop()
+            else:
+                id_to_assign = self.next_stick_id
+                self.next_stick_id += 1
+            line = lines[i]
+            stick = Stick(local_id=id_to_assign, stick_views=[])
+            stick.set_endpoints(line[0][0], line[0][1], line[1][0], line[1][1])
+            sticks.append(stick)
+        self.sticks.extend(sticks)
+        self.sticks_added.emit(sticks, self)
+        return sticks
