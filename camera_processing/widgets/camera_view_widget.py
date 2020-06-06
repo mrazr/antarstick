@@ -5,10 +5,10 @@ import cv2 as cv
 import numpy as np
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import (QMarginsF, QModelIndex, QPointF, QRectF, Qt,
-                          pyqtSignal, QByteArray, QThreadPool)
+                          pyqtSignal, QByteArray, QThreadPool, QRect)
 from PyQt5.QtCore import pyqtSlot as Slot
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QBrush, QColor, QFont, QPen
-from PyQt5.QtWidgets import QGraphicsScene, QSpinBox
+from PyQt5.QtWidgets import QGraphicsScene, QSpinBox, QGraphicsItem
 
 from camera import Camera
 from camera_processing.antarstick_processing import get_sticks_in_folder
@@ -65,6 +65,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.cam_view = CamGraphicsView(self.stick_link_manager, self)
         self.ui.cam_view_placeholder.addWidget(self.cam_view)
         self.cam_view.setScene(self.graphics_scene)
+        self.cam_view.rubberBandChanged.connect(self.handle_cam_view_rubber_band_changed)
+        self.cam_view.rubber_band_started.connect(self.handle_cam_view_rubber_band_started)
 
         self.current_viewed_image: np.ndarray = None
         self.gpixmap = CustomPixmap(self.dataset)
@@ -86,6 +88,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.reset_view_requested.connect(self._recenter_view)
         self.overlay_gui.edit_sticks_clicked.connect(self.handle_edit_sticks_clicked)
         self.overlay_gui.link_sticks_clicked.connect(self.handle_link_sticks_clicked)
+        self.overlay_gui.delete_sticks_clicked.connect(self.handle_delete_sticks_clicked)
         #self.overlay_gui.sticks_length_clicked.connect(self.handle_sticks_length_clicked)
 
         #self.sticks_length_input = QSpinBox(None)
@@ -150,6 +153,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.initialize_link_menu()
         self.ui.image_list.setEnabled(True)
         self.overlay_gui.show_loading_screen(False)
+        #self.overlay_gui.top_menu._center_buttons()
         self.initialization_done.emit(self.camera)
 
     @Slot(bool)
@@ -459,3 +463,27 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.camera.save()
 
         self.initialize_rest_of_gui()
+
+    def handle_cam_view_rubber_band_started(self):
+        for sw in self.gpixmap.stick_widgets:
+            sw.setFlag(QGraphicsItem.ItemIsSelectable, True)
+
+    def handle_cam_view_rubber_band_changed(self, rect: QRect, from_scene: QPointF, to_scene: QPointF):
+        if rect.isNull():
+            return
+        pixmap_rect = self.gpixmap.mapFromScene(QRectF(from_scene, to_scene)).boundingRect()
+        for sw in self.gpixmap.stick_widgets:
+            sw.set_selected(False)
+        selected = list(filter(lambda sw: pixmap_rect.contains(sw.pos()), self.gpixmap.stick_widgets))
+        if len(selected) == 0:
+            self.overlay_gui.enable_delete_sticks_button(False)
+            return
+        self.overlay_gui.enable_delete_sticks_button(True)
+        for sw in selected:
+            sw.set_selected(True)
+
+    def handle_delete_sticks_clicked(self):
+        for sw in list(filter(lambda sw: sw.is_selected(), self.gpixmap.stick_widgets)):
+            sw.btn_delete.click_button(artificial_emit=True)
+        self.overlay_gui.enable_delete_sticks_button(False)
+        self.gpixmap.update()

@@ -15,6 +15,7 @@ class OverlayGui(QGraphicsObject):
     reset_view_requested = pyqtSignal()
     edit_sticks_clicked = pyqtSignal()
     link_sticks_clicked = pyqtSignal()
+    delete_sticks_clicked = pyqtSignal()
     #sticks_length_clicked = pyqtSignal()
 
     def __init__(self, view: CamGraphicsView, parent: QGraphicsItem = None):
@@ -30,7 +31,7 @@ class OverlayGui(QGraphicsObject):
         self.mouse_pan_pic = QPixmap()
         self.icons_rect = QRectF(0, 0, 0, 0)
         self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
-        self.top_menu.setVisible(False)
+        #self.top_menu.setVisible(False)
         self.loading_screen_shown = True
 
     def initialize(self):
@@ -45,8 +46,10 @@ class OverlayGui(QGraphicsObject):
         self.top_menu.add_button("edit_sticks", "Edit sticks", is_checkable=True, call_back=self.edit_sticks_clicked.emit)
         self.top_menu.add_button("link_sticks", "Link sticks", is_checkable=True, call_back=self.link_sticks_clicked.emit)
         #self.top_menu.add_button("show_overlay", "Show overlay")
-        self.top_menu.add_button("show_linked_cameras", "Show linked cameras")
+        #self.top_menu.add_button("show_linked_cameras", "Show linked cameras")
         self.top_menu.add_button("reset_view", "Reset view", call_back=self.reset_view_requested.emit)
+        self.top_menu.add_button("delete_sticks", "Delete selected sticks", call_back=self.delete_sticks_clicked.emit, base_color="red")
+        self.top_menu.hide_button("delete_sticks")
         self.top_menu.set_height(40)
 
         self.top_menu.setPos(QPoint(0, 0))
@@ -105,3 +108,7 @@ class OverlayGui(QGraphicsObject):
         self.loading_screen_shown = show
         self.top_menu.setVisible(not self.loading_screen_shown)
         self.update()
+
+    def enable_delete_sticks_button(self, val: bool):
+        self.top_menu.show_button("delete_sticks") if val else self.top_menu.hide_button("delete_sticks")
+        self.handle_cam_view_changed()

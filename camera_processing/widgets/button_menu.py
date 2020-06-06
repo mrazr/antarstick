@@ -13,6 +13,7 @@ class ButtonMenu(QGraphicsObject):
         QGraphicsObject.__init__(self, parent)
 
         self.buttons: Dict[str, Button] = {}
+        self.hidden_buttons: Dict[str, Button] = {}
         self.layout_direction = "horizontal"
         self.rect = QRectF(0, 0, 0, 0)
         self.hor_padding = 5
@@ -49,24 +50,26 @@ class ButtonMenu(QGraphicsObject):
     def _center_buttons(self):
         if len(self.buttons) == 0:
             return
-        buttons = list(self.buttons.values())
+        visible_buttons = list(self.buttons.values())
+        if len(visible_buttons) == 0:
+            return
         if self.layout_direction == "horizontal":
-            menu_width = 2 * self.hor_padding + sum(map(lambda btn: btn.boundingRect().width(), buttons), 0)
-            menu_width += (len(self.buttons) - 1) * self.hor_padding
+            menu_width = 2 * self.hor_padding + sum(map(lambda btn: btn.boundingRect().width(), visible_buttons), 0)
+            menu_width += (len(visible_buttons) - 1) * self.hor_padding
             self.rect.setWidth(menu_width)
             offset = self.hor_padding
-            y = self.rect.height() / 2 - buttons[0].boundingRect().height() / 2 #+ self.ver_padding
-            for i, button in enumerate(buttons):
+            y = self.rect.height() / 2 - visible_buttons[0].boundingRect().height() / 2 #+ self.ver_padding
+            for i, button in enumerate(visible_buttons):
                 button.setPos(offset, y)
                 offset += button.boundingRect().width() + self.hor_padding
         else:
-            menu_height = self.ver_padding * (1 + len(self.buttons)) + sum(map(lambda btn: btn.boundingRect().height(), buttons), 0)
-            menu_width = 2 * self.hor_padding + max(map(lambda btn: btn.boundingRect().width(), self.buttons.values()))
+            menu_height = self.ver_padding * (1 + len(visible_buttons)) + sum(map(lambda btn: btn.boundingRect().height(), visible_buttons), 0)
+            menu_width = 2 * self.hor_padding + max(map(lambda btn: btn.boundingRect().width(), visible_buttons))
             self.rect.setHeight(menu_height)
             self.rect.setWidth(menu_width)
             offset = self.ver_padding
             x_base = self.rect.width() / 2
-            for i, button in enumerate(buttons):
+            for i, button in enumerate(visible_buttons):
                 x = x_base - button.boundingRect().width() / 2
                 button.setPos(x, offset)
                 offset += button.boundingRect().height() + self.ver_padding
@@ -113,3 +116,21 @@ class ButtonMenu(QGraphicsObject):
         if btn_id in self.buttons:
             return self.buttons[btn_id]
         return None
+
+    def hide_button(self, btn_id: str):
+        if btn_id not in self.buttons:
+            return
+        button = self.buttons[btn_id]
+        del self.buttons[btn_id]
+        self.hidden_buttons[btn_id] = button
+        button.setVisible(False)
+        self._center_buttons()
+
+    def show_button(self, btn_id: str):
+        if btn_id not in self.hidden_buttons:
+            return
+        button = self.hidden_buttons[btn_id]
+        del self.hidden_buttons[btn_id]
+        self.buttons[btn_id] = button
+        button.setVisible(True)
+        self._center_buttons()

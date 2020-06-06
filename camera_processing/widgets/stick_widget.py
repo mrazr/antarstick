@@ -1,10 +1,10 @@
 from enum import Enum
-from typing import Optional
+from typing import Optional, Any
 
 import PyQt5
 import numpy as np
 from PyQt5.Qt import (QPointF)
-from PyQt5.QtCore import QLine, QLineF, Qt, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QLine, QLineF, Qt, pyqtSignal, pyqtSlot, QMarginsF
 from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PyQt5.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem,
                              QGraphicsLineItem, QGraphicsObject,
@@ -101,6 +101,7 @@ class StickWidget(QGraphicsObject):
         self.is_linked = False
 
         self.is_master = True
+        self.selected = False
 
     @pyqtSlot()
     def handle_btn_delete_clicked(self):
@@ -138,6 +139,12 @@ class StickWidget(QGraphicsObject):
             painter.drawLine(self.line.p2() - QPointF(off, 0), self.line.p2() + QPointF(off, 0))
         else:
             painter.drawLine(self.line.p1(), self.line.p2())
+
+        if self.selected:
+            pen.setColor(QColor(255, 125, 0, 255))
+            pen.setStyle(Qt.DashLine)
+            painter.setPen(pen)
+            painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)))
 
     def boundingRect(self) -> PyQt5.QtCore.QRectF:
         return self.gline.boundingRect().united(self.top_handle.boundingRect()).united(self.mid_handle.boundingRect()).united(self.bottom_handle.boundingRect())
@@ -314,3 +321,11 @@ class StickWidget(QGraphicsObject):
         self.gline.setLine(self.line)
         self.adjust_handles()
         self.update()
+
+    def set_selected(self, selected: bool):
+        self.selected = selected
+        self.update()
+
+    def is_selected(self) -> bool:
+        return self.selected
+

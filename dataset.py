@@ -192,14 +192,6 @@ class Dataset(QObject):
         try:
             with open(path, "r") as dataset_file:
                 state = json.load(dataset_file)
-                #decoded = jsonpickle.decode(dataset_file.read())
-                #self.path = decoded['path']
-                #stick_views_map = decoded['stick_views_map']
-                #self.stick_views_map = dict({})
-                #self.next_camera_id = decoded['next_camera_id']
-                #linked_cameras = decoded['linked_cameras']
-                #self.unused_stick_ids = list(map(int, decoded['unused_stick_ids']))
-                #cameras = [Camera.build_from_state(camera_state) for camera_state in decoded['cameras']]
 
                 self.path = Path(state['path'])
                 stick_views_map = state['stick_views_map']
@@ -215,35 +207,15 @@ class Dataset(QObject):
                     for local_id, global_id in stick_id_map.items():
                         self.stick_local_to_global_ids[int(camera_id)][int(local_id)] = int(global_id)
 
-                #for camera_folder in state['camera_folders']:
-                #    if not self.add_camera(Path(camera_folder), first_time_add=False):
-                #        raise NotImplementedError
-
                 for path_str, cam_id in self.cameras_ids.items():
                     if not self.add_camera(Path(path_str), camera_id=cam_id, first_time_add=False):
                         raise NotImplementedError
-
-                #for cam in cameras:
-                #    camera = Camera.load_from_path(cam.folder)
-                #    self.cameras.append(camera)
-                #    self.connect_camera_signals(camera)
-                #    self.camera_added.emit(camera)
 
             self.loading_finished.emit()
             for left_cam_id, right_cam_id in linked_cameras:
                 left_cam = self.get_camera(left_cam_id)
                 right_cam = self.get_camera(right_cam_id)
                 self.link_cameras(left_cam, right_cam)
-
-            #for k, v in stick_views_map.items():
-            #    s1 = self.get_stick_by_id(int(k))
-            #    s2 = self.get_stick_by_id(v[2])
-            #    self.link_sticks(s1, s2)
-
-            #for stick1_id, stick2_id in stick_views_map.items():
-            #    stick1 = self.get_stick_by_id(stick1_id)
-            #    stick2 = self.get_stick_by_id(stick2_id)
-            #    self.link_sticks(stick1, stick2)
 
             for stick_views in stick_views_map:
                 stick1 = self.get_stick_by_id(stick_views[0])
@@ -329,17 +301,17 @@ class Dataset(QObject):
         self.stick_views_map[stick1.id] = stick1.stick_views
         self.sticks_linked.emit(stick1, stick2)
 
-    def unlink_stick(self, stick: Stick):
-        link = self.stick_views_map.get(stick.id)
-        if link is None or len(link) == 0:
-            return
-        stick2 = link[0]
-        #camera2: Camera = next(filter(lambda cam: cam.id == stick2_id.camera, self.cameras))
-        #stick2 = self.get_stick_by_id(stick2_id)
+    #def unlink_stick(self, stick: Stick):
+    #    link = self.stick_views_map.get(stick.id)
+    #    if link is None or len(link) == 0:
+    #        return
+    #    stick2 = link[0]
+    #    #camera2: Camera = next(filter(lambda cam: cam.id == stick2_id.camera, self.cameras))
+    #    #stick2 = self.get_stick_by_id(stick2_id)
 
-        del self.stick_views_map[stick.id]
-        del self.stick_views_map[stick2.id]
-        self.sticks_unlinked.emit(stick, stick2)
+    #    del self.stick_views_map[stick.id]
+    #    del self.stick_views_map[stick2.id]
+    #    self.sticks_unlinked.emit(stick, stick2)
 
     def unlink_sticks(self, stick1: Stick, stick2: Stick):
         stick1.stick_views = list(filter(lambda sw: sw.id != stick2.id, stick1.stick_views))

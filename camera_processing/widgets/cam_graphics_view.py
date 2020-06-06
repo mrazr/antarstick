@@ -1,5 +1,5 @@
 from PyQt5.QtCore import Qt, QRectF, pyqtSignal
-from PyQt5.QtGui import QPainter, QWheelEvent, QResizeEvent, QMouseEvent
+from PyQt5.QtGui import QPainter, QWheelEvent, QResizeEvent, QMouseEvent, QKeyEvent
 from PyQt5.QtWidgets import QGraphicsView, QWidget, QSizePolicy
 
 from camera_processing.widgets.stick_link_manager import StickLinkManager
@@ -8,6 +8,7 @@ from camera_processing.widgets.stick_link_manager import StickLinkManager
 class CamGraphicsView(QGraphicsView):
 
     view_changed = pyqtSignal()
+    rubber_band_started = pyqtSignal()
 
     def __init__(self, link_manager: StickLinkManager, parent: QWidget = None):
         QGraphicsView.__init__(self, parent)
@@ -26,6 +27,7 @@ class CamGraphicsView(QGraphicsView):
         self.horizontalScrollBar().valueChanged.connect(lambda _: self.view_changed.emit())
         
         self.stick_link_manager = link_manager
+        #self.setInteractive(True)
 
     def drawForeground(self, painter: QPainter, rect: QRectF) -> None:
         pass
@@ -87,6 +89,17 @@ class CamGraphicsView(QGraphicsView):
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if not self.stick_link_manager.anchored:
-            #print("movee\n")
             self.stick_link_manager.set_target(self.mapToScene(event.pos()))
         QGraphicsView.mouseMoveEvent(self, event)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key_Control:
+            self.setDragMode(QGraphicsView.ScrollHandDrag)
+        elif event.key() == Qt.Key_Shift:
+            self.rubber_band_started.emit()
+            self.setDragMode(QGraphicsView.RubberBandDrag)
+            self.setRubberBandSelectionMode(Qt.ContainsItemBoundingRect)
+
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key_Control or event.key() == Qt.Key_Shift:
+            self.setDragMode(QGraphicsView.NoDrag)

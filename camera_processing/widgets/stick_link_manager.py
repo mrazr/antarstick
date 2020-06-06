@@ -122,7 +122,7 @@ class StickLinkManager(QGraphicsObject):
                 stick2 = self.current_link_item.stick2.stick
 
                 # Unlink stick1 from other sticks to which it might be linked
-                self.dataset.unlink_stick(self.current_link_item.stick1.stick)
+                self.dataset.unlink_stick_(self.current_link_item.stick1.stick)
 
                 # Also destroy a potential link between stick2 and some other stick from the same
                 # camera as stick1
@@ -240,24 +240,28 @@ class StickLinkManager(QGraphicsObject):
         if len(link) == 0:
             return
         link = link[0]
-        link.stick1.set_is_linked(False)
-        link.stick2.set_is_linked(False)
-        #link.stick1.set_is_linked(False)
-        #link.stick2.set_is_linked(False)
-        #self.stick_links.remove(link)
 
-        self.scene().removeItem(link)
-        link.setEnabled(False)
-        link.setParentItem(None)
-        link.deleteLater()
+        if link.stick1.stick.id == secondary_stick.id:
+            link.stick1.set_is_linked(False)
+        else:
+            link.stick2.set_is_linked(False)
 
         link_list = list(filter(lambda l: l.stick1.stick.id != secondary_stick.id and l.stick2.stick.id != secondary_stick.id, link_list))
         if len(link_list) == 0:
+            if link.stick1.stick.id == primary_stick.id:
+                link.stick1.set_is_linked(False)
+            else:
+                link.stick2.set_is_linked(False)
+
+            link.stick2.set_is_linked(False)
             del self.stick_links[primary_stick.id]
             self.unused_colors.append(color)
         else:
             self.stick_links[primary_stick.id] = (link_list, color)
-        #self.color_stick_links()
+        self.scene().removeItem(link)
+        link.setEnabled(False)
+        link.setParentItem(None)
+        link.deleteLater()
         self.update()
 
     def start(self):
