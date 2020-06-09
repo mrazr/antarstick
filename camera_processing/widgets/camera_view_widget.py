@@ -37,8 +37,8 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.ui = ui_camera_view.Ui_CameraView()
         self.ui.setupUi(self)
-        self.ui.detectionSensitivitySlider.sliderReleased.connect(self._handle_slider_released)
-        self.ui.detectionSensitivitySlider.valueChanged.connect(self._handle_slider_value_changed)
+        #self.ui.detectionSensitivitySlider.sliderReleased.connect(self._handle_slider_released)
+        #self.ui.detectionSensitivitySlider.valueChanged.connect(self._handle_slider_value_changed)
 
         self.image_list = ImageListModel()
         self.ui.image_list.setModel(self.image_list)
@@ -89,6 +89,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.edit_sticks_clicked.connect(self.handle_edit_sticks_clicked)
         self.overlay_gui.link_sticks_clicked.connect(self.handle_link_sticks_clicked)
         self.overlay_gui.delete_sticks_clicked.connect(self.handle_delete_sticks_clicked)
+        self.overlay_gui.redetect_sticks_clicked.connect(self.handle_redetect_sticks_clicked)
         #self.overlay_gui.sticks_length_clicked.connect(self.handle_sticks_length_clicked)
 
         #self.sticks_length_input = QSpinBox(None)
@@ -126,6 +127,8 @@ class CameraViewWidget(QtWidgets.QWidget):
                 self.camera.rep_image = cv.resize(cv.imread(str(self.camera.rep_image_path)),
                                                   (0, 0), fx=0.25, fy=0.25)
             self.initialize_rest_of_gui()
+        print(f'next batch of 10 images is:')
+        print(camera.get_batch(count=10))
 
     def initialize_rest_of_gui(self):
         self.ui.image_list.setModel(self.image_list)
@@ -158,7 +161,6 @@ class CameraViewWidget(QtWidgets.QWidget):
 
     @Slot(bool)
     def link_cameras_enabled(self, value: bool):
-        print('link_cameras_enabled')
         self.gpixmap.set_link_cameras_enabled(value)
 
 
@@ -487,3 +489,7 @@ class CameraViewWidget(QtWidgets.QWidget):
             sw.btn_delete.click_button(artificial_emit=True)
         self.overlay_gui.enable_delete_sticks_button(False)
         self.gpixmap.update()
+
+    def handle_redetect_sticks_clicked(self):
+        self.camera.remove_sticks()
+        self._detect_sticks()

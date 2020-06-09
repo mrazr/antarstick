@@ -12,6 +12,7 @@ from pathlib import Path
 from queue import Queue
 from time import time
 from typing import Dict, List, Optional, Tuple
+import sys
 
 import cv2 as cv
 import numpy as np
@@ -34,6 +35,18 @@ Ecc = float
 Label = int
 Centroid = Tuple[int, int]
 
+hog_desc = cv.HOGDescriptor((64, 128), (16, 16), (8, 8), (8, 8), 9, 1, -1, cv.HOGDescriptor_L2Hys, 0.2, False,
+                            cv.HOGDESCRIPTOR_DEFAULT_NLEVELS, True)
+HOG_FILE = str(Path(sys.argv[0]).parent / 'camera_processing/stick_hog_svm')
+
+try:
+    success = hog_desc.load(HOG_FILE)
+except:
+    print(f'Could not load file {HOG_FILE}')
+    exit(-1)
+
+clahe = cv.createCLAHE()
+clahe.setTilesGridSize((16, 20))
 
 def rect_se(width: int, height: int) -> np.ndarray:
     """Constructs a rectangular structuring element of a given width and height.
@@ -81,10 +94,9 @@ def stick_segmentation_preprocess(img: np.ndarray) -> np.ndarray:
     closed = cv.morphologyEx(thresh, cv.MORPH_CLOSE, rect_se(5, 13))
     open = cv.morphologyEx(thresh, cv.MORPH_OPEN, rect_se(1, 5))
 
-
     # This extracts and finally returns line-like structures
     return cv.morphologyEx(thresh, cv.MORPH_OPEN, rect_se(1, 13))
-    #return cv.morphologyEx(open, cv.MORPH_CLOSE, rect_se(3, 15))
+    # return cv.morphologyEx(open, cv.MORPH_CLOSE, rect_se(3, 15))
 
 
 def denoise(img: np.ndarray) -> np.ndarray:
@@ -101,8 +113,8 @@ def denoise(img: np.ndarray) -> np.ndarray:
     """
 
     down = cv.pyrDown(img)
-    #down = cv.pyrDown(down)
-    #down = cv.pyrUp(down)
+    # down = cv.pyrDown(down)
+    # down = cv.pyrUp(down)
     return cv.pyrUp(down)
 
 
@@ -142,7 +154,7 @@ def detect_sticks(img: np.ndarray, scale_lines_by: float = 1.0, merge_lines: boo
         bbox = region_prop.bbox
         preprocessed[bbox[0]:bbox[2], bbox[1]:bbox[3]] = 0
 
-    #for r in range(preprocessed.shape[0]):
+    # for r in range(preprocessed.shape[0]):
     #    for c in range(preprocessed.shape[1]):
     #        if label_img[r, c] not in likely_labels:
     #            preprocessed[r, c] = 0
@@ -151,7 +163,9 @@ def detect_sticks(img: np.ndarray, scale_lines_by: float = 1.0, merge_lines: boo
     lines = cv.HoughLinesP(preprocessed, 1, np.pi / 180, int(0.8 * height), height, 20)
 
     # Transform the lines so they all have their first endpoint is the higher one
-    lines = list(map(lambda line: [line[0][2], line[0][3], line[0][0], line[0][1]] if line[0][1] > line[0][3] else list(line[0]), lines))
+    lines = list(
+        map(lambda line: [line[0][2], line[0][3], line[0][0], line[0][1]] if line[0][1] > line[0][3] else list(line[0]),
+            lines))
 
     if not merge_lines:
         return (np.array(lines) * scale_lines_by).astype(int)
@@ -163,7 +177,7 @@ def detect_sticks(img: np.ndarray, scale_lines_by: float = 1.0, merge_lines: boo
     for line in lines:
         line_mid_point = (int(0.5 * (line[0] + line[2])), int(0.5 * (line[1] + line[3])))
         for l in likely_labels:
-            if bbox_contains(region_props[l-1].bbox, line_mid_point):
+            if bbox_contains(region_props[l - 1].bbox, line_mid_point):
                 close_lines[l].append(line)
 
     merged_lines: List[List[int]] = []
@@ -205,7 +219,8 @@ def get_likely_labels(label_img: np.ndarray, label_stats) -> List[Tuple[Label, H
     """
 
     # Retain labels that are elongated
-    likely_labels = list(sorted(filter(lambda l: l.eccentricity > 0.87, label_stats), key=height_of_region, reverse=True))
+    likely_labels = list(
+        sorted(filter(lambda l: l.eccentricity > 0.87, label_stats), key=height_of_region, reverse=True))
 
     max_height = height_of_region(likely_labels[0])
 
@@ -230,6 +245,7 @@ def bbox_contains(bbox: Tuple[int, int, int, int], point: Tuple[int, int]) -> bo
 def show_imgs_(images: List[np.ndarray], names: List[str]) -> int:
     for image, name in zip(images, names):
         cv.imshow(name, image)
+
 
 def measure_snow(img: np.ndarray, sticks: List[Stick]) -> Dict[int, float]:
     """Measures the height of snow in the image `img` around the sticks in `sticks`
@@ -293,7 +309,7 @@ def is_non_snow(hsv_img: np.ndarray) -> bool:
     roi_w = int(0.6 * hsv_img.shape[1])
     roi_h = int(0.4 * hsv_img.shape[0])
 
-    return np.mean(hsv_img[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w, 2]) < 100
+    return np.mean(hsv_img[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w, 2]) < 100
 
 
 def verify_stick(stick: Stick, angle_img: np.ndarray, sigma: float) -> bool:
@@ -342,8 +358,9 @@ def uhmt(img: np.ndarray, se: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 
 def preprocess_image(img: np.ndarray) -> np.ndarray:
     img = denoise(img)
-    return img_as_ubyte(skimage.exposure.equalize_adapthist(
-        img, [int(img.shape[0] / 20.0), int(img.shape[1] / 20.0)]))
+    #return img_as_ubyte(skimage.exposure.equalize_adapthist(
+    #img, [int(img.shape[0] / 20.0), int(img.shape[1] / 20.0)]))
+    return clahe.apply(img)
 
 
 def detect_sticks_hmt(img: np.ndarray, height_perc: float) -> List[List[int]]:
@@ -354,16 +371,16 @@ def detect_sticks_hmt(img: np.ndarray, height_perc: float) -> List[List[int]]:
     closed = cv.morphologyEx(rankd, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (3, 15)))
 
     thin = img_as_ubyte(skimage.morphology.thin(closed))
-    #show_imgs_([mask, rankd, closed, thin], ["mask", "randk", "closed", "thin"])
-    #cv.destroyAllWindows()
-    #lines = skimage.transform.probabilistic_hough_line(closed,
+    # show_imgs_([mask, rankd, closed, thin], ["mask", "randk", "closed", "thin"])
+    # cv.destroyAllWindows()
+    # lines = skimage.transform.probabilistic_hough_line(closed,
     #                                              threshold=int(0.5 * height),
     #                                              line_length=int(0.4 * height),
     #                                              line_gap=int(0.07 * height))
     lines = skimage.transform.probabilistic_hough_line(thin,
-                                                  threshold=int(0.1 * height),
-                                                  line_length=int(1.0 * height),
-                                                  line_gap=int(0.2 * height))
+                                                       threshold=int(0.1 * height),
+                                                       line_length=int(1.0 * height),
+                                                       line_gap=int(0.2 * height))
 
     labels, num_labels = skimage.measure.label(thin, connectivity=2, return_num=True)
     print(num_labels)
@@ -372,14 +389,14 @@ def detect_sticks_hmt(img: np.ndarray, height_perc: float) -> List[List[int]]:
     cv.destroyAllWindows()
 
     return lines
-    #return merge_lines(lines)
+    # return merge_lines(lines)
 
 
 def get_non_snow_images_(path: Path, count: int = 1) -> Optional[List[np.ndarray]]:
     image_list: List[np.ndarray] = []
 
     for file in scandir(path):
-        if file.name[-3:].lower() != "jpg": # TODO handle JPEG
+        if file.name[-3:].lower() != "jpg":  # TODO handle JPEG
             continue
         img = cv.imread(str(file.path))[:-50, :, :]
         img = cv.pyrDown(img)
@@ -390,7 +407,7 @@ def get_non_snow_images_(path: Path, count: int = 1) -> Optional[List[np.ndarray
             image_list.append(img)
             if len(image_list) == count:
                 return image_list
-    
+
     return None
 
 
@@ -449,7 +466,6 @@ def merge_lines(lines: List[Tuple[Tuple[int]]]) -> List[List[int]]:
 
         lines_rhos_thetas.append((line, r, theta))
 
-    
     lines_rhos_thetas = sorted(lines_rhos_thetas, key=lambda lrt: lrt[1])
 
     lines = []
@@ -457,7 +473,7 @@ def merge_lines(lines: List[Tuple[Tuple[int]]]) -> List[List[int]]:
 
     for line_r_t in lines_rhos_thetas[1:]:
         if np.abs(line_r_t[2] - current_line_r_t[2]) > 5:
-        #if np.abs(line_r_t[1] - current_line_r_t[1]) > 20:
+            # if np.abs(line_r_t[1] - current_line_r_t[1]) > 20:
             lines.append(current_line_r_t[0])
             current_line_r_t = line_r_t
             continue
@@ -471,19 +487,19 @@ def merge_lines(lines: List[Tuple[Tuple[int]]]) -> List[List[int]]:
             new_line = [current_line[0], line[1]]
             if np.abs(compute_line_theta(new_line) - current_line_r_t[2]) < 3:
                 current_line_r_t = (new_line, current_line_r_t[1], current_line_r_t[2])
-    
+
     lines.append(current_line_r_t[0])
 
-    #print(lines)
+    # print(lines)
 
-    #plot = sb.scatterplot(x=rhos, y=thetas).figure
-    #plot.savefig("fig.png")
-    #fig = cv.imread("fig.png")
+    # plot = sb.scatterplot(x=rhos, y=thetas).figure
+    # plot.savefig("fig.png")
+    # fig = cv.imread("fig.png")
 
-    #cv.imshow("fig", fig)
-    #cv.waitKey(0)
-    #cv.destroyAllWindows()
-    #plt.clf()
+    # cv.imshow("fig", fig)
+    # cv.waitKey(0)
+    # cv.destroyAllWindows()
+    # plt.clf()
 
     return lines
 
@@ -499,29 +515,30 @@ def compute_line_theta(line: List[List[int]]) -> float:
     theta = 90.0 + (np.math.acos(np.array([1.0, 0.0]).dot(r_v)) / np.pi) * 180.0
 
     return theta
-   
+
 
 def preprocess_phase(img: np.ndarray) -> np.ndarray:
     prep = preprocess_image(img)
     _, mask = uhmt(prep, dbd_se)
-    _, mask2 = uhmt(prep, bdb_se)
+    # _, mask2 = uhmt(prep, bdb_se)
 
     rankd = skimage.filters.rank.percentile(mask, skimage.morphology.rectangle(7, 3), p0=0.8)
-    rankd2 = skimage.filters.rank.percentile(mask2, skimage.morphology.rectangle(7, 3), p0=0.8)
+    # rankd2 = skimage.filters.rank.percentile(mask2, skimage.morphology.rectangle(7, 3), p0=0.8)
     closed = cv.morphologyEx(rankd, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (3, 15)))
-    closed2 = cv.morphologyEx(rankd2, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (3, 15)))
+    # closed2 = cv.morphologyEx(rankd2, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (3, 15)))
 
     thin = skimage.morphology.thin(closed)
-    thin2 = skimage.morphology.thin(closed2)
+    # thin2 = skimage.morphology.thin(closed2)
 
     area_opened = skimage.morphology.remove_small_objects(thin, min_size=8, connectivity=2)
-    area_opened2 = skimage.morphology.remove_small_objects(thin2, min_size=8, connectivity=2)
-    #area_opened = np.bitwise_or(area_opened, area_opened2)
+    # area_opened2 = skimage.morphology.remove_small_objects(thin2, min_size=8, connectivity=2)
+    # area_opened = np.bitwise_or(area_opened, area_opened2)
 
-    #up = cv.resize(prep, (0, 0), fx=2, fy=2)
-    #overlaid = cv.cvtColor(img, cv.COLOR_GRAY2BGR)
+    # up = cv.resize(prep, (0, 0), fx=2, fy=2)
+    # overlaid = cv.cvtColor(img, cv.COLOR_GRAY2BGR)
 
-    return area_opened, area_opened2
+    return area_opened, area_opened
+
 
 def detect_sticks_from_preprocessed(img: np.ndarray, height_percentage: float) -> List[Tuple[Tuple[int]]]:
     height = int(height_percentage * img.shape[0])
@@ -531,6 +548,7 @@ def detect_sticks_from_preprocessed(img: np.ndarray, height_percentage: float) -
                                                        line_gap=15)
 
     return lines
+
 
 def get_lines_from_preprocessed(img: np.ndarray, _img: np.ndarray) -> List[List[np.ndarray]]:
     labels, num_labels = skimage.measure.label(img, connectivity=2, return_num=True)
@@ -543,7 +561,7 @@ def get_lines_from_preprocessed(img: np.ndarray, _img: np.ndarray) -> List[List[
         coords[:, 0] = coords[:, 0] + 64
         coords[:, 1] = coords[:, 1] + 32
         coords[:, [0, 1]] = coords[:, [1, 0]]
-        #if not verify_lines(list(coords), cv.copyMakeBorder(_img, 64, 64, 64, 64, cv.BORDER_REFLECT)):
+        # if not verify_lines(list(coords), cv.copyMakeBorder(_img, 64, 64, 64, 64, cv.BORDER_REFLECT)):
         #    continue
         min_y_coord = min(reg_prop.coords, key=lambda c: c[0])
         max_y_coord = max(reg_prop.coords, key=lambda c: c[0])
@@ -559,24 +577,24 @@ def verify_line(coords: List[Tuple[int, int]], img: np.ndarray) -> bool:
     f_vec_length = 4212
     features = np.zeros((len(coords), f_vec_length), dtype=np.float)
 
-    #individual_predicts = 0
+    # individual_predicts = 0
     building_features = time()
     for i, (y, x) in enumerate(coords):
         y += 60
         x += 24
-        patch = img[y - res[0]//2:y + res[0]//2, x - res[1]//2: x + res[1]//2]
-        #f_ = skimage.feature.hog(patch)
-        #print(f"featu.shape = {features.shape} f_.shape = {f_.shape}")
+        patch = img[y - res[0] // 2:y + res[0] // 2, x - res[1] // 2: x + res[1] // 2]
+        # f_ = skimage.feature.hog(patch)
+        # print(f"featu.shape = {features.shape} f_.shape = {f_.shape}")
         features[i] = skimage.feature.hog(patch)
-        #start = time()
-        #pre = lin_svc.predict([features[i]])
-        #individual_predicts += (time() - start)
+        # start = time()
+        # pre = lin_svc.predict([features[i]])
+        # individual_predicts += (time() - start)
     building_features = time() - building_features
     start = time()
     predicts = lin_svc.predict(features)
     print(f"batch predictions took {time() - start} secs")
     print(f"building features took {building_features} secs")
-    #print(f"individual predictions took {individual_predicts} secs")
+    # print(f"individual predictions took {individual_predicts} secs")
 
     return True
 
@@ -586,8 +604,8 @@ def verify_lines(coords: List[Tuple[int, int]], img: np.ndarray) -> bool:
     if len(weights) == 0:
         return False
     return True
-    #valid_points = np.count_nonzero(weights.ravel() > 0.1)
-    #return (valid_points / weights.shape[0]) >= 0.75
+    # valid_points = np.count_nonzero(weights.ravel() > 0.1)
+    # return (valid_points / weights.shape[0]) >= 0.75
 
 
 def is_night(img: np.ndarray) -> bool:
@@ -636,7 +654,7 @@ def match_lines_to_stick_regions(stick_regions: np.ndarray, imgs_stats: Tuple[in
     target_height = stats[labels[0]][cv.CC_STAT_HEIGHT]
 
     centroids_heights = np.array(list(map(lambda l: [centroids[l][0], centroids[l][1], stats[l][cv.CC_STAT_HEIGHT]],
-                                         labels)))
+                                          labels)))
 
     img = imgs_stats[1]
     img_labels = range(1, imgs_stats[0])
@@ -644,11 +662,13 @@ def match_lines_to_stick_regions(stick_regions: np.ndarray, imgs_stats: Tuple[in
     img_centroids = imgs_stats[3]
     img_labels = list(sorted(img_labels, key=lambda l: img_stats[l][cv.CC_STAT_HEIGHT], reverse=True))
 
-    img_centroids_heights = np.array(list(map(lambda l: [img_centroids[l][0], img_centroids[l][1], img_stats[l][cv.CC_STAT_HEIGHT]],
-                                          img_labels)))
+    img_centroids_heights = np.array(
+        list(map(lambda l: [img_centroids[l][0], img_centroids[l][1], img_stats[l][cv.CC_STAT_HEIGHT]],
+                 img_labels)))
 
     shifts: List[np.ndarray] = []
     errors: List[int] = []
+
 
 def find_sticks(imgs: List[np.ndarray]) -> List[List[np.ndarray]]:
     heat_map = None
@@ -730,7 +750,8 @@ def filter_sticks(stick_img: np.ndarray, stick_img_stats: np.ndarray, stick_regi
         non_zero_coords = np.argwhere(stick_box > 0)
         top_idx = np.argmin(non_zero_coords[:, 0])
         bottom_idx = np.argmax(non_zero_coords[:, 0])
-        top = non_zero_coords[top_idx] + np.array([y - 15, x - 15]) #TODO 15 is a border expansion, handle it maybe in the caller?
+        top = non_zero_coords[top_idx] + np.array(
+            [y - 15, x - 15])  # TODO 15 is a border expansion, handle it maybe in the caller?
         bottom = non_zero_coords[bottom_idx] + np.array([y - 15, x - 15])
         target_label = np.max(labels_box)
 
@@ -751,7 +772,7 @@ def get_non_snow_images(path: Path, queue: Queue, count: int = 9) -> None:
     nights = 0
     images_loaded = 0
     for file in scandir(path):
-        if file.name[-3:].lower() != "jpg": # TODO handle JPEG
+        if file.name[-3:].lower() != "jpg":  # TODO handle JPEG
             continue
         img = cv.imread(str(file.path))
         img = cv.pyrDown(img)
@@ -769,7 +790,7 @@ def get_non_snow_images(path: Path, queue: Queue, count: int = 9) -> None:
 
 def get_sticks_in_folder(folder: Path) -> Tuple[List[np.ndarray], np.ndarray]:
     queue = Queue(maxsize=10)
-    #thread = threading.Thread(target=get_non_snow_images, args=(folder, queue, 9))
+    # thread = threading.Thread(target=get_non_snow_images, args=(folder, queue, 9))
     worker = MyThreadWorker(task=get_non_snow_images, args=(folder, queue, 9), kwargs={})
 
     heat_map = None

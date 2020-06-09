@@ -168,7 +168,7 @@ class Dataset(QObject):
             with open(self.path, "w") as output_file:
                 for camera in self.cameras:
                     path = self.path.parent / f"camera{camera.id}.csv"
-                    camera.save_measurements(path)
+                    #camera.save_measurements(path)
                     camera.save()
                 state = self.__dict__.copy()
                 state['cameras'] = [camera.get_state() for camera in self.cameras]

@@ -99,7 +99,9 @@ class CamGraphicsView(QGraphicsView):
             self.rubber_band_started.emit()
             self.setDragMode(QGraphicsView.RubberBandDrag)
             self.setRubberBandSelectionMode(Qt.ContainsItemBoundingRect)
-
+        QGraphicsView.keyPressEvent(self, event)
+        
     def keyReleaseEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key_Control or event.key() == Qt.Key_Shift:
             self.setDragMode(QGraphicsView.NoDrag)
+        QGraphicsView.keyReleaseEvent(self, event)

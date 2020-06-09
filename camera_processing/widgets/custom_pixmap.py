@@ -78,6 +78,7 @@ class CustomPixmap(QGraphicsObject):
         self.stick_length_input = StickLengthInput(self)
         self.stick_length_input.input_entered.connect(self.handle_stick_length_input_entered)
         self.stick_length_input.input_cancelled.connect(self.handle_stick_length_input_cancelled)
+        #self.stick_length_input.setZValue(10)
 
     def paint(self, painter: QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
         if self.gpixmap.pixmap().isNull():
@@ -167,7 +168,6 @@ class CustomPixmap(QGraphicsObject):
         self.title.setVisible(value)
 
     def update_stick_widgets(self):
-        print('updating stick widgets')
         stick_length = 60
         print(self.camera.sticks)
         for stick in self.camera.sticks:
@@ -288,7 +288,6 @@ class CustomPixmap(QGraphicsObject):
         self.update()
 
     def handle_sticks_added(self, sticks: List[Stick]):
-        print('adding stickwidgets')
         if sticks[0].camera_id != self.camera.id:
             return
         for stick in sticks:

@@ -16,6 +16,7 @@ class OverlayGui(QGraphicsObject):
     edit_sticks_clicked = pyqtSignal()
     link_sticks_clicked = pyqtSignal()
     delete_sticks_clicked = pyqtSignal()
+    redetect_sticks_clicked = pyqtSignal()
     #sticks_length_clicked = pyqtSignal()
 
     def __init__(self, view: CamGraphicsView, parent: QGraphicsItem = None):
@@ -43,6 +44,7 @@ class OverlayGui(QGraphicsObject):
         self.mouse_pan_pic = QPixmap(str(path / "mouse_pan.png"))
         self.mouse_pan_pic = self.mouse_pan_pic.scaledToWidth(80, Qt.SmoothTransformation)
 
+        self.top_menu.add_button("detect_sticks", "Re-detect sticks", call_back=self.redetect_sticks_clicked.emit)
         self.top_menu.add_button("edit_sticks", "Edit sticks", is_checkable=True, call_back=self.edit_sticks_clicked.emit)
         self.top_menu.add_button("link_sticks", "Link sticks", is_checkable=True, call_back=self.link_sticks_clicked.emit)
         #self.top_menu.add_button("show_overlay", "Show overlay")

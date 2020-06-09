@@ -54,6 +54,7 @@ class Camera(QObject):
         self.id = _id
         self.next_stick_id = 0
         self.unused_stick_ids = []
+        self.measurements_path = folder
         if measurements_path:
             self.measurements_path = measurements_path
             self.measurements = self.__load_measuremets()
@@ -65,11 +66,18 @@ class Camera(QObject):
         #                                      interpolation=cv.INTER_NEAREST)
         self.rep_image_path: Path = None
         self.rep_image = None
+        self.image_list: List[str] = list(filter(lambda f: f[-4:].lower() == 'jpeg' or f[-3:].lower() == 'jpg',listdir(self.folder)))
+        self.next_photo_id: int = 0
+        self.next_photo: str = self.image_list[self.next_photo_id]
 
     def __load_measuremets(self) -> pd.DataFrame:
         try:
-            with open(self.measurements_path) as meas_file:
-                return pd.read_csv(meas_file)
+            with open(self.folder / '_results/results.csv') as meas_file:
+                measurements = pd.read_csv(meas_file)
+                if measurements.shape[0] > 0:
+                    last_photo = measurements.iloc[-1][0]
+                    self.next_photo_id = self.image_list.index(last_photo) + 1
+                    self.next_photo = self.image_list[self.next_photo_id]
         except FileNotFoundError:
             pass
         return pd.DataFrame()
@@ -77,7 +85,7 @@ class Camera(QObject):
     def save_measurements(self, path: Path):
         self.measurements_path = path
         with open(path, "w") as output:
-            self.measurements.to_csv(output)
+            self.measurements.to_csv(output, index=False)
 
     def get_state(self):
         state = self.__dict__.copy()
@@ -100,7 +108,6 @@ class Camera(QObject):
         camera = Camera(path, _id, measurements_path)
         camera.sticks = sticks
         camera.rep_image_path = state['rep_image_path']
-
         return camera
 
     def add_stick(self, stick: Stick):
@@ -144,6 +151,20 @@ class Camera(QObject):
             'unused_stick_ids': self.unused_stick_ids,
         }
 
+        if len(self.measurements.columns) == 0 or (len(self.measurements.columns) - 1) / 4 != len(self.sticks):
+            data = {
+                'image_name': [],
+            }
+
+            for stick in self.sticks:
+                data[stick.label + '_top'] = []
+                data[stick.label + '_bottom'] = []
+                data[stick.label + '_height_px'] = []
+                data[stick.label + '_snow_height'] = []
+
+            self.measurements = pd.DataFrame(data=data)
+            self.save_measurements(self.folder / '_results/results.csv')
+
         with open(self.folder / 'camera.json', 'w') as f:
             json.dump(state, f, indent=1)
 
@@ -161,6 +182,7 @@ class Camera(QObject):
             camera.next_stick_id = state['next_stick_id']
             camera.unused_stick_ids = state['unused_stick_ids']
             sticks = list(map(lambda stick_state: Stick.build_from_state(stick_state), state['sticks']))
+            camera.__load_measuremets()
 
             camera.sticks = sticks
         return camera
@@ -184,3 +206,7 @@ class Camera(QObject):
         self.sticks.extend(sticks)
         self.sticks_added.emit(sticks, self)
         return sticks
+
+    def get_batch(self, count: int = 50) -> List[str]:
+        real_count = min(count, len(self.image_list) - self.next_photo_id + 1)
+        return self.image_list[self.next_photo_id:self.next_photo_id + real_count]
