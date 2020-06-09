@@ -1,5 +1,6 @@
 from queue import Queue
 from typing import List, Dict, Optional
+from multiprocessing import Pool
 
 import cv2 as cv
 import numpy as np
@@ -9,9 +10,10 @@ from PyQt5.QtCore import (QMarginsF, QModelIndex, QPointF, QRectF, Qt,
 from PyQt5.QtCore import pyqtSlot as Slot
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QBrush, QColor, QFont, QPen
 from PyQt5.QtWidgets import QGraphicsScene, QSpinBox, QGraphicsItem
+from pandas import DataFrame
 
 from camera import Camera
-from camera_processing.antarstick_processing import get_sticks_in_folder
+from camera_processing.antarstick_processing import get_sticks_in_folder, process_batch
 from camera_processing.widgets import ui_camera_view
 from camera_processing.widgets.button import Button
 from camera_processing.widgets.button_menu import ButtonMenu
@@ -90,6 +92,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.link_sticks_clicked.connect(self.handle_link_sticks_clicked)
         self.overlay_gui.delete_sticks_clicked.connect(self.handle_delete_sticks_clicked)
         self.overlay_gui.redetect_sticks_clicked.connect(self.handle_redetect_sticks_clicked)
+        self.overlay_gui.process_photos_clicked.connect(self.handle_process_photos_clicked)
         #self.overlay_gui.sticks_length_clicked.connect(self.handle_sticks_length_clicked)
 
         #self.sticks_length_input = QSpinBox(None)
@@ -114,12 +117,13 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.link_menu.set_layout_direction("vertical")
 
         self.return_queue = Queue()
+        self.worker_pool = Pool(processes=1)
 
     def initialise_with(self, camera: Camera):
         self.camera = camera
         self.stick_link_manager.camera = self.camera
         self.stick_link_manager.update_links()
-        self.image_list.initialize(self.camera.folder)
+        self.image_list.initialize(self.camera.folder, self.camera.get_processed_count())
         if len(self.camera.sticks) == 0:
             self._detect_sticks()
         else:
@@ -243,6 +247,15 @@ class CameraViewWidget(QtWidgets.QWidget):
         image_path = self.image_list.data(current, Qt.UserRole)
         self.current_viewed_image = cv.pyrDown(cv.imread(str(image_path)))
         self.gpixmap.set_image(cv.resize(self.current_viewed_image, (0, 0), fx=0.5, fy=0.5))
+
+        measurements = self.camera.get_measurement_for(image_path.name)
+
+        if measurements is None:
+            return
+
+        for sw in self.gpixmap.stick_widgets:
+            m_ = measurements[sw.stick.label]
+            sw.set_snow_height(m_['snow_height'])
 
     @Slot()
     def handle_edit_sticks_clicked(self):
@@ -450,7 +463,12 @@ class CameraViewWidget(QtWidgets.QWidget):
 
     def handle_first_time_init_done(self):
         img_sticks = self.return_queue.get()
-
+        if img_sticks is None:
+            self.camera.rep_image_path = self.camera.folder / self.camera.image_list[0]
+            self.camera.rep_image = cv.imread(str(self.camera.rep_image_path))
+            self.camera.rep_image = cv.resize(self.camera.rep_image, (0, 0), fx=0.25, fy=0.25)
+            self.initialize_rest_of_gui()
+            return
         self.camera.rep_image_path = img_sticks[1]
         self.camera.rep_image = cv.imread(str(self.camera.rep_image_path))
         self.camera.rep_image = cv.resize(self.camera.rep_image, (0, 0), fx=0.25, fy=0.25)
@@ -493,3 +511,12 @@ class CameraViewWidget(QtWidgets.QWidget):
     def handle_redetect_sticks_clicked(self):
         self.camera.remove_sticks()
         self._detect_sticks()
+
+    def handle_process_photos_clicked(self):
+        self.worker_pool.apply_async(process_batch, args=(self.camera.get_batch(count=100), self.camera.folder, self.camera.sticks), callback=self.handle_worker_finished)
+        #df = process_batch(self.camera.get_batch(count=10), self.camera.folder, self.camera.sticks)
+        #print(f'rec {df.shape}')
+
+    def handle_worker_finished(self, df: DataFrame):
+        self.camera.insert_measurements(df)
+        self.image_list.set_processed_count(self.camera.get_processed_count())

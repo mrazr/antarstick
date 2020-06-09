@@ -10,7 +10,7 @@ import math
 from os import scandir
 from pathlib import Path
 from queue import Queue
-from time import time
+from time import time, sleep
 from typing import Dict, List, Optional, Tuple
 import sys
 
@@ -25,6 +25,7 @@ import skimage.transform
 from PyQt5.QtCore import QThreadPool
 from skimage.measure import regionprops
 from skimage.util import img_as_ubyte
+from pandas import DataFrame
 
 from my_thread_worker import MyThreadWorker
 from stick import Stick
@@ -247,7 +248,7 @@ def show_imgs_(images: List[np.ndarray], names: List[str]) -> int:
         cv.imshow(name, image)
 
 
-def measure_snow(img: np.ndarray, sticks: List[Stick]) -> Dict[int, float]:
+def measure_snow(img: np.ndarray, sticks: List[Stick]) -> List[Tuple[Stick, float]]:
     """Measures the height of snow in the image `img` around the sticks in `sticks`
 
     Parameters
@@ -264,18 +265,16 @@ def measure_snow(img: np.ndarray, sticks: List[Stick]) -> Dict[int, float]:
     """
 
     blurred = cv.GaussianBlur(img, (0, 0), 2.5)
-    measurements = {}
+    measurements = []
 
     for stick in sticks:
         # Approximate thickness of the stick
         thickness = int(math.ceil(0.03 * stick.length_px))
-
         end1 = np.array([stick.top[1], stick.top[0]])
         end2 = np.array([stick.bottom[1], stick.bottom[0]])
 
         # Extract intesity profile underneath the line
         line_profile = skimage.measure.profile_line(blurred, end2, end1, mode='reflect')
-
         off_x = np.array([0, int(1.5 * thickness)])
         # Now extract intensity profiles left of and right of the stick
         left_neigh_profile = skimage.measure.profile_line(blurred, end2 - off_x, end1 - off_x, mode='reflect')
@@ -284,21 +283,24 @@ def measure_snow(img: np.ndarray, sticks: List[Stick]) -> Dict[int, float]:
         # Compute the difference of the line profile and the average of the neighboring profiles
         # the idea is that, if there is snow, all the three intensity profiles will be similar enough
         diff = np.abs(line_profile - 0.5 * (left_neigh_profile + right_neigh_profile))
-
         diff_norm = math.sqrt(np.inner(diff, diff))
-        diff_norm = 1.0 / diff_norm
+        diff_norm = 1.0 / (diff_norm + 0.00001)
+
 
         diff = diff_norm * diff
 
         # Find the indices where the normalized difference is greater than 0.01,
         # this ideally indicates that after seeing snow, we arrived at the stick
-        height: np.ndarray = np.argwhere(diff > 0.01)
-
-        # TODO the mapping between the index from np.argwhere and the height isn't totally 1:1 probably, so probably adjust this
-        if height.shape[0] == 0:
-            measurements[stick.id] = stick.length_px
+        dist_along_stick: np.ndarray = np.argwhere(diff > 0.01)
+        if dist_along_stick.shape[0] == 0:
+            measurements.append((stick, stick.length_px))
         else:
-            measurements[stick.id] = height[0]
+            # Map `dist_along_stick` to actual height from the ground, which is dependent on the angle of the `stick`
+            vec = stick.top - stick.bottom
+            vec = vec / np.linalg.norm(vec)
+
+            height = dist_along_stick[0] * np.dot(np.array([0.0, -1.0]), vec)
+            measurements.append((stick, height[0]))
 
     return measurements
 
@@ -788,7 +790,7 @@ def get_non_snow_images(path: Path, queue: Queue, count: int = 9) -> None:
     queue.put_nowait(None)
 
 
-def get_sticks_in_folder(folder: Path) -> Tuple[List[np.ndarray], np.ndarray]:
+def get_sticks_in_folder(folder: Path) -> Tuple[List[np.ndarray], Path]:
     queue = Queue(maxsize=10)
     # thread = threading.Thread(target=get_non_snow_images, args=(folder, queue, 9))
     worker = MyThreadWorker(task=get_non_snow_images, args=(folder, queue, 9), kwargs={})
@@ -813,6 +815,8 @@ def get_sticks_in_folder(folder: Path) -> Tuple[List[np.ndarray], np.ndarray]:
         imgs.append((path_img[0], img, prep, img_stats))
         path_img = queue.get()
 
+    if stick_lengths is None or np.max(stick_lengths) < 0.01:
+        return None
     stick_lengths = stick_lengths / np.max(stick_lengths)
     heat_map = heat_map * (1 + stick_lengths)
     _, stick_regions = cv.threshold(heat_map.astype(np.uint8), len(imgs) - 3, 255, cv.THRESH_BINARY)
@@ -832,3 +836,30 @@ def get_sticks_in_folder(folder: Path) -> Tuple[List[np.ndarray], np.ndarray]:
     idx = stick_scores[0][2]
 
     return sticks_list[idx], imgs[idx][0]
+
+
+def process_batch(batch: List[str], folder: Path, sticks: List[Stick]) -> DataFrame:
+    data = {
+        'image_name': batch.copy(),
+    }
+
+    for stick in sticks:
+        data[stick.label + '_top'] = [[0, 0] for _ in range(len(batch))]
+        data[stick.label + '_bottom'] = [[0, 0] for _ in range(len(batch))]
+        data[stick.label + '_height_px'] = [0 for _ in range(len(batch))]
+        data[stick.label + '_snow_height'] = [0 for _ in range(len(batch))]
+
+    for i, img_name in enumerate(batch):
+        img = cv.pyrDown(cv.pyrDown(cv.imread(str(folder / img_name), cv.IMREAD_GRAYSCALE)))
+        heights = measure_snow(img, sticks)
+
+        for stick, height in heights:
+            data[stick.label + '_top'][i] = list(stick.top)
+            data[stick.label + '_bottom'][i] = list(stick.bottom)
+            data[stick.label + '_height_px'][i] = stick.length_px
+            data[stick.label + '_snow_height'][i] = height
+
+    print(f'returning {len(data.keys())}')
+    return DataFrame(data=data)
+
+

@@ -103,6 +103,8 @@ class StickWidget(QGraphicsObject):
         self.is_master = True
         self.selected = False
 
+        self.measured_height: int = -1
+
     @pyqtSlot()
     def handle_btn_delete_clicked(self):
         self.delete_clicked.emit(self.stick)
@@ -137,6 +139,13 @@ class StickWidget(QGraphicsObject):
             painter.drawLine(self.line.p1() - QPointF(off, 0), self.line.p1() + QPointF(off, 0))
             painter.drawLine(self.line.p2() - QPointF(0, off), self.line.p2() + QPointF(0, off))
             painter.drawLine(self.line.p2() - QPointF(off, 0), self.line.p2() + QPointF(off, 0))
+
+            if self.measured_height >= 0:
+                vec = (self.stick.top - self.stick.bottom) / np.linalg.norm(self.stick.top - self.stick.bottom)
+                dist_along_stick = self.measured_height / np.dot(np.array([0.0, -1.0]), vec)
+                point = self.line.p2() + dist_along_stick * QPointF(vec[0], vec[1])
+                point = QPointF(point.x(), point.y())
+                painter.drawLine(point - QPointF(20.0, 0.0), point + QPointF(20.0, 0.0))
         else:
             painter.drawLine(self.line.p1(), self.line.p2())
 
@@ -329,3 +338,6 @@ class StickWidget(QGraphicsObject):
     def is_selected(self) -> bool:
         return self.selected
 
+    def set_snow_height(self, height: int):
+        self.measured_height = height
+        self.update()

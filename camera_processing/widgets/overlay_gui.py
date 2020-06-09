@@ -17,6 +17,7 @@ class OverlayGui(QGraphicsObject):
     link_sticks_clicked = pyqtSignal()
     delete_sticks_clicked = pyqtSignal()
     redetect_sticks_clicked = pyqtSignal()
+    process_photos_clicked = pyqtSignal()
     #sticks_length_clicked = pyqtSignal()
 
     def __init__(self, view: CamGraphicsView, parent: QGraphicsItem = None):
@@ -52,6 +53,7 @@ class OverlayGui(QGraphicsObject):
         self.top_menu.add_button("reset_view", "Reset view", call_back=self.reset_view_requested.emit)
         self.top_menu.add_button("delete_sticks", "Delete selected sticks", call_back=self.delete_sticks_clicked.emit, base_color="red")
         self.top_menu.hide_button("delete_sticks")
+        self.top_menu.add_button("process_photos", "Process photos", call_back=self.process_photos_clicked.emit)
         self.top_menu.set_height(40)
 
         self.top_menu.setPos(QPoint(0, 0))
