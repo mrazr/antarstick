@@ -35,8 +35,8 @@ class ImageListModel(QAbstractListModel):
             return self.image_names[index.row()].name
         if role == Qt.UserRole:
             return self.image_names[index.row()]
-        if role == Qt.BackgroundRole and index.row() < self.processed_images_count:
-            return QBrush(QColor(0, 255, 0))
+        if role == Qt.ForegroundRole and index.row() < self.processed_images_count:
+            return QBrush(QColor(0, 150, 0))
         return None
 
     def set_processed_count(self, count: int):

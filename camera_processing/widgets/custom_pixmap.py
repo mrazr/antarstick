@@ -45,10 +45,15 @@ class CustomPixmap(QGraphicsObject):
         self.camera = None
         self.title_rect = QGraphicsRectItem(self)
         self.title_rect.setBrush(QBrush(QColor(50, 50, 50, 150)))
+
+        self.progress_tracker_rect = QGraphicsRectItem(self)
+        self.progress_tracker_rect.setBrush(QBrush(QColor(0, 200, 0, 200)))
+
         self.title = QGraphicsSimpleTextItem("Nothing", self.title_rect)
         self.title.setFont(CustomPixmap.font)
         self.title.setBrush(QBrush(QColor(255, 255, 255, 255)))
         self.title.setPen(QPen(QColor(255, 255, 255, 255)))
+
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
         self.show_stick_widgets = False
         self.setAcceptHoverEvents(True)
@@ -148,6 +153,10 @@ class CustomPixmap(QGraphicsObject):
         self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
         self.title_rect.setPos(0, self.gpixmap.boundingRect().height())
         self.title_rect.setVisible(True)
+
+        self.progress_tracker_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
+        self.progress_tracker_rect.setPos(0, self.gpixmap.boundingRect().height())
+        self.progress_tracker_rect.setVisible(False)
 
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2,
                           0)
@@ -339,7 +348,6 @@ class CustomPixmap(QGraphicsObject):
         self.stick_length_btn.set_label(str(length) + " cm")
         self.layout_title_area()
         self.stick_length_btn.click_button(artificial_emit=True)
-        # TODO actually set the sticks lengths
         for stick in self.camera.sticks:
             stick.length_cm = length
         self.camera.stick_changed.emit(self.camera.sticks[0]) #TODO handle empty stick list
@@ -349,3 +357,27 @@ class CustomPixmap(QGraphicsObject):
         self.stick_length_input.set_length(old_length)
         self.layout_title_area()
         self.stick_length_btn.click_button(artificial_emit=True)
+
+    def set_progress_bar_progress(self, count: int, out_of: int):
+        if count > out_of:
+            self.progress_tracker_rect.setVisible(False)
+            return
+        one_percent_width = self.title_rect.rect().width() / 100.0
+        percentage = 100 * (count / float(out_of))
+        rect = self.progress_tracker_rect.rect()
+        rect.setWidth(one_percent_width * percentage)
+        self.progress_tracker_rect.setRect(rect)
+        self.progress_tracker_rect.setVisible(True)
+
+    def set_status_text(self, text: str):
+        if len(text) > 0:
+            self.title.setText(f'{str(self.camera.folder.name)} - {text}')
+            self.title.setPos(5, 0)
+        else:
+            self.title.setText(str(self.camera.folder.name))
+            self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2, 0)
+        self.update()
+
+    def clear_status_progress(self):
+        self.set_status_text("")
+        self.set_progress_bar_progress(1, 0)

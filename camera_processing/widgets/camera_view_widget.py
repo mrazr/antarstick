@@ -7,13 +7,13 @@ import numpy as np
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import (QMarginsF, QModelIndex, QPointF, QRectF, Qt,
                           pyqtSignal, QByteArray, QThreadPool, QRect)
-from PyQt5.QtCore import pyqtSlot as Slot
+from PyQt5.QtCore import pyqtSlot as Slot, QTimer
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QBrush, QColor, QFont, QPen
 from PyQt5.QtWidgets import QGraphicsScene, QSpinBox, QGraphicsItem
 from pandas import DataFrame
 
 from camera import Camera
-from camera_processing.antarstick_processing import get_sticks_in_folder, process_batch
+from camera_processing.antarstick_processing import get_sticks_in_folder, process_batch, get_sticks_in_folder_non_mp
 from camera_processing.widgets import ui_camera_view
 from camera_processing.widgets.button import Button
 from camera_processing.widgets.button_menu import ButtonMenu
@@ -117,7 +117,14 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.link_menu.set_layout_direction("vertical")
 
         self.return_queue = Queue()
-        self.worker_pool = Pool(processes=1)
+        self.worker_pool = Pool(processes=2)
+        self.image_loading_time: float = -1.0
+
+        self.photo_count_to_process: int = 0
+        self.photo_count_processed: int = 0
+        self.next_batch_start: int = 0
+        self.photo_batch: List[str] = []
+        self.timer: QTimer = QTimer()
 
     def initialise_with(self, camera: Camera):
         self.camera = camera
@@ -160,6 +167,9 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.initialize_link_menu()
         self.ui.image_list.setEnabled(True)
         self.overlay_gui.show_loading_screen(False)
+        self.overlay_gui.process_photos_count_clicked.connect(self.handle_process_photos_clicked)
+        self.overlay_gui.initialize_process_photos_popup(self.camera.get_photo_count(), self.image_loading_time)
+        self.overlay_gui.handle_cam_view_changed()
         #self.overlay_gui.top_menu._center_buttons()
         self.initialization_done.emit(self.camera)
 
@@ -169,8 +179,9 @@ class CameraViewWidget(QtWidgets.QWidget):
 
 
     def _detect_sticks(self):
-        #img_sticks = get_sticks_in_folder(self.camera.folder)
-
+        #img_sticks = get_sticks_in_folder_non_mp(self.camera.folder)
+        #self.return_queue.put_nowait(img_sticks)
+        #self.handle_first_time_init_done()
         worker = MyThreadWorker(get_sticks_in_folder, args=(self.camera.folder,), kwargs={'return_queue': self.return_queue})
         worker.signals.finished.connect(self.handle_first_time_init_done)
         QThreadPool.globalInstance().start(worker)
@@ -250,7 +261,10 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         measurements = self.camera.get_measurement_for(image_path.name)
 
+        # The selected photo is not processed yet, therefore set "missing measurement" value for each StickWidget
         if measurements is None:
+            for sw in self.gpixmap.stick_widgets:
+                sw.set_snow_height(-1)
             return
 
         for sw in self.gpixmap.stick_widgets:
@@ -462,18 +476,19 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.link_menu.setVisible(False)
 
     def handle_first_time_init_done(self):
-        img_sticks = self.return_queue.get()
-        if img_sticks is None:
+        img_sticks_time = self.return_queue.get()
+        if img_sticks_time is None:
             self.camera.rep_image_path = self.camera.folder / self.camera.image_list[0]
             self.camera.rep_image = cv.imread(str(self.camera.rep_image_path))
             self.camera.rep_image = cv.resize(self.camera.rep_image, (0, 0), fx=0.25, fy=0.25)
             self.initialize_rest_of_gui()
             return
-        self.camera.rep_image_path = img_sticks[1]
+        self.camera.rep_image_path = img_sticks_time[1]
         self.camera.rep_image = cv.imread(str(self.camera.rep_image_path))
         self.camera.rep_image = cv.resize(self.camera.rep_image, (0, 0), fx=0.25, fy=0.25)
 
-        lines = img_sticks[0]
+        lines = img_sticks_time[0]
+        self.image_loading_time = img_sticks_time[2]
         #sticks: List[Stick] = self.dataset.create_new_sticks(self.camera, len(lines))
         sticks: List[Stick] = self.camera.create_new_sticks(lines)
         #for i, stick in enumerate(sticks):
@@ -512,11 +527,53 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.camera.remove_sticks()
         self._detect_sticks()
 
-    def handle_process_photos_clicked(self):
-        self.worker_pool.apply_async(process_batch, args=(self.camera.get_batch(count=100), self.camera.folder, self.camera.sticks), callback=self.handle_worker_finished)
-        #df = process_batch(self.camera.get_batch(count=10), self.camera.folder, self.camera.sticks)
-        #print(f'rec {df.shape}')
+    #def handle_process_photos_clicked(self):
+    #    self.worker_pool.apply_async(process_batch, args=(self.camera.get_batch(count=100), self.camera.folder, self.camera.sticks), callback=self.handle_worker_finished)
+    #    #df = process_batch(self.camera.get_batch(count=10), self.camera.folder, self.camera.sticks)
+    #    #print(f'rec {df.shape}')
 
     def handle_worker_finished(self, df: DataFrame):
         self.camera.insert_measurements(df)
         self.image_list.set_processed_count(self.camera.get_processed_count())
+        self.photo_count_processed += df.shape[0]
+
+        self.gpixmap.set_progress_bar_progress(self.photo_count_processed, self.photo_count_to_process)
+        self.gpixmap.set_status_text(f'processed {self.photo_count_processed} / {self.photo_count_to_process}')
+
+        if self.next_batch_start < self.photo_count_to_process:
+            mini_batch = min(50, self.photo_count_to_process - self.next_batch_start)
+            self.worker_pool.apply_async(process_batch, args=(
+                self.photo_batch[self.next_batch_start:self.next_batch_start + mini_batch], self.camera.folder, self.camera.sticks),
+                                         callback=self.handle_worker_finished)
+            self.next_batch_start += mini_batch
+
+        if self.photo_count_processed >= self.photo_count_to_process:
+            self.photo_count_to_process = 0
+            self.photo_batch = []
+            self.next_batch_start = 0
+            self.overlay_gui.enable_process_photos_button(True)
+            self.gpixmap.clear_status_progress()
+
+    def handle_process_photos_clicked(self, count: int):
+        self.photo_count_to_process = min(count, self.camera.get_photo_count() - self.camera.get_processed_count())
+        self.photo_batch = self.camera.get_batch(self.photo_count_to_process)
+        self.gpixmap.set_status_text(f'processed {self.photo_count_processed} / {self.photo_count_to_process}')
+        if self.photo_count_to_process <= 100:
+            mini_batch = min(50, self.photo_count_to_process)
+            self.next_batch_start = mini_batch
+            self.worker_pool.apply_async(process_batch, args=(
+                self.photo_batch[:mini_batch], self.camera.folder, self.camera.sticks),
+                                         callback=self.handle_worker_finished)
+        else:
+            mini_batch = 50
+            self.worker_pool.apply_async(process_batch, args=(
+                self.photo_batch[:mini_batch], self.camera.folder, self.camera.sticks),
+                                         callback=self.handle_worker_finished)
+
+            self.next_batch_start = mini_batch
+            self.worker_pool.apply_async(process_batch, args=(
+                self.photo_batch[self.next_batch_start:self.next_batch_start + mini_batch], self.camera.folder, self.camera.sticks),
+                                         callback=self.handle_worker_finished)
+            self.next_batch_start += mini_batch
+        #self.worker_pool.apply_async(process_batch, args=(self.camera.get_batch(count=count), self.camera.folder, self.camera.sticks), callback=self.handle_worker_finished)
+

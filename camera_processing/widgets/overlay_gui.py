@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from typing import Dict, Any
 
 from PyQt5.Qt import QBrush, QColor, QPen
 from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal, pyqtSlot
@@ -18,6 +19,7 @@ class OverlayGui(QGraphicsObject):
     delete_sticks_clicked = pyqtSignal()
     redetect_sticks_clicked = pyqtSignal()
     process_photos_clicked = pyqtSignal()
+    process_photos_count_clicked = pyqtSignal(int)
     #sticks_length_clicked = pyqtSignal()
 
     def __init__(self, view: CamGraphicsView, parent: QGraphicsItem = None):
@@ -35,6 +37,7 @@ class OverlayGui(QGraphicsObject):
         self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
         #self.top_menu.setVisible(False)
         self.loading_screen_shown = True
+        self.process_photo_popup = ButtonMenu(self)
 
     def initialize(self):
         path = Path(sys.argv[0]).parent / "camera_processing/gui_resources/"
@@ -53,7 +56,8 @@ class OverlayGui(QGraphicsObject):
         self.top_menu.add_button("reset_view", "Reset view", call_back=self.reset_view_requested.emit)
         self.top_menu.add_button("delete_sticks", "Delete selected sticks", call_back=self.delete_sticks_clicked.emit, base_color="red")
         self.top_menu.hide_button("delete_sticks")
-        self.top_menu.add_button("process_photos", "Process photos", call_back=self.process_photos_clicked.emit)
+        process_btn = self.top_menu.add_button("process_photos", "Process photos", is_checkable=True) #call_back=self.process_photos_clicked.emit)
+        process_btn.clicked.connect(lambda _: self.handle_process_photos_clicked())
         self.top_menu.set_height(40)
 
         self.top_menu.setPos(QPoint(0, 0))
@@ -66,6 +70,8 @@ class OverlayGui(QGraphicsObject):
         self.prepareGeometryChange()
         self.setPos(self.view.mapToScene(QPoint(0, 0)))
         self.top_menu.setPos(self.boundingRect().width() / 2.0 - self.top_menu.boundingRect().width() / 2.0, 2)
+        self.process_photo_popup.setPos(self.boundingRect().width() / 2.0 - self.process_photo_popup.boundingRect().width() / 2.0,
+                                        self.boundingRect().height() / 2.0 - self.process_photo_popup.boundingRect().height() / 2.0)
 
     def boundingRect(self):
         return QRectF(self.view.viewport().rect())
@@ -116,3 +122,38 @@ class OverlayGui(QGraphicsObject):
     def enable_delete_sticks_button(self, val: bool):
         self.top_menu.show_button("delete_sticks") if val else self.top_menu.hide_button("delete_sticks")
         self.handle_cam_view_changed()
+
+    def initialize_process_photos_popup(self, photo_count: int, loading_time: float):
+        loading_time = 0.4 # Bit of a magic number here for now. For my PC it was 0.15s per image.
+        self.process_photo_popup.set_height(40)
+        step = photo_count // 5
+        self.process_photo_popup.add_button('100', f'100: {int(round(100 * loading_time))} s', call_back=self.handle_process_photos_count_clicked)
+
+        count = step
+        for i in range(1, 5):
+            self.process_photo_popup.add_button(str(count), f'{count}: {int(round(i * count * loading_time))} s', call_back=self.handle_process_photos_count_clicked)
+
+        self.process_photo_popup.add_button(photo_count, f'All: {int(round(photo_count * loading_time))} s', call_back=self.handle_process_photos_count_clicked)
+        cancel_btn = self.process_photo_popup.add_button('btn_cancel', 'Cancel', base_color='red')
+        cancel_btn.clicked.connect(self.handle_process_photos_count_cancel_clicked)
+        self.process_photo_popup.setVisible(False)
+
+    def handle_process_photos_count_cancel_clicked(self):
+        self.process_photo_popup.setVisible(False)
+        self.top_menu.get_button('process_photos').click_button(True)
+        self.process_photo_popup.reset_button_states()
+
+    def handle_process_photos_count_clicked(self, btn_data: Dict[str, Any]):
+        self.process_photo_popup.setVisible(False)
+        self.process_photo_popup.reset_button_states()
+        btn = self.top_menu.get_button('process_photos')
+        btn.click_button(True)
+        btn.set_disabled(True)
+        self.process_photos_count_clicked.emit(int(btn_data['btn_id']))
+
+    def handle_process_photos_clicked(self):
+        is_down = self.top_menu.get_button('process_photos').is_on()
+        self.process_photo_popup.setVisible(is_down)
+
+    def enable_process_photos_button(self, enable: bool):
+        self.top_menu.get_button('process_photos').set_disabled(not enable)

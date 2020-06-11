@@ -71,7 +71,7 @@ class Camera(QObject):
         #                                      interpolation=cv.INTER_NEAREST)
         self.rep_image_path: Path = None
         self.rep_image = None
-        self.image_list: List[str] = list(filter(lambda f: f[-4:].lower() == 'jpeg' or f[-3:].lower() == 'jpg',listdir(self.folder)))
+        self.image_list: List[str] = list(sorted(filter(lambda f: f[-4:].lower() == 'jpeg' or f[-3:].lower() == 'jpg', listdir(self.folder))))
         self.image_names_ids: Dict[str, int] = {image_name: image_id for image_id, image_name in enumerate(self.image_list)}
         self.next_photo_id: int = 0
         self.next_photo: str = self.image_list[self.next_photo_id]
@@ -131,6 +131,7 @@ class Camera(QObject):
             return
         self.sticks = list(filter(lambda s: s.local_id != stick.local_id, self.sticks))
         self.unused_stick_ids.append(stick.local_id)
+        self._update_stick_labels_id()
         self.stick_removed.emit(stick)
 
     #def add_sticks(self, sticks: List[Stick]):
@@ -145,11 +146,11 @@ class Camera(QObject):
         if sticks is None:
             sticks = self.sticks.copy()
             self.sticks.clear()
+            self._update_stick_labels_id()
         else:
             for stick in sticks:
                 self.sticks.remove(stick)
         self.unused_stick_ids.extend(map(lambda stick: stick.local_id, sticks))
-        self._update_stick_labels_id()
         self.sticks_removed.emit(sticks)
 
     def save(self):
@@ -266,4 +267,7 @@ class Camera(QObject):
 
     def get_processed_count(self) -> int:
         return self.next_photo_id
+
+    def get_photo_count(self) -> int:
+        return len(self.image_list)
 

@@ -134,3 +134,7 @@ class ButtonMenu(QGraphicsObject):
         self.buttons[btn_id] = button
         button.setVisible(True)
         self._center_buttons()
+
+    def reset_button_states(self):
+        for button in self.buttons.values():
+            button.set_default_state()

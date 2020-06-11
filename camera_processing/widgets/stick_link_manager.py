@@ -28,7 +28,7 @@ class StickLink(QGraphicsObject):
 
         self.color = QColor(0, 255, 0, 255)
         self.line_item = QGraphicsLineItem(0, 0, 0, 0, self)
-        self.line_item.setPen(QPen(QColor(0, 255, 0, 255), 2.0))
+        self.line_item.setPen(QPen(QColor(0, 255, 0, 255), 1.0))
 
         self.temporary_target: QPointF = None
         self.setAcceptHoverEvents(False)

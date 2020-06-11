@@ -13,6 +13,7 @@ from queue import Queue
 from time import time, sleep
 from typing import Dict, List, Optional, Tuple
 import sys
+import multiprocessing as mp
 
 import cv2 as cv
 import numpy as np
@@ -264,7 +265,7 @@ def measure_snow(img: np.ndarray, sticks: List[Stick]) -> List[Tuple[Stick, floa
         dictionary of (Stick.id : snow_height_in_pixels)
     """
 
-    blurred = cv.GaussianBlur(img, (0, 0), 2.5)
+    blurred = cv.GaussianBlur(img, (3, 3), 1.5)
     measurements = []
 
     for stick in sticks:
@@ -790,7 +791,7 @@ def get_non_snow_images(path: Path, queue: Queue, count: int = 9) -> None:
     queue.put_nowait(None)
 
 
-def get_sticks_in_folder(folder: Path) -> Tuple[List[np.ndarray], Path]:
+def get_sticks_in_folder(folder: Path) -> Optional[Tuple[List[np.ndarray], Path, float]]:
     queue = Queue(maxsize=10)
     # thread = threading.Thread(target=get_non_snow_images, args=(folder, queue, 9))
     worker = MyThreadWorker(task=get_non_snow_images, args=(folder, queue, 9), kwargs={})
@@ -799,6 +800,254 @@ def get_sticks_in_folder(folder: Path) -> Tuple[List[np.ndarray], Path]:
     stick_lengths = None
     imgs: List[Tuple[Path, np.ndarray, np.ndarray, np.ndarray]] = []
     QThreadPool.globalInstance().start(worker)
+
+    loading_time = 0
+    loading_start = time()
+    path_img: Tuple[Path, np.ndarray] = queue.get()
+    while path_img is not None:
+        loading_time += (time() - loading_start)
+        img = path_img[1]
+        gray = cv.cvtColor(cv.pyrDown(img), cv.COLOR_BGR2GRAY)
+        gray = cv.pyrUp(cv.pyrDown(gray))[:-50]
+        gray = cv.copyMakeBorder(gray, 15, 15, 15, 15, cv.BORDER_CONSTANT, value=0)
+        prep, _ = preprocess_phase(gray)
+        prep = (255 * prep).astype(np.uint8)
+        if heat_map is None:
+            heat_map = np.zeros(prep.shape, dtype=np.uint8)
+            stick_lengths = np.zeros(prep.shape, dtype=np.uint16)
+        heat_map, stick_lengths, img_stats = update_stick_heat_map(prep, heat_map, stick_lengths)
+        imgs.append((path_img[0], img, prep, img_stats))
+        loading_start = time()
+        path_img = queue.get()
+
+    if len(imgs) > 0:
+        loading_time = loading_time / len(imgs)
+
+    if stick_lengths is None or np.max(stick_lengths) < 0.01:
+        return None
+
+    stick_lengths = stick_lengths / np.max(stick_lengths)
+    heat_map = heat_map * (1 + stick_lengths)
+    _, stick_regions = cv.threshold(heat_map.astype(np.uint8), len(imgs) - 3, 255, cv.THRESH_BINARY)
+
+    stick_scores = []
+    sticks_list: List[List[np.ndarray]] = []
+    for j in range(len(imgs)):
+        sticks_ = filter_sticks(imgs[j][2], imgs[j][3], stick_regions)
+        sticks_list.append(sticks_)
+        stick_score = sum((map(lambda s: np.linalg.norm(s[0] - s[1]), sticks_)))
+        stick_scores.append([stick_score, len(sticks_), j])
+
+    # Sort according to number of sticks and total stick lengths
+    stick_scores = sorted(stick_scores, key=lambda c: (c[1], c[0]), reverse=True)
+
+    # Most likely stick configuration is identified by the index which sits in stick_scores[0][2]
+    idx = stick_scores[0][2]
+
+    adjusted_sticks = []
+    for stick in sticks_list[idx]:
+        stick_ = adjust_endpoints(imgs[idx][1], stick, 9)
+        adjusted_sticks.append(stick_)
+
+
+    #return sticks_list[idx], imgs[idx][0]
+    return adjusted_sticks, imgs[idx][0], loading_time
+
+
+def process_batch(batch: List[str], folder: Path, sticks: List[Stick]) -> DataFrame:
+    data = {
+        'image_name': batch.copy(),
+    }
+
+    for stick in sticks:
+        data[stick.label + '_top'] = [[0, 0] for _ in range(len(batch))]
+        data[stick.label + '_bottom'] = [[0, 0] for _ in range(len(batch))]
+        data[stick.label + '_height_px'] = [0 for _ in range(len(batch))]
+        data[stick.label + '_snow_height'] = [0 for _ in range(len(batch))]
+
+    #img_queue = mp.Queue(maxsize=len(batch) + 1)
+    #process = mp.Process(target=load_batch, args=(batch, folder, img_queue))
+    #process.start()
+
+    #queue_item = img_queue.get()
+    #i = 0
+    #start = time()
+    #while queue_item is not None:
+    for i, img_name in enumerate(batch):
+        #start = time()
+        img = cv.resize(cv.imread(str(folder / img_name), cv.IMREAD_GRAYSCALE), (0,0), fx=0.25, fy=0.25, interpolation=cv.INTER_LINEAR)
+        #loading_time += (time() - start)
+        #start = time()
+        heights = measure_snow(img, sticks)
+        #measuring_time += (time() - start)
+
+        for stick, height in heights:
+            data[stick.label + '_top'][i] = list(stick.top)
+            data[stick.label + '_bottom'][i] = list(stick.bottom)
+            data[stick.label + '_height_px'][i] = stick.length_px
+            data[stick.label + '_snow_height'][i] = height
+    return DataFrame(data=data)
+
+
+def load_batch(image_names: List[str], folder: Path, queue: mp.Queue):
+    print('hello')
+    for img_name in image_names:
+        print(f'loading {img_name}')
+        img = cv.resize(cv.imread(str(folder / img_name), cv.IMREAD_GRAYSCALE), (0,0), fx=0.25, fy=0.25, interpolation=cv.INTER_LINEAR)
+        print(f'shape = {img.shape}')
+        queue.put_nowait((img_name, img))
+    queue.put_nowait(None)
+
+
+def get_values_at(img: np.ndarray, x: int, y: int, s: int) -> List[np.ndarray]:
+    """Extracts mean values for ROI-s in `img`.
+       The ROI-s are windows of size `s` by `s` pixels and they are
+       arranged in a cross shape centered on the pixel (x,y).
+    """
+    s_ = s // 2
+
+    c = np.mean(img[y - s_:y + s_, x - s_:x + s_])  # mean for central ROI
+    t = np.mean(img[y - 3 * s_:y - s_, x - s_:x + s_])  # mean for top ROI (above central ROI)
+    b = np.mean(img[y + s_:y + 3 * s_, x - s_:x + s_])  # mean for bottom ROI (below central ROI)
+    l = np.mean(img[y - s_:y + s_, x - 3 * s_:x - s_])  # mean for left ROI (left of central ROI)
+    r = np.mean(img[y - s_:y + s_, x + s_:x + 3 * s_])  # mean for right ROI (right of central ROI)
+
+    return [c, t, r, b, l]
+
+
+def is_endpoint_at(img: np.ndarray, x: int, y: int, s: int, top: bool) -> Tuple[bool, float]:
+    """Analyzes whether there is an endpoint of a stick located at pixel (x,y) in `img`
+
+    Parameters
+    ----------
+    img: np.ndarray
+        image to look for endpoint in
+    x, y: int
+        coordinates where endpoint is being looked for
+    s: int
+        size of investigation window
+    top: bool
+        True if looking for top endpoint, False if looking for bottom endpoint
+    """
+    top_val = get_values_at(img, x, y, s)
+
+    c = top_val[0]
+    t = top_val[1]
+    r = top_val[2]
+    b = top_val[3]
+    l = top_val[4]
+
+    c_b_dist = np.linalg.norm(c - b)
+    c_t_dist = np.linalg.norm(c - t)
+
+    c_r_dist = np.linalg.norm(c - r)
+    c_l_dist = np.linalg.norm(c - l)
+
+    mean_dist = np.mean([c_b_dist, c_t_dist, c_r_dist, c_l_dist])
+    if mean_dist < 7.0:
+        return False, -1.0
+    if top:
+        return c_b_dist < mean_dist and c_t_dist > mean_dist and (c_r_dist > mean_dist or c_l_dist > mean_dist), mean_dist
+    else:
+        return c_t_dist < mean_dist and c_b_dist > mean_dist and (c_r_dist > mean_dist or c_l_dist > mean_dist), mean_dist
+
+
+def adjust_endpoints(img: np.ndarray, stick: np.ndarray, w: int) -> np.ndarray:
+
+    stick_length = np.linalg.norm(stick[0] - stick[1])
+    stick_vec = (stick[0] - stick[1]) / stick_length
+
+    top_endpoints_scores: List[Tuple[np.ndarray, float]] = []
+
+    print(f'analyzing stick {stick}')
+
+    endpoint_heat_map = np.zeros((img.shape[0], img.shape[1]), np.uint8)
+    endpoint_heat_map2 = np.zeros(endpoint_heat_map.shape, np.uint8)
+
+    show = True
+    k = 12
+    for y in range(2 * stick[0][0] - w//1, 2 * stick[0][0] + w//1):
+        for x in range(2 * stick[0][1] - w//1, 2 * stick[0][1] + w//1):
+            to_show = img.copy()
+            cv.circle(to_show, (2 * stick[0][1], 2 * stick[0][0]), 2, [255, 0, 0], 2)
+            res, dist = is_endpoint_at(img, x, y, w, top=True)
+            col = [0, 255, 0] if res else [0, 0, 255]
+            cv.circle(to_show, (x, y), 2, col, 2)
+            #if show:
+            #    #cv.imshow('control', cv.resize(to_show, (0,0), fx=0.5, fy=0.5))
+            #    #k = cv.waitKey(0)
+            if k == ord('q'):
+                show = False
+                cv.destroyAllWindows()
+            print(res)
+            if res:
+                candidate = np.array([y, x])
+                vec = (candidate - 2 * stick[0])
+                dist = np.linalg.norm(vec) #np.abs(np.linalg.norm(vec) - 2 * stick_length)
+                if dist < w:
+                    top_endpoints_scores.append((np.array([y, x]), dist))
+                    endpoint_heat_map[y - w//2:y+w//2, x-w//2:x+w//2] += 1
+                elif np.abs(np.dot(vec / np.linalg.norm(vec), stick_vec)) > 0.999:
+                    top_endpoints_scores.append((np.array([y, x]), dist))
+                    endpoint_heat_map[y - w//2:y+w//2, x-w//2:x+w//2] += 1
+
+    bottom_endpoints_scores: List[Tuple[np.ndarray, float]] = []
+
+    show = True
+    for y in range(2 * stick[1][0] - w//1, 2 * stick[1][0] + w//1):
+        for x in range(2 * stick[1][1] - w//1, 2 * stick[1][1] + w//1):
+            to_show = img.copy()
+            cv.circle(to_show, (2 * stick[1][1], 2 * stick[1][0]), 2, [255, 0, 0], 2)
+            res, dist = is_endpoint_at(img, x, y, w, top=False)
+            col = [0, 255, 0] if res else [0, 0, 255]
+            cv.circle(to_show, (x, y), 2, col, 2)
+            #if show:
+            #    #cv.imshow('control', cv.resize(to_show, (0,0), fx=0.5, fy=0.5))
+            #    #k = cv.waitKey(0)
+            if k == ord('q'):
+                show = False
+                cv.destroyAllWindows()
+            if res:
+                candidate = np.array([y, x])
+                vec = (candidate - 2 * stick[1])
+                dist = np.linalg.norm(vec) #np.abs(np.linalg.norm(vec) - 2 * stick_length)
+                if dist < w:
+                    bottom_endpoints_scores.append((np.array([y, x]), dist))
+                    endpoint_heat_map2[y - w // 2:y + w // 2, x - w // 2:x + w // 2] += 1
+                elif np.abs(np.dot(vec / np.linalg.norm(vec), stick_vec)) > 0.999:
+                    bottom_endpoints_scores.append((np.array([y, x]), dist))
+                    endpoint_heat_map2[y - w//2:y+w//2, x-w//2:x+w//2] += 1
+
+    _, _, _, te = cv.minMaxLoc(endpoint_heat_map)
+    _, _, _, be = cv.minMaxLoc(endpoint_heat_map2)
+
+    #new_top = 0.5 * max(top_endpoints_scores, key=lambda t: t[1])[0] if len(top_endpoints_scores) > 0 else stick[0]
+    #new_bottom = 0.5 * max(bottom_endpoints_scores, key=lambda b: b[1])[0] if len(bottom_endpoints_scores) > 0 else stick[1]
+
+    if te[0] == 0 and te[1] == 0:
+        new_top = stick[0]
+    else:
+        new_top = np.round(0.5 * np.array([te[1] - w//2, te[0]])).astype(np.int32)
+    if be[0] == 0 and be[1] == 0:
+        new_bottom = stick[1]
+    else:
+        new_bottom = np.round(0.5 * np.array([be[1] + w//2, be[0]])).astype(np.int32)
+
+    return np.array([np.round(new_top).astype(np.int32), np.round(new_bottom).astype(np.int32)])
+
+
+def get_sticks_in_folder_non_mp(folder: Path) -> Tuple[List[np.ndarray], Path]:
+    #queue = Queue(maxsize=10)
+    ## thread = threading.Thread(target=get_non_snow_images, args=(folder, queue, 9))
+    #worker = MyThreadWorker(task=get_non_snow_images, args=(folder, queue, 9), kwargs={})
+
+    heat_map = None
+    stick_lengths = None
+    imgs: List[Tuple[Path, np.ndarray, np.ndarray, np.ndarray]] = []
+    #QThreadPool.globalInstance().start(worker)
+    queue = Queue(maxsize=10)
+
+    get_non_snow_images(folder, queue, 9)
 
     path_img: Tuple[Path, np.ndarray] = queue.get()
     while path_img is not None:
@@ -835,31 +1084,11 @@ def get_sticks_in_folder(folder: Path) -> Tuple[List[np.ndarray], Path]:
     # Most likely stick configuration is identified by the index which sits in stick_scores[0][2]
     idx = stick_scores[0][2]
 
-    return sticks_list[idx], imgs[idx][0]
+    adjusted_sticks = []
+    for stick in sticks_list[idx]:
+        stick_ = adjust_endpoints(imgs[idx][1], stick, 9)
+        adjusted_sticks.append(stick_)
 
 
-def process_batch(batch: List[str], folder: Path, sticks: List[Stick]) -> DataFrame:
-    data = {
-        'image_name': batch.copy(),
-    }
-
-    for stick in sticks:
-        data[stick.label + '_top'] = [[0, 0] for _ in range(len(batch))]
-        data[stick.label + '_bottom'] = [[0, 0] for _ in range(len(batch))]
-        data[stick.label + '_height_px'] = [0 for _ in range(len(batch))]
-        data[stick.label + '_snow_height'] = [0 for _ in range(len(batch))]
-
-    for i, img_name in enumerate(batch):
-        img = cv.pyrDown(cv.pyrDown(cv.imread(str(folder / img_name), cv.IMREAD_GRAYSCALE)))
-        heights = measure_snow(img, sticks)
-
-        for stick, height in heights:
-            data[stick.label + '_top'][i] = list(stick.top)
-            data[stick.label + '_bottom'][i] = list(stick.bottom)
-            data[stick.label + '_height_px'][i] = stick.length_px
-            data[stick.label + '_snow_height'][i] = height
-
-    print(f'returning {len(data.keys())}')
-    return DataFrame(data=data)
-
-
+    #return sticks_list[idx], imgs[idx][0]
+    return adjusted_sticks, imgs[idx][0]

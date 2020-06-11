@@ -100,7 +100,9 @@ class Button(QGraphicsObject):
         self.label.setFont(Button.font)
         #self.label.setDefaultTextColor(QColor(255, 255, 255, 255))
         #self.label.setTextInteractionFlags(Qt.TextEditable)
-        self.label.setBrush(QBrush(QColor(255, 255, 255, 255)))
+        self.text_color_enabled = QColor(255, 255, 255, 255)
+        self.text_color_disabled = QColor(125, 125, 125, 255)
+        self.label.setBrush(QBrush(self.text_color_enabled))
         self.btn_id = btn_id
         self.rect = QRectF(0, 0, 0, 0)
 
@@ -123,6 +125,7 @@ class Button(QGraphicsObject):
 
         self.pixmap: QPixmap = None
         self.max_pixmap_height = 128
+        self.disabled = False
 
     def set_height(self, h: int):
         self.prepareGeometryChange()
@@ -159,6 +162,8 @@ class Button(QGraphicsObject):
         painter.drawRoundedRect(self.rect, 5, 5)
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent):
+        if self.disabled:
+            return
         self.fill_color_current = self.logic.press_color()
         self.scene().update()
 
@@ -166,6 +171,8 @@ class Button(QGraphicsObject):
         self.click_button()
 
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent):
+        if self.disabled:
+            return
         self.hovered = True
         self.color_animation.setDuration(200)
         self.color_animation.setStartValue(self.logic.idle_color())
@@ -177,6 +184,8 @@ class Button(QGraphicsObject):
         self.current_timer = self.startTimer(self.color_animation.duration() // 80)
 
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent):
+        if self.disabled:
+            return
         self.hovered = False
         self.color_animation.setDuration(200)
         self.color_animation.setStartValue(self.logic.hover_enter_color())
@@ -246,6 +255,8 @@ class Button(QGraphicsObject):
         self.fit_to_contents()
 
     def click_button(self, artificial_emit: bool = False):
+        if self.disabled:
+            return
         self.logic.do_click()
         self.fill_color_current = self.logic.release_color() if not artificial_emit else self.logic.idle_color()
         if self.scene() is not None:
@@ -255,3 +266,16 @@ class Button(QGraphicsObject):
     def set_opacity(self, opacity: float):
         self.setOpacity(opacity)
         self.update()
+
+    def set_default_state(self):
+        self.fill_color_current = self.logic.idle_color()
+        self.update()
+
+    def set_disabled(self, disabled: bool):
+        self.disabled = disabled
+        if disabled:
+            self.label.setBrush(QBrush(self.text_color_disabled))
+        else:
+            self.label.setBrush(QBrush(self.text_color_enabled))
+        self.update()
+
