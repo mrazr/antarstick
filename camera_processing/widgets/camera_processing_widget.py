@@ -16,7 +16,6 @@ from camera_processing.widgets.camera_view_widget import CameraViewWidget
 from dataset import Dataset
 
 
-
 class Worker(QRunnable):
 
     def __init__(self, cam_widget: CameraViewWidget, camera: Camera) -> None:
@@ -118,3 +117,26 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
                 continue
             cam_widget: CameraViewWidget = self.widget(widget_id)
             cam_widget.handle_camera_added(camera)
+
+    def cleanup(self):
+        if self._dataset is None:
+            return
+        self._dataset.camera_added.disconnect(self.handle_camera_added)
+        self._dataset.camera_removed.disconnect(self.handle_camera_removed)
+        self._dataset.loading_finished.disconnect(self.handle_dataset_loading_finished)
+        self._dataset = None
+        for i in range(self.count()):
+            widget = self.widget(i)
+            widget.deleteLater()
+        #TODO save camera states
+        self.clear()
+        self._camera_tab_map: Dict[int, int] = dict({})
+
+    def set_dataset(self, dataset: Dataset):
+        self._dataset = dataset
+        self._dataset.camera_added.connect(self.handle_camera_added)
+        self._dataset.camera_removed.connect(self.handle_camera_removed)
+        self._dataset.loading_finished.connect(self.handle_dataset_loading_finished)
+        self._camera_tab_map: Dict[int, int] = dict({})
+
+

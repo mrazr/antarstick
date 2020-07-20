@@ -6,6 +6,7 @@ import json
 from numpy import zeros
 from PyQt5.QtCore import QObject
 from PyQt5.QtCore import pyqtSignal as Signal
+from PyQt5.QtWidgets import QMessageBox
 
 from camera import Camera
 from stick import Stick
@@ -124,7 +125,7 @@ class Dataset(QObject):
                 # the measurements csv files and camera.json files without the actual gigabytes of photos. It might even
                 # be that camera.json files will not be necessary for the visualization part.
                 # TODO handle case when loading camera referenced in dataset file, and the camera.json is not found
-                raise NotImplementedError
+                return False
         #else:
         #    if first_time_add:
         #        self.camera_folders.append(folder)
@@ -206,10 +207,18 @@ class Dataset(QObject):
                     self.stick_local_to_global_ids[int(camera_id)] = dict({})
                     for local_id, global_id in stick_id_map.items():
                         self.stick_local_to_global_ids[int(camera_id)][int(local_id)] = int(global_id)
-
+                failed_camera_loads: List[Path] = []
                 for path_str, cam_id in self.cameras_ids.items():
                     if not self.add_camera(Path(path_str), camera_id=cam_id, first_time_add=False):
-                        raise NotImplementedError
+                        failed_camera_loads.append(Path(path_str))
+
+                if len(failed_camera_loads) > 0:
+                    cams = "".join(list(map(lambda cam: f'{str(cam)},\n', failed_camera_loads)))
+                    msg_box = QMessageBox(QMessageBox.Critical, 'Cameras not found',
+                                          f'Following cameras could not be opened:\n{cams}',
+                                          QMessageBox.Close)
+                    msg_box.exec_()
+                    return False
 
             self.loading_finished.emit()
             for left_cam_id, right_cam_id in linked_cameras:
