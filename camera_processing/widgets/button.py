@@ -1,12 +1,12 @@
-from typing import Union
+from typing import Union, Optional
 
 from PyQt5.Qt import (QGraphicsItem, QGraphicsObject, QGraphicsSceneHoverEvent,
                       QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem,
                       pyqtSignal)
 from PyQt5.QtCore import (QEasingCurve, QPointF, QPropertyAnimation, QRectF,
-                          QTimerEvent, pyqtProperty, Qt)
+                          QTimerEvent, pyqtProperty, Qt, QMarginsF)
 from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPixmap
-from PyQt5.QtWidgets import QGraphicsTextItem
+from PyQt5.QtWidgets import QGraphicsTextItem, QGraphicsView
 
 IDLE_COLORS = {
     "gray": QColor(50, 50, 50, 100),
@@ -29,31 +29,34 @@ PRESS_COLORS = {
 
 class CheckbuttonLogic:
 
-    def __init__(self):
+    def __init__(self, idle_checked_colors):
         self.down = False
+        self.color_idle = idle_checked_colors[0]
+        self.color_checked = idle_checked_colors[1]
+        #self.checked_label = checked_label
 
     def idle_color(self) -> QColor:
         if self.down:
-            return IDLE_COLORS["green"]
-        return IDLE_COLORS["gray"]
+            return IDLE_COLORS[self.color_checked]
+        return IDLE_COLORS[self.color_idle]
 
     def hover_left_color(self) -> QColor:
         return self.idle_color()
 
     def hover_enter_color(self) -> QColor:
         if self.down:
-            return HOVER_COLORS["green"]
-        return HOVER_COLORS["gray"]
+            return HOVER_COLORS[self.color_checked]
+        return HOVER_COLORS[self.color_idle]
 
     def press_color(self) -> QColor:
         if self.down:
-            return PRESS_COLORS["green"]
-        return PRESS_COLORS["gray"]
+            return PRESS_COLORS[self.color_checked]
+        return PRESS_COLORS[self.color_idle]
 
     def release_color(self) -> QColor:
         if self.down:
-            return HOVER_COLORS["green"]
-        return HOVER_COLORS["gray"]
+            return HOVER_COLORS[self.color_checked]
+        return HOVER_COLORS[self.color_idle]
 
     def is_down(self) -> bool:
         return self.down
@@ -61,6 +64,8 @@ class CheckbuttonLogic:
     def do_click(self):
         self.down = not self.down
 
+    def reset_state(self):
+        self.down = False
 
 class PushbuttonLogic:
 
@@ -88,13 +93,16 @@ class PushbuttonLogic:
     def do_click(self):
         pass
 
+    def reset_state(self):
+        pass
+
 
 class Button(QGraphicsObject):
     font: QFont = QFont("monospace", 16)
 
     clicked = pyqtSignal('PyQt_PyObject')
 
-    def __init__(self, btn_id: str, label: str, parent: QGraphicsItem = None):
+    def __init__(self, btn_id: str, label: str, tooltip: str = "", parent: QGraphicsItem = None):
         QGraphicsObject.__init__(self, parent)
         self.label = QGraphicsSimpleTextItem(label, self)
         self.label.setFont(Button.font)
@@ -105,6 +113,12 @@ class Button(QGraphicsObject):
         self.label.setBrush(QBrush(self.text_color_enabled))
         self.btn_id = btn_id
         self.rect = QRectF(0, 0, 0, 0)
+
+        self.tooltip = QGraphicsSimpleTextItem(tooltip, self)
+        self.tooltip.setBrush(QColor(255, 255, 255, 200))
+        self.tooltip.setFont(Button.font)
+        self.tooltip.setVisible(False)
+        self.tooltip_shown = False
 
         self.base_color = "gray"
 
@@ -140,6 +154,13 @@ class Button(QGraphicsObject):
     def set_width(self, w: int):
         self.rect.setWidth(w)
         self.hor_margin = self.ver_margin
+        if self.label.boundingRect().width() > self.rect.width():
+            w = self.rect.width() - 2 * self.hor_margin
+            factor = w / self.label.boundingRect().width()
+            h = factor * self.label.boundingRect().height()
+            font = self.label.font()
+            font.setPixelSize(h)
+            self.label.setFont(font)
         self._reposition_text()
 
     def scale_button(self, factor: float):
@@ -150,6 +171,7 @@ class Button(QGraphicsObject):
         x = self.rect.width() / 2 - self.label.boundingRect().width() / 2
         y = self.rect.height() / 2 - self.label.boundingRect().height() / 2
         self.label.setPos(QPointF(x, y))
+        self.update()
 
     def boundingRect(self):
         return self.rect
@@ -159,7 +181,12 @@ class Button(QGraphicsObject):
         painter.setPen(QPen(QColor(0, 0, 0, 0)))
         if self.pixmap is not None:
             painter.drawPixmap(self.hor_margin, self.ver_margin, self.pixmap)
+
         painter.drawRoundedRect(self.rect, 5, 5)
+        if self.tooltip_shown:
+            painter.setBrush(QBrush(QColor(50, 50, 50, 200)))
+            painter.drawRoundedRect(self.tooltip.boundingRect().translated(self.tooltip.pos())
+                                    .marginsAdded(QMarginsF(5, 0, 5, 0)), 5, 5)
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent):
         if self.disabled:
@@ -174,6 +201,18 @@ class Button(QGraphicsObject):
         if self.disabled:
             return
         self.hovered = True
+
+        if len(self.tooltip.text()) > 0:
+            self.tooltip_shown = True
+            self.tooltip.setVisible(True)
+            view = self.scene().views()[0]
+            rect_ = view.mapFromScene(self.tooltip.sceneBoundingRect()).boundingRect()
+            pos = self.boundingRect().topRight()
+            if rect_.x() + rect_.width() >= view.viewport().width():
+                pos = QPointF(-self.tooltip.boundingRect().width(), 0)
+
+            self.tooltip.setPos(pos)
+
         self.color_animation.setDuration(200)
         self.color_animation.setStartValue(self.logic.idle_color())
         self.color_animation.setEndValue(self.logic.hover_enter_color())
@@ -186,7 +225,11 @@ class Button(QGraphicsObject):
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent):
         if self.disabled:
             return
+
         self.hovered = False
+        self.tooltip_shown = False
+        self.tooltip.setVisible(False)
+
         self.color_animation.setDuration(200)
         self.color_animation.setStartValue(self.logic.hover_enter_color())
         self.color_animation.setEndValue(self.logic.hover_left_color())
@@ -214,8 +257,8 @@ class Button(QGraphicsObject):
             self.current_timer = 0
 
     def set_base_color(self, color: str):
-        if isinstance(self.logic, CheckbuttonLogic):
-            return
+        #if isinstance(self.logic, CheckbuttonLogic):
+        #    return
         if IDLE_COLORS[color.lower()] is None:
             return
         self.logic.color = color.lower()
@@ -224,9 +267,15 @@ class Button(QGraphicsObject):
     def is_on(self):
         return self.logic.is_down()
 
-    def set_is_check_button(self, value: bool):
+    def set_on(self, value: bool):
+        if isinstance(self.logic, CheckbuttonLogic):
+            self.logic.down = value
+            self.fill_color_current = self.logic.press_color() if value else self.logic.idle_color()
+            self.update()
+
+    def set_is_check_button(self, value: bool, idle_checked_colors = ['gray', 'green']):
         if value:
-            self.logic = CheckbuttonLogic()
+            self.logic = CheckbuttonLogic(idle_checked_colors)
         else:
             self.logic = PushbuttonLogic("gray")
 
@@ -261,14 +310,17 @@ class Button(QGraphicsObject):
         self.fill_color_current = self.logic.release_color() if not artificial_emit else self.logic.idle_color()
         if self.scene() is not None:
             self.scene().update(self.sceneBoundingRect())
-        self.clicked.emit({"btn_id": self.btn_id, "btn_label": self.label})
+        self.clicked.emit({"btn_id": self.btn_id, "btn_label": self.label, "button": self})
 
     def set_opacity(self, opacity: float):
         self.setOpacity(opacity)
         self.update()
 
     def set_default_state(self):
+        self.logic.reset_state()
         self.fill_color_current = self.logic.idle_color()
+        self.tooltip.setVisible(False)
+        self.tooltip_shown = False
         self.update()
 
     def set_disabled(self, disabled: bool):
@@ -278,4 +330,9 @@ class Button(QGraphicsObject):
         else:
             self.label.setBrush(QBrush(self.text_color_enabled))
         self.update()
+
+    def set_tooltip(self, tooltip: str):
+        self.tooltip.setVisible(False)
+        self.tooltip_shown = False
+        self.tooltip.setText(tooltip)
 

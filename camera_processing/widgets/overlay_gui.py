@@ -5,7 +5,7 @@ from typing import Dict, Any
 from PyQt5.Qt import QBrush, QColor, QPen
 from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QPainter, QPixmap, QFontMetrics
-from PyQt5.QtWidgets import QGraphicsItem, QGraphicsObject
+from PyQt5.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsSceneMouseEvent
 
 from camera_processing.widgets.button_menu import ButtonMenu
 from camera_processing.widgets.cam_graphics_view import CamGraphicsView
@@ -20,6 +20,7 @@ class OverlayGui(QGraphicsObject):
     redetect_sticks_clicked = pyqtSignal()
     process_photos_clicked = pyqtSignal()
     process_photos_count_clicked = pyqtSignal(int)
+    clicked = pyqtSignal()
     #sticks_length_clicked = pyqtSignal()
 
     def __init__(self, view: CamGraphicsView, parent: QGraphicsItem = None):
@@ -157,3 +158,10 @@ class OverlayGui(QGraphicsObject):
 
     def enable_process_photos_button(self, enable: bool):
         self.top_menu.get_button('process_photos').set_disabled(not enable)
+
+    #def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+    #    event.ignore()
+
+    #def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+    #    self.clicked.emit()
+    #    event.ignore()

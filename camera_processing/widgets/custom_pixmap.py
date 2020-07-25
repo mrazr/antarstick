@@ -1,7 +1,7 @@
 from typing import Callable, List, Optional
 
 import PyQt5
-from PyQt5.QtCore import QByteArray, QLine, QMarginsF, QPoint, pyqtSignal, QPointF, Qt
+from PyQt5.QtCore import QByteArray, QLine, QMarginsF, QPoint, pyqtSignal, QPointF, Qt, QTimer, QTimerEvent, QThread, QThreadPool, QRunnable
 from PyQt5.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsPixmapItem,
                              QGraphicsRectItem, QGraphicsSceneHoverEvent,
@@ -16,6 +16,19 @@ from camera_processing.widgets.stick_widget import StickWidget, StickMode
 from camera_processing.widgets.button import Button
 from dataset import Dataset
 from stick import Stick
+
+
+class Timer(QRunnable):
+
+    def __init__(self, func, duration_ms: int):
+        QRunnable.__init__(self)
+        self.func = func
+        self.duration_ms = duration_ms
+
+    def run(self) -> None:
+        QThread.sleep(self.duration_ms)
+        print('hello')
+        self.func()
 
 
 class CustomPixmap(QGraphicsObject):
@@ -36,17 +49,24 @@ class CustomPixmap(QGraphicsObject):
         self.link_cam_text.setPos(0, 0)
         self.link_cam_text.setPen(QPen(QColor(255, 255, 255, 255)))
         self.link_cam_text.setBrush(QBrush(QColor(255, 255, 255, 255)))
-        self.left_add_button = LinkCameraButton(self.link_cam_text, name="left", parent=self)
-        self.right_add_button = LinkCameraButton(self.link_cam_text, name="right", parent=self)
+        self.left_add_button = Button('btn_left_add', '+', tooltip='Link camera', parent=self)
+        self.left_add_button.set_is_check_button(True, ['green', 'red'])
+        self.left_add_button.set_base_color('green')
+        self.right_add_button = Button('btn_right_add', '+', tooltip='Link camera', parent=self)
+        self.right_add_button.set_is_check_button(True, ['green', 'red'])
+        self.right_add_button.set_base_color('green')
+        self.right_add_button.update()
         self.left_add_button.setZValue(3)
         self.right_add_button.setZValue(3)
+        self.right_add_button.setVisible(False)
+        self.left_add_button.setVisible(False)
 
         self.show_add_buttons = False
         self.camera = None
         self.title_rect = QGraphicsRectItem(self)
         self.title_rect.setBrush(QBrush(QColor(50, 50, 50, 150)))
 
-        self.progress_tracker_rect = QGraphicsRectItem(self)
+        self.progress_tracker_rect = QGraphicsRectItem(self.title_rect)
         self.progress_tracker_rect.setBrush(QBrush(QColor(0, 200, 0, 200)))
 
         self.title = QGraphicsSimpleTextItem("Nothing", self.title_rect)
@@ -71,11 +91,11 @@ class CustomPixmap(QGraphicsObject):
 
         self.stick_widget_mode = StickMode.DISPLAY
 
-        self.stick_length_lbl = QGraphicsSimpleTextItem("sticks length: ", self.title_rect)
+        self.stick_length_lbl = QGraphicsSimpleTextItem("sticks length: ", parent=self.title_rect)
         self.stick_length_lbl.setFont(Button.font)
         self.stick_length_lbl.setBrush(QBrush(Qt.white))
         self.stick_length_lbl.setVisible(False)
-        self.stick_length_btn = Button("btn_stick_length", "60 cm", self.title_rect)
+        self.stick_length_btn = Button("btn_stick_length", "60 cm", parent=self.title_rect)
         self.stick_length_btn.clicked.connect(self.handle_stick_length_clicked)
         self.stick_length_btn.setVisible(False)
         self.stick_length_btn.set_is_check_button(True)
@@ -84,6 +104,7 @@ class CustomPixmap(QGraphicsObject):
         self.stick_length_input.input_entered.connect(self.handle_stick_length_input_entered)
         self.stick_length_input.input_cancelled.connect(self.handle_stick_length_input_cancelled)
         #self.stick_length_input.setZValue(10)
+        self.thread_pool = QThreadPool()
 
     def paint(self, painter: QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
         if self.gpixmap.pixmap().isNull():
@@ -113,7 +134,8 @@ class CustomPixmap(QGraphicsObject):
     def set_link_cameras_enabled(self, value: bool):
         self.show_add_buttons = value
         if self.show_add_buttons:
-            offset = 0.5 * self.right_add_button.radius
+            #offset = 0.5 * self.right_add_button.radius
+            offset = 0.5 * self.right_add_button.boundingRect().width()
             self.right_add_button.setPos(self.gpixmap.pixmap().width() - offset, self.gpixmap.pixmap().height() * 0.5 - offset)
             self.left_add_button.setPos(-offset, self.gpixmap.pixmap().height() * 0.5 - offset)
             self.right_add_button.setVisible(True)
@@ -127,6 +149,12 @@ class CustomPixmap(QGraphicsObject):
         return self.gpixmap.boundingRect().united(self.title_rect.boundingRect().translated(self.title_rect.pos()))
 
     def initialise_with(self, camera: Camera) -> List[StickWidget]:
+        if self.camera is not None:
+            self.camera.stick_added.disconnect(self.handle_stick_created)
+            self.camera.sticks_added.disconnect(self.handle_sticks_added)
+            self.camera.stick_removed.disconnect(self.handle_stick_removed)
+            self.camera.sticks_removed.disconnect(self.handle_sticks_removed)
+            self.camera.stick_changed.disconnect(self.handle_stick_changed)
         self.camera = camera
         self.prepareGeometryChange()
         self.set_image(camera.rep_image)
@@ -155,7 +183,7 @@ class CustomPixmap(QGraphicsObject):
         self.title_rect.setVisible(True)
 
         self.progress_tracker_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
-        self.progress_tracker_rect.setPos(0, self.gpixmap.boundingRect().height())
+        self.progress_tracker_rect.setPos(0, 0)  #self.gpixmap.boundingRect().height())
         self.progress_tracker_rect.setVisible(False)
 
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2,
@@ -342,6 +370,7 @@ class CustomPixmap(QGraphicsObject):
     def handle_stick_length_clicked(self):
         self.stick_length_input.setVisible(self.stick_length_btn.is_on())
         self.stick_length_input.set_focus()
+        self.startTimer(1000)
 
     def handle_stick_length_input_entered(self):
         length = self.stick_length_input.get_length()
@@ -369,15 +398,17 @@ class CustomPixmap(QGraphicsObject):
         self.progress_tracker_rect.setRect(rect)
         self.progress_tracker_rect.setVisible(True)
 
-    def set_status_text(self, text: str):
+    def set_status_text(self, text: str, duration_ms: int):
         if len(text) > 0:
             self.title.setText(f'{str(self.camera.folder.name)} - {text}')
             self.title.setPos(5, 0)
+            if duration_ms > 0:
+                self.thread_pool.start(Timer(self.clear_status_progress, 5))
         else:
             self.title.setText(str(self.camera.folder.name))
             self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2, 0)
         self.update()
 
     def clear_status_progress(self):
-        self.set_status_text("")
+        self.set_status_text("", 0)
         self.set_progress_bar_progress(1, 0)
