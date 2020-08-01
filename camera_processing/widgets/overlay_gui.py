@@ -7,6 +7,7 @@ from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QPainter, QPixmap, QFontMetrics
 from PyQt5.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsSceneMouseEvent
 
+from camera_processing.widgets.button import ButtonColor
 from camera_processing.widgets.button_menu import ButtonMenu
 from camera_processing.widgets.cam_graphics_view import CamGraphicsView
 
@@ -55,7 +56,7 @@ class OverlayGui(QGraphicsObject):
         #self.top_menu.add_button("show_overlay", "Show overlay")
         #self.top_menu.add_button("show_linked_cameras", "Show linked cameras")
         self.top_menu.add_button("reset_view", "Reset view", call_back=self.reset_view_requested.emit)
-        self.top_menu.add_button("delete_sticks", "Delete selected sticks", call_back=self.delete_sticks_clicked.emit, base_color="red")
+        self.top_menu.add_button("delete_sticks", "Delete selected sticks", call_back=self.delete_sticks_clicked.emit, base_color=ButtonColor.RED)
         self.top_menu.hide_button("delete_sticks")
         process_btn = self.top_menu.add_button("process_photos", "Process photos", is_checkable=True) #call_back=self.process_photos_clicked.emit)
         process_btn.clicked.connect(lambda _: self.handle_process_photos_clicked())
@@ -135,7 +136,7 @@ class OverlayGui(QGraphicsObject):
             self.process_photo_popup.add_button(str(count), f'{count}: {int(round(i * count * loading_time))} s', call_back=self.handle_process_photos_count_clicked)
 
         self.process_photo_popup.add_button(photo_count, f'All: {int(round(photo_count * loading_time))} s', call_back=self.handle_process_photos_count_clicked)
-        cancel_btn = self.process_photo_popup.add_button('btn_cancel', 'Cancel', base_color='red')
+        cancel_btn = self.process_photo_popup.add_button('btn_cancel', 'Cancel', base_color=ButtonColor.RED)
         cancel_btn.clicked.connect(self.handle_process_photos_count_cancel_clicked)
         self.process_photo_popup.setVisible(False)
 

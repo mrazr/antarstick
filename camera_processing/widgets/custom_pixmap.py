@@ -10,10 +10,9 @@ from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsPixmapItem,
 import numpy as np
 
 from camera import Camera
-from camera_processing.widgets.link_camera_button import LinkCameraButton
 from camera_processing.widgets.stick_length_input import StickLengthInput
 from camera_processing.widgets.stick_widget import StickWidget, StickMode
-from camera_processing.widgets.button import Button
+from camera_processing.widgets.button import Button, ButtonColor
 from dataset import Dataset
 from stick import Stick
 
@@ -27,7 +26,6 @@ class Timer(QRunnable):
 
     def run(self) -> None:
         QThread.sleep(self.duration_ms)
-        print('hello')
         self.func()
 
 
@@ -50,11 +48,13 @@ class CustomPixmap(QGraphicsObject):
         self.link_cam_text.setPen(QPen(QColor(255, 255, 255, 255)))
         self.link_cam_text.setBrush(QBrush(QColor(255, 255, 255, 255)))
         self.left_add_button = Button('btn_left_add', '+', tooltip='Link camera', parent=self)
-        self.left_add_button.set_is_check_button(True, ['green', 'red'])
-        self.left_add_button.set_base_color('green')
+        self.left_add_button.set_is_check_button(True) #, ['green', 'red'])
+        self.left_add_button.set_base_color([ButtonColor.GREEN, ButtonColor.RED])
         self.right_add_button = Button('btn_right_add', '+', tooltip='Link camera', parent=self)
-        self.right_add_button.set_is_check_button(True, ['green', 'red'])
-        self.right_add_button.set_base_color('green')
+        self.right_add_button.set_is_check_button(True) #, ['green', 'red'])
+        #self.right_add_button.set_base_color('green')
+        #self.right_add_button.set_custom_color(['green', 'red'])
+        self.right_add_button.set_base_color([ButtonColor.GREEN, ButtonColor.RED])
         self.right_add_button.update()
         self.left_add_button.setZValue(3)
         self.right_add_button.setZValue(3)
@@ -120,8 +120,6 @@ class CustomPixmap(QGraphicsObject):
             pen.setWidth(4)
             painter.setPen(pen)
             painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(4, 4, 4, 4)))
-
-        painter.drawLine(self.reference_line)
 
     def set_reference_line_percentage(self, percentage: float):
         if self.gpixmap.pixmap().isNull():

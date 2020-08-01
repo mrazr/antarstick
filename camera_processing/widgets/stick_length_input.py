@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import QGraphicsTextItem, QGraphicsObject, QGraphicsItem, Q
     QStyleOptionGraphicsItem
 from PyQt5.QtCore import QRectF, pyqtSignal, Qt, QPointF
 
-from camera_processing.widgets.button import Button
+from camera_processing.widgets.button import Button, ButtonColor
 
 
 class NumberInputWidget(QGraphicsTextItem):
@@ -56,10 +56,10 @@ class StickLengthInput(QGraphicsObject):
     def __init__(self, parent: Optional[QGraphicsItem] = None):
         QGraphicsObject.__init__(self, parent)
         self.accept_button = Button("btn_accept", "OK", parent=self)
-        self.accept_button.set_base_color("green")
+        self.accept_button.set_base_color([ButtonColor.GREEN])
         self.accept_button.clicked.connect(self.input_entered.emit)
         self.cancel_button = Button("btn_cancel", "X", parent=self)
-        self.cancel_button.set_base_color("red")
+        self.cancel_button.set_base_color([ButtonColor.RED])
         self.cancel_button.clicked.connect(self.input_cancelled.emit)
         self.accept_button.set_height(30)
         self.cancel_button.set_height(30)

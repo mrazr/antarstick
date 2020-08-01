@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem,
                              QGraphicsSceneMouseEvent, QGraphicsTextItem,
                              QStyleOptionGraphicsItem)
 
-from camera_processing.widgets.button import Button
+from camera_processing.widgets.button import Button, ButtonColor
 from stick import Stick
 
 
@@ -54,8 +54,8 @@ class StickWidget(QGraphicsObject):
 
         self.mode = StickMode.DISPLAY
 
-        self.btn_delete = Button("delete", "x", self)
-        self.btn_delete.set_base_color("red")
+        self.btn_delete = Button("delete", "x", parent=self)
+        self.btn_delete.set_base_color([ButtonColor.RED])
         self.btn_delete.setVisible(False)
         btn_size = max(int(np.linalg.norm(self.stick.top - self.stick.bottom) / 5.0), 15)
         self.btn_delete.set_height(btn_size)
@@ -80,7 +80,7 @@ class StickWidget(QGraphicsObject):
         self.hovered_handle: Optional[QGraphicsRectItem] = None
         self.handles = [self.top_handle, self.mid_handle, self.bottom_handle]
 
-        self.link_button = Button("link", "Link to...", self)
+        self.link_button = Button("link", "Link to...", parent=self)
         self.link_button.clicked.connect(lambda: self.link_initiated.emit(self))
         self.link_button.set_height(15)
 

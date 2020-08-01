@@ -6,7 +6,7 @@ from PyQt5.Qt import (QColor, QGraphicsItem, QGraphicsLineItem,
                       QStyleOptionGraphicsItem, pyqtSignal)
 
 from camera import Camera
-from camera_processing.widgets.button import Button
+from camera_processing.widgets.button import Button, ButtonColor
 from camera_processing.widgets.custom_pixmap import CustomPixmap
 from camera_processing.widgets.stick_widget import StickMode, StickWidget
 from dataset import Dataset
@@ -21,8 +21,8 @@ class StickLink(QGraphicsObject):
         QGraphicsObject.__init__(self, parent)
         self.stick1 = sw1
         self.stick2 = sw2
-        self.btn_break_link = Button("unlink", "X", self)
-        self.btn_break_link.set_base_color("red")
+        self.btn_break_link = Button("unlink", "X", tooltip='Break link', parent=self)
+        self.btn_break_link.set_base_color([ButtonColor.RED])
         self.btn_break_link.setVisible(False)
         self.btn_break_link.clicked.connect(lambda: self.break_link_clicked.emit(self.stick1))
 
@@ -45,6 +45,7 @@ class StickLink(QGraphicsObject):
     def set_color(self, color: QColor):
         self.color = color
         self.line_item.setPen(QPen(color, 4))
+        self.btn_break_link.set_custom_color([color])
         if self.stick1 is not None:
             self.stick1.set_highlight_color(self.color)
         if self.stick2 is not None:
@@ -176,7 +177,7 @@ class StickLinkManager(QGraphicsObject):
     def handle_sticks_linked(self, stick1: Stick, stick2: Stick):
         if stick1.camera_id != self.camera.id and stick2.camera_id != self.camera.id:
             return
-        if (self.current_link_item is not None) and False:
+        if (self.current_link_item is not None) and False: #TODO remove this, I guess
             self.stick_links.append(self.current_link_item)
             self.current_link_item = None
         else:
@@ -202,8 +203,8 @@ class StickLinkManager(QGraphicsObject):
             links, color = self.stick_links[target.id]
 
             link = StickLink(source_sw, target_sw, self)
-            link.set_color(color)
             link.btn_break_link.setVisible(True)
+            link.set_color(color)
             link.break_link_clicked.connect(self.handle_break_link_clicked)
             source_sw.stick_changed.connect(link.handle_stick_changed)
             source_sw.set_is_linked(True)
