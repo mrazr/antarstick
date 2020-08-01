@@ -1,4 +1,5 @@
-from typing import Union, Optional
+from typing import Union, Optional, List
+from enum import IntEnum
 
 from PyQt5.Qt import (QGraphicsItem, QGraphicsObject, QGraphicsSceneHoverEvent,
                       QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem,
@@ -6,57 +7,90 @@ from PyQt5.Qt import (QGraphicsItem, QGraphicsObject, QGraphicsSceneHoverEvent,
 from PyQt5.QtCore import (QEasingCurve, QPointF, QPropertyAnimation, QRectF,
                           QTimerEvent, pyqtProperty, Qt, QMarginsF)
 from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPixmap
-from PyQt5.QtWidgets import QGraphicsTextItem, QGraphicsView
 
-IDLE_COLORS = {
-    "gray": QColor(50, 50, 50, 100),
-    "red": QColor(255, 0, 0, 200),
-    "green": QColor(0, 255, 0, 200),
-}
 
-HOVER_COLORS = {
-    "gray": QColor(255, 125, 0, 150),
-    "red": IDLE_COLORS["red"].lighter(120),
-    "green": IDLE_COLORS["green"].lighter(120),
-}
+class ButtonState(IntEnum):
+    DEFAULT = 0
+    HOVERED = 1
+    PRESSED = 2
 
-PRESS_COLORS = {
-    "gray": HOVER_COLORS["gray"].darker(120),
-    "red": IDLE_COLORS["red"].darker(120),
-    "green": IDLE_COLORS["green"].darker(120),
-}
+    CHECKED_DEFAULT = 3
+    CHECKED_HOVERED = 4
+    CHECKED_PRESSED = 5
+
+
+class ButtonColor(IntEnum):
+    GRAY = 0
+    RED = 1
+    GREEN = 2
+
+
+IDLE_COLORS = [
+    QColor(50, 50, 50, 100),
+    QColor(255, 0, 0, 200),
+    QColor(0, 255, 0, 200),
+]
+
+HOVER_COLORS = [
+    QColor(255, 125, 0, 150),
+    IDLE_COLORS[ButtonColor.RED].lighter(120),
+    IDLE_COLORS[ButtonColor.GREEN].lighter(120),
+]
+
+PRESS_COLORS = [
+    HOVER_COLORS[ButtonColor.GRAY].darker(120),
+    IDLE_COLORS[ButtonColor.RED].darker(120),
+    IDLE_COLORS[ButtonColor.GREEN].darker(120),
+]
+
 
 
 class CheckbuttonLogic:
 
-    def __init__(self, idle_checked_colors):
+    def __init__(self):
         self.down = False
-        self.color_idle = idle_checked_colors[0]
-        self.color_checked = idle_checked_colors[1]
+        #self.color_idle = idle_checked_colors[0]
+        #self.color_checked = idle_checked_colors[1]
+        self.colors: List[QColor] = [
+            IDLE_COLORS[ButtonColor.GRAY],
+            HOVER_COLORS[ButtonColor.GRAY],
+            PRESS_COLORS[ButtonColor.GRAY],
+
+            IDLE_COLORS[ButtonColor.GREEN],
+            HOVER_COLORS[ButtonColor.GREEN],
+            PRESS_COLORS[ButtonColor.GREEN],
+        ]
         #self.checked_label = checked_label
 
     def idle_color(self) -> QColor:
         if self.down:
-            return IDLE_COLORS[self.color_checked]
-        return IDLE_COLORS[self.color_idle]
+            #return IDLE_COLORS[self.color_checked]
+            return self.colors[ButtonState.CHECKED_DEFAULT]
+        #return IDLE_COLORS[self.color_idle] if self.colors is None else self.colors[0]
+        return self.colors[ButtonState.DEFAULT]
 
     def hover_left_color(self) -> QColor:
         return self.idle_color()
 
     def hover_enter_color(self) -> QColor:
         if self.down:
-            return HOVER_COLORS[self.color_checked]
-        return HOVER_COLORS[self.color_idle]
+            return self.colors[ButtonState.CHECKED_HOVERED]
+            #return HOVER_COLORS[self.color_checked]
+        return self.colors[ButtonState.HOVERED]
+        #return HOVER_COLORS[self.color_idle] if self.colors is None else self.colors[1]
 
     def press_color(self) -> QColor:
         if self.down:
-            return PRESS_COLORS[self.color_checked]
-        return PRESS_COLORS[self.color_idle]
+            return self.colors[ButtonState.CHECKED_PRESSED]
+        return self.colors[ButtonState.PRESSED]
+        #return PRESS_COLORS[ButtonState.PRESSED] if self.colors is None else self.colors[2]
 
     def release_color(self) -> QColor:
         if self.down:
-            return HOVER_COLORS[self.color_checked]
-        return HOVER_COLORS[self.color_idle]
+            return self.colors[ButtonState.CHECKED_HOVERED]
+            #return HOVER_COLORS[self.color_checked]
+        return self.colors[ButtonState.HOVERED]
+        #return HOVER_COLORS[self.color_idle] if self.colors is None else self.colors[1]
 
     def is_down(self) -> bool:
         return self.down
@@ -67,25 +101,49 @@ class CheckbuttonLogic:
     def reset_state(self):
         self.down = False
 
+    def set_colors(self, base_color: Optional[List[ButtonColor]] = None, colors: Optional[List[QColor]] = None):
+        if base_color is not None:
+            self.colors = [
+                IDLE_COLORS[base_color[0]],
+                HOVER_COLORS[base_color[0]],
+                PRESS_COLORS[base_color[0]],
+
+                IDLE_COLORS[base_color[1]],
+                HOVER_COLORS[base_color[1]],
+                PRESS_COLORS[base_color[1]],
+            ]
+        elif colors is not None:
+            self.colors = colors
+
+
 class PushbuttonLogic:
 
     def __init__(self, color: str):
-        self.color = color.lower()
+        #self.color = color.lower()
+        self.colors: List[QColor] = [
+            IDLE_COLORS[ButtonColor.GRAY],
+            HOVER_COLORS[ButtonColor.GRAY],
+            PRESS_COLORS[ButtonColor.GRAY]
+        ]
 
     def idle_color(self) -> QColor:
-        return IDLE_COLORS[self.color]
+        #return IDLE_COLORS[self.color] if self.colors is None else self.colors[0]
+        return self.colors[ButtonState.DEFAULT]
 
     def hover_left_color(self) -> QColor:
         return self.idle_color()
 
     def hover_enter_color(self) -> QColor:
-        return HOVER_COLORS[self.color]
+        #return HOVER_COLORS[self.color] if self.colors is None else self.colors[1]
+        return self.colors[ButtonState.HOVERED]
 
     def press_color(self) -> QColor:
-        return PRESS_COLORS[self.color]
+        #return PRESS_COLORS[self.color] if self.colors is None else self.colors[2]
+        return self.colors[ButtonState.PRESSED]
 
     def release_color(self) -> QColor:
-        return HOVER_COLORS[self.color]
+        return self.hover_enter_color()
+        #return HOVER_COLORS[self.color]
 
     def is_down(self) -> bool:
         return False
@@ -95,6 +153,17 @@ class PushbuttonLogic:
 
     def reset_state(self):
         pass
+
+    def set_colors(self, base_color: Optional[List[ButtonColor]] = None, colors: Optional[List[QColor]] = None):
+        if base_color is not None:
+            base_color = base_color[0]
+            self.colors: List[QColor] = [
+                IDLE_COLORS[base_color],
+                HOVER_COLORS[base_color],
+                PRESS_COLORS[base_color]
+            ]
+        elif colors is not None:
+            self.colors = colors
 
 
 class Button(QGraphicsObject):
@@ -118,9 +187,10 @@ class Button(QGraphicsObject):
         self.tooltip.setBrush(QColor(255, 255, 255, 200))
         self.tooltip.setFont(Button.font)
         self.tooltip.setVisible(False)
+        self.tooltip.setZValue(25)
         self.tooltip_shown = False
 
-        self.base_color = "gray"
+        self.base_color = ButtonColor.GRAY
 
         self.hor_margin = 10
         self.ver_margin = 5
@@ -208,7 +278,8 @@ class Button(QGraphicsObject):
             view = self.scene().views()[0]
             rect_ = view.mapFromScene(self.tooltip.sceneBoundingRect()).boundingRect()
             pos = self.boundingRect().topRight()
-            if rect_.x() + rect_.width() >= view.viewport().width():
+            mouse_pos = view.mapFromScene(event.scenePos())
+            if mouse_pos.x() + rect_.width() >= view.viewport().width():
                 pos = QPointF(-self.tooltip.boundingRect().width(), 0)
 
             self.tooltip.setPos(pos)
@@ -256,12 +327,13 @@ class Button(QGraphicsObject):
             self.killTimer(ev.timerId())
             self.current_timer = 0
 
-    def set_base_color(self, color: str):
+    def set_base_color(self, colors: List[ButtonColor]):
         #if isinstance(self.logic, CheckbuttonLogic):
         #    return
-        if IDLE_COLORS[color.lower()] is None:
-            return
-        self.logic.color = color.lower()
+        #if IDLE_COLORS[color] is None:
+        #    return
+        #self.logic.color = color.lower()
+        self.logic.set_colors(colors)
         self.fill_color_current = self.logic.idle_color()
 
     def is_on(self):
@@ -273,9 +345,9 @@ class Button(QGraphicsObject):
             self.fill_color_current = self.logic.press_color() if value else self.logic.idle_color()
             self.update()
 
-    def set_is_check_button(self, value: bool, idle_checked_colors = ['gray', 'green']):
+    def set_is_check_button(self, value: bool):
         if value:
-            self.logic = CheckbuttonLogic(idle_checked_colors)
+            self.logic = CheckbuttonLogic()
         else:
             self.logic = PushbuttonLogic("gray")
 
@@ -336,3 +408,25 @@ class Button(QGraphicsObject):
         self.tooltip_shown = False
         self.tooltip.setText(tooltip)
 
+    def set_custom_color(self, colors: List[QColor]):
+        if isinstance(self.logic, CheckbuttonLogic):
+            if len(colors) < 2:
+                return
+            self.logic.set_colors(colors=[
+                colors[0],
+                colors[0].lighter(120),
+                colors[0].darker(120),
+
+                colors[1],
+                colors[1].lighter(120),
+                colors[1].darker(120)
+            ])
+        else:
+            self.logic.set_colors(colors=[
+                colors[0],
+                colors[0].lighter(120),
+                colors[0].darker(120)
+            ])
+        #self.logic.set_colors([color, color.lighter(120), color.darker(120)])
+        self.fill_color_current = self.logic.idle_color()
+        self.update()

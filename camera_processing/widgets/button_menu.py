@@ -5,7 +5,7 @@ from PyQt5.Qt import (QGraphicsItem, QGraphicsObject)
 from PyQt5.QtCore import QRectF, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QPainter, QPen, QPixmap
 
-from camera_processing.widgets.button import Button
+from camera_processing.widgets.button import Button, ButtonColor
 
 
 class ButtonMenu(QGraphicsObject):
@@ -23,7 +23,7 @@ class ButtonMenu(QGraphicsObject):
         self.ver_padding = 5
 
         self.close_button = Button('btn_close', 'cancel', parent=self)
-        self.close_button.set_base_color('red')
+        self.close_button.set_base_color([ButtonColor.RED])
         self.close_button.clicked.connect(lambda _: self.close_requested.emit())
         self.close_button.setVisible(False)
         self.close_button_shown = False
@@ -115,7 +115,7 @@ class ButtonMenu(QGraphicsObject):
         self.layout_direction = direction
         self._center_buttons()
     
-    def add_button(self, btn_id: str, label: str, base_color: str = "gray", is_checkable: bool = False, call_back: Optional[Callable[[], None]] = None, pixmap: QPixmap = None) -> Button:
+    def add_button(self, btn_id: str, label: str, base_color: ButtonColor = ButtonColor.GRAY, is_checkable: bool = False, call_back: Optional[Callable[[], None]] = None, pixmap: QPixmap = None) -> Button:
         old_btn = self.remove_button(btn_id)
         if old_btn is not None:
             old_btn.setParentItem(None)
@@ -123,7 +123,8 @@ class ButtonMenu(QGraphicsObject):
             old_btn.deleteLater()
         btn = Button(btn_id, label, parent=self)
         btn.set_is_check_button(is_checkable)
-        btn.set_base_color(base_color)
+        if not is_checkable:
+            btn.set_base_color([base_color])
         btn.set_pixmap(pixmap)
         if call_back is not None:
             btn.clicked.connect(call_back)
