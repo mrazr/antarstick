@@ -1,6 +1,6 @@
 # This Python file uses the following encoding: utf-8
 from multiprocessing.connection import Connection
-from os import scandir
+from os import scandir, remove
 from pathlib import Path
 from time import time
 from typing import Dict, List, Optional, Tuple
@@ -67,6 +67,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
         self.timer = QTimer(parent=self)
         self.timer.timeout.connect(self.handle_timeout)
+        self.logging_start = time()
         self.result_queue = Queue()
         self.to_process = Queue()
         self.conn1, self.conn2 = Pipe()
@@ -188,13 +189,9 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self._camera_tab_map: Dict[int, int] = dict({})
 
     def handle_timeout(self):
-
         if self.conn2.poll(0.1):
-            logging.debug(f'fetching results at: {time() - logging_start} secs')
-            _ = self.conn2.recv()
-            #dirty_cameras = set({})
-            while not self.result_queue.empty():
-                result: Tuple[int, List[Tuple[str, bool, bool]]] = self.result_queue.get_nowait()
+            results: List[Tuple[int, List[Tuple[Path, bool, bool]]]] = self.conn2.recv()
+            for result in results:
                 cam_id, values = result
                 camera = self.dataset.get_camera(cam_id)
                 indices = []
@@ -205,14 +202,6 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
                 cam_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam_id])
                 cam_widget.update_image_list(min_index, max_index)
 
-                #cam_id, img_name, daytime, snow = self.result_queue.get_nowait()
-                #dirty_cameras.add(cam_id)
-                #camera.set_photo_daytime_snow(img_name, daytime, snow)
-
-            #for cam_id in dirty_cameras:
-            #    cam_widget: CameraViewWidget = self.widget(self._camera_tab_map[cam_id])
-            #    cam_widget.update_image_list()
-
             if self.pause_button.isChecked():
                 self.fetch_next_batch()
             else:
@@ -220,22 +209,20 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
                 self.timer.stop()
 
     def fetch_next_batch(self):
-        logging.debug(f'fetching next batch at {time() - logging_start} secs')
         photos = map(lambda cam: (cam.id, cam.get_next_photo_daytime_snow(count=6 if cam == self.active_camera else 2)),
                      self.dataset.cameras)
         photos = list(filter(lambda camid_paths: len(camid_paths[1]) > 0, photos))
         if len(photos) > 0:
-            for ph in photos:
-                self.to_process.put_nowait(ph)
-            self.conn2.send(True)
+            self.conn2.send((True, photos))
         else:
-            self.conn2.send(False)
+            self.conn2.send((False, None))
             self.timer.stop()
             self.pause_button.setEnabled(False)
 
     def handle_current_tab_changed(self, idx: int):
         cam_widget: CameraViewWidget = self.widget(idx)
-        if cam_widget is not None:
+        print(f'this is current now: {cam_widget}')
+        if cam_widget is not None and isinstance(cam_widget, CameraViewWidget):
             self.active_camera = cam_widget.camera
 
     def handle_pause_button_toggled(self, checked: bool):
@@ -243,91 +230,31 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
             self.pause_button.setIcon(QIcon.fromTheme('media-play'))
         else:
             self.pause_button.setIcon(QIcon.fromTheme('media-pause'))
-            self.process = Process(target=analyze_daytime_snow, args=(self.to_process, self.result_queue, self.conn1,))
-            logging_start = time()
+            self.logging_start = time()
+            self.process = Process(target=analyze_daytime_snow, args=(self.to_process, self.result_queue, self.conn1, self.logging_start,))
             self.process.start()
             self.pause_button.setEnabled(True)
             self.pause_button.setIcon(QIcon.fromTheme('media-pause'))
             self.fetch_next_batch()
             self.timer.start(1000)
 
-def analyze_daytime_snow(to_process: Queue, result_queue: Queue, channel: Connection):
-    keep_processing: bool = channel.recv()
-    logging.debug(f'keep_processing = {keep_processing} after = {time() - logging_start} secs')
+
+def analyze_daytime_snow(to_process: Queue, result_queue: Queue, channel: Connection, logging_start: int):
+    keep_processing, items = channel.recv() # Tuple[bool, List[Tuple[int, List[Path]]]]
 
     while keep_processing:
-        req: Tuple[int, List[Path]] = to_process.get(False, None)
-        cam_id, img_paths = req
-        res = []
-        for img_path in img_paths:
-            img = cv.imread(str(img_path))
-            img = cv.resize(img, (0, 0), fx=0.25, fy=0.25, interpolation=cv.INTER_NEAREST)
-            gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-            daytime = not antar.is_night(img)
-            snow = not antar.is_non_snow2(gray)
-            res.append((img_path.name, daytime, snow))
-        result_queue.put_nowait((cam_id, res))
+        results: List[Tuple[int, List[Tuple[Path, bool, bool]]]] = []
+        for item in items:  # item: Tuple[int, List[Path]]
+            cam_id, img_paths = item
+            res: List[Tuple[Path, bool, bool]] = []
+            for img_path in img_paths:
+                img = cv.imread(str(img_path))
+                img = cv.resize(img, (0, 0), fx=0.25, fy=0.25, interpolation=cv.INTER_NEAREST)
+                gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+                daytime = not antar.is_night(img)
+                snow = antar.is_snow(gray, img)
+                res.append((img_path.name, daytime, snow))
+            results.append((cam_id, res))
 
-        if to_process.empty():
-            logging.debug(f'to_process is empty at {time() - logging_start} secs')
-            channel.send(True)
-            logging.debug(f'channel sent True at {time() - logging_start} secs')
-            keep_processing = channel.recv()
-            logging.debug(f'keep_processing = {keep_processing} at {time() - logging_start} secs')
-
-
-#def nanan():
-#    while True:
-#        print('next batch')
-#        primary_cam_photos = active_camera.get_next_photo_daytime_snow(count=6)
-#        try:
-#            new_camera: Optional[Camera] = camera_queue.get_nowait()
-#        except Empty:
-#            new_camera = None
-#
-#        if new_camera is not None:
-#            other_cameras.append(new_camera)
-#
-#        if len(primary_cam_photos) == 0:
-#            #other_cameras.remove(active_camera)
-#            if len(other_cameras) > 0:
-#                active_camera = other_cameras[0]
-#                other_cameras.remove(active_camera)
-#                continue
-#            else:
-#                break
-#
-#        for img_path in primary_cam_photos:
-#            img = cv.imread(str(img_path))
-#            img = cv.resize(img, (0, 0), fx=0.25, fy=0.25, interpolation=cv.INTER_NEAREST)
-#            gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-#            daytime = not antar.is_night(img)
-#            snow = not antar.is_non_snow2(gray)
-#            #active_camera.set_photo_daytime_snow(img_path.name, daytime, snow)
-#
-#        new_cams = []
-#        for cam in other_cameras:
-#            photos = cam.get_next_photo_daytime_snow(count=2)
-#            if len(photos) == 0:
-#                continue
-#            for img_path in photos:
-#                img = cv.imread(str(img_path))
-#                img = cv.resize(img, (0, 0), fx=0.25, fy=0.25, interpolation=cv.INTER_NEAREST)
-#                gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-#                daytime = not antar.is_night(img)
-#                snow = not antar.is_non_snow2(gray)
-#                cam.set_photo_daytime_snow(img_path.name, daytime, snow)
-#            new_cams.append(cam)
-#
-#        other_cameras = new_cams
-#
-#        try:
-#            new_active_camera = active_camera_.get_nowait()
-#        except Empty:
-#            new_active_camera = active_camera
-#
-#        if active_camera != new_active_camera:
-#            other_cameras.remove(new_active_camera)
-#            other_cameras.append(active_camera)
-#            active_camera = new_active_camera
-#
+        channel.send(results)
+        keep_processing, items = channel.recv()

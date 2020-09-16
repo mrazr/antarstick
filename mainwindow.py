@@ -125,20 +125,29 @@ class MainWindow(QMainWindow):
             self.dataset_actions.append(action)
             self.recent_menu.addAction(action)
 
+    def remove_dataset_entry_from_recent(self, path: Path):
+        actions = list(filter(lambda action: action.toolTip() == str(path), self.dataset_actions))
+        if len(actions) > 0:
+            action = actions[0]
+            self.dataset_actions.remove(action)
+            self.recent_menu.removeAction(action)
+            self.recent_datasets.remove(path)
+
     def open_dataset(self, path: Path):
         if len(self.dataset.cameras) > 0:
             self.dataset.save()
 
         if not os.access(path, mode=os.F_OK):
+            self.remove_dataset_entry_from_recent(path)
             msg_box = QMessageBox(QMessageBox.Warning, 'File not found', f'The file {str(path)} does not exist.',
                                   QMessageBox.Open | QMessageBox.Close)
-
             if msg_box.exec_() == QMessageBox.Open:
                 self.open_dataset_action.trigger()
             else:
                 msg_box.close()
             return
         elif not os.access(path, mode=os.W_OK):
+            self.remove_dataset_entry_from_recent(path)
             msg_box = QMessageBox(QMessageBox.Warning, 'Permission denied', f'The application can\'t modify the '
                                                                             f'file {str(path)}', QMessageBox.Close)
             msg_box.exec_()
@@ -160,6 +169,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self.analyzer_widget.cleanup()
+        self.save_state()
+        os.remove('process.log')
         QMainWindow.closeEvent(self, event)
 
 

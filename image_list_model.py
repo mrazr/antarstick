@@ -34,9 +34,10 @@ class ImageListModel(QAbstractTableModel):
         self.processed_images_count = processed_count
         if not folder.exists():
             raise FileNotFoundError("This should not happen")
-        only_images = filter(lambda f: not f.is_dir(), scandir(folder))
+        #only_images = filter(lambda f: not f.is_dir(), scandir(folder))
         self.beginResetModel()
-        self.image_names = list(map(lambda f: Path(f.path), sorted(only_images, key=lambda f: f.name)))
+        #self.image_names = list(map(lambda f: Path(f.path), sorted(only_images, key=lambda f: f.name)))
+        self.image_names = list(map(lambda name: self.camera.folder / name, self.camera.image_list))
         self.endResetModel()
 
     def rowCount(self, parent: QModelIndex = QModelIndex()):
@@ -53,18 +54,26 @@ class ImageListModel(QAbstractTableModel):
             if index.column() == 0:
                 return self.image_names[index.row()].name
             elif index.column() == 1:
+                return self.snow
                 text = ""
                 daytime = self.camera.photo_is_daytime(self.image_names[index.row()].name)
                 if daytime is None:
-                    text += self.hourglass
+                    text = self.hourglass
                 else:
                     text += self.sun if daytime else self.moon
-
-                snow = self.camera.photo_is_snow(self.image_names[index.row()].name)
-                if snow is None:
-                    text += " " + self.hourglass
-                else:
+                    snow = self.camera.photo_is_snow(self.image_names[index.row()].name)
                     text += " " + self.snow if snow else ""
+
+                #if daytime is None:
+                #    text += self.hourglass
+                #else:
+                #    text += self.sun if daytime else self.moon
+
+                #snow = self.camera.photo_is_snow(self.image_names[index.row()].name)
+                #if snow is None:
+                #    text += " " + self.hourglass
+                #else:
+                #    text += " " + self.snow if snow else ""
                 return text
                 #if index.row() % 2 == 0:
                 #    return self.sun + self.snow

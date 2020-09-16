@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import PurePath, PosixPath, Path
 from typing import Dict, List, Optional, Set, Tuple, Union, Any
 
 import jsonpickle
@@ -101,11 +101,17 @@ class Dataset(QObject):
         self.unused_stick_ids: List[int] = []
 
     def add_camera(self, folder: Path, camera_id: int = -1, first_time_add: bool = True) -> bool:
-        camera = Camera.load_from_path(folder)
+        if not folder.is_absolute():
+            camera = Camera.load_from_path(self.path.parent / folder)
+        else:
+            camera = Camera.load_from_path(folder)
         if first_time_add:
             camera_id = self.next_camera_id
             self.next_camera_id += 1
-            self.cameras_ids[str(folder)] = camera_id
+            try:
+                self.cameras_ids[str(folder.relative_to(self.path.parent))] = camera_id
+            except ValueError:
+                self.cameras_ids[str(folder)] = camera_id
         if camera is None:  # We didn't find camera.json file in `folder`
             # If this is the first time this dataset is adding this camera, meaning that `dataset.camera_folders`
             # does not contain `folder` we create a brand new camera.json and a corresponding Camera object
@@ -404,12 +410,25 @@ class Dataset(QObject):
             'next_stick_id': self.next_stick_id,
             'path': str(self.path),
             #'camera_folders': list(map(lambda path: str(path), self.camera_folders)),
-            'cameras_ids': self.cameras_ids,
+            #'cameras_ids': self.cameras_ids,
+            'cameras_ids': self.make_camera_paths_relative(),
             'linked_cameras': list(self.linked_cameras),
             'stick_views_map': stick_views_list,
             'unused_stick_ids': self.unused_stick_ids,
             'stick_local_to_global_ids': self.stick_local_to_global_ids,
         }
+
+    def make_camera_paths_relative(self):
+        transformed: Dict[str, int] = {}
+        for path_str, cam_id in self.cameras_ids.items():
+            path = Path(path_str)
+            if path.is_absolute():
+                try:
+                    path = path.relative_to(self.path.parent)
+                except ValueError:
+                    pass
+            transformed[str(path)] = cam_id
+        return transformed
 
     def register_stick(self, stick: Stick, camera: Camera):
         stick.camera_id = camera.id

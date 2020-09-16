@@ -65,7 +65,7 @@ class Camera(QObject):
         self.id = _id
         self.next_stick_id = 0
         self.unused_stick_ids = []
-        self.measurements_path = folder / '_results'
+        self.measurements_path = Path('./_results')
         if not self.measurements_path.exists():
             mkdir(str(self.measurements_path)) #TODO handle possible exceptions
         self.photo_daytime_snow = pd.DataFrame()
@@ -129,7 +129,7 @@ class Camera(QObject):
 
     def save_measurements(self, path: Optional[Path] = None, filename: str = 'results.csv'):
         if path is None:
-            path = self.measurements_path
+            path = self.folder / self.measurements_path
         with open(str(path / filename), 'w') as output:
             self.measurements.to_csv(output, index=False)
         with open(str(self.measurements_path / IMAGE_STATS_FILE), 'w') as output:
@@ -147,16 +147,16 @@ class Camera(QObject):
     def stick_count(self) -> int:
         return len(self.sticks)
 
-    @staticmethod
-    def build_from_state(state: Dict) -> 'Camera':
-        path = state['folder']
-        sticks = state['sticks']
-        _id = state['id']
-        measurements_path = state['measurements_path']
-        camera = Camera(path, _id, measurements_path)
-        camera.sticks = sticks
-        camera.rep_image_path = state['rep_image_path']
-        return camera
+    #@staticmethod
+    #def build_from_state(state: Dict) -> 'Camera':
+    #    path = state['folder']
+    #    sticks = state['sticks']
+    #    _id = state['id']
+    #    measurements_path = state['measurements_path']
+    #    camera = Camera(path, _id, measurements_path)
+    #    camera.sticks = sticks
+    #    camera.rep_image_path = state['rep_image_path']
+    #    return camera
 
     def add_stick(self, stick: Stick):
         stick.camera_id = self.id
@@ -193,8 +193,9 @@ class Camera(QObject):
     def save(self):
         stick_states = list(map(lambda s: s.get_state(), self.sticks))
         state = {
-            'folder': str(self.folder),
-            'rep_image_path': str(self.rep_image_path),
+            #'folder': str(self.folder),
+            #'rep_image_path': str(self.rep_image_path),
+            'rep_image': self.rep_image_path.name,
             'sticks': stick_states,
             'measurements_path': str(self.measurements_path),
             'next_stick_id': self.next_stick_id,
@@ -214,7 +215,7 @@ class Camera(QObject):
 
             self.measurements = pd.DataFrame(data=data)
 
-        self.save_measurements(self.measurements_path)
+        self.save_measurements()
         with open(self.folder / 'camera.json', 'w') as f:
             json.dump(state, f, indent=1)
 
@@ -226,8 +227,11 @@ class Camera(QObject):
         camera = None
         with open(str(camera_json), 'r') as f:
             state = json.load(f)
-            camera = Camera(Path(state['folder']))
-            camera.rep_image_path = Path(state['rep_image_path'])
+            #camera = Camera(Path(state['folder']))
+            camera = Camera(folder)
+            #camera.rep_image_path = Path(state['rep_image_path'])
+            camera.rep_image_path = camera.folder / state['rep_image']
+            #camera.measurements_path = Path(state['measurements_path'])
             camera.measurements_path = Path(state['measurements_path'])
             camera.next_stick_id = state['next_stick_id']
             camera.unused_stick_ids = state['unused_stick_ids']
