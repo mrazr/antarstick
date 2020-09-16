@@ -1,4 +1,4 @@
-from os import listdir
+from os import listdir, mkdir
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
@@ -11,11 +11,17 @@ from stick import Stick
 
 import json
 
+PD_DAY = 1
+PD_SNOW = 2
+
 PD_STICK_TOP = 0
 PD_STICK_BOTTOM = 1
 PD_STICK_LENGTH_PX = 2
 PD_STICK_SNOW_HEIGHT = 3
 PD_STICK_COLS = 4
+
+MEASUREMENTS_FILE = 'results.csv'
+IMAGE_STATS_FILE = 'img_stats.csv'
 
 class Camera(QObject):
     """Class for representing a particular photo folder
@@ -59,32 +65,50 @@ class Camera(QObject):
         self.id = _id
         self.next_stick_id = 0
         self.unused_stick_ids = []
-        self.measurements_path = folder
-        if measurements_path:
-            self.measurements_path = measurements_path
-            self.measurements = self.__load_measurements()
-        else:
-            self.measurements = pd.DataFrame()
-            self.measurements_path = None
+        self.measurements_path = Path('./_results')
+        if not self.measurements_path.exists():
+            mkdir(str(self.measurements_path)) #TODO handle possible exceptions
+        self.photo_daytime_snow = pd.DataFrame()
+        #if measurements_path:
+        #    self.measurements_path = measurements_path
+        #    self.__load_measurements()
+        #else:
+        #    self.measurements = pd.DataFrame()
+        #    self.measurements_path = None
         #self.rep_image_path = self.folder / Path(listdir(self.folder)[0]) #TODO listdir - filter out non image files
         #self.rep_image: np.ndarray = cv.resize(cv.imread(str(self.rep_image_path)), (0, 0), fx=0.25, fy=0.25,
         #                                      interpolation=cv.INTER_NEAREST)
         self.rep_image_path: Path = None
         self.rep_image = None
         self.image_list: List[str] = list(sorted(filter(lambda f: f[-4:].lower() == 'jpeg' or f[-3:].lower() == 'jpg', listdir(self.folder))))
+
+        self.stick_labels_column_ids = dict({})
+
+        if self.measurements_path is None:
+            self.photo_daytime_snow = pd.DataFrame(data={
+                'image': self.image_list,
+                'day': ['-'] * len(self.image_list),
+                'snow': ['-'] * len(self.image_list),
+            })
+            self.measurements = pd.DataFrame()
+        else:
+            self.__load_measurements()
+
+        self.next_photo_daytime_snow = self.photo_daytime_snow.index[self.photo_daytime_snow['day'] == '-'].tolist()
+        self.next_photo_daytime_snow = self.next_photo_daytime_snow[0] if len(self.next_photo_daytime_snow) > 0 else len(self.image_list)
+
         self.image_names_ids: Dict[str, int] = {image_name: image_id for image_id, image_name in enumerate(self.image_list)}
         self.next_photo_id: int = 0
         self.next_photo: str = self.image_list[self.next_photo_id]
-        self.stick_labels_column_ids = dict({})
 
     def __load_measurements(self) -> None:
         try:
-            with open(self.folder / '_results/results.csv') as meas_file:
+            with open(str(self.measurements_path / MEASUREMENTS_FILE)) as meas_file:
                 measurements = pd.read_csv(meas_file)
                 if measurements.shape[0] > 0:
                     last_photo = measurements.iloc[-1][0]
                     self.next_photo_id = self.image_list.index(last_photo) + 1
-                    self.next_photo = self.image_list[self.next_photo_id]
+                    self.next_photo = self.image_list[self.next_photo_id] if self.next_photo_id < len(self.image_list) else None
                 for i in range(1, len(measurements.columns.values), 4):
                     column: str = measurements.columns.values[i]
                     self.stick_labels_column_ids[column[:column.index('_')]] = i
@@ -93,10 +117,23 @@ class Camera(QObject):
             self.measurements = pd.DataFrame()
             self._update_stick_labels_id()
 
-    def save_measurements(self, path: Path):
-        self.measurements_path = path
-        with open(path, "w") as output:
+        try:
+            with open(str(self.measurements_path / IMAGE_STATS_FILE)) as meas_file:
+                self.photo_daytime_snow = pd.read_csv(meas_file)
+        except FileNotFoundError:
+            self.photo_daytime_snow = pd.DataFrame(data={
+                'image': self.image_list,
+                'day': ['-'] * len(self.image_list),
+                'snow': ['-'] * len(self.image_list),
+            })
+
+    def save_measurements(self, path: Optional[Path] = None, filename: str = 'results.csv'):
+        if path is None:
+            path = self.folder / self.measurements_path
+        with open(str(path / filename), 'w') as output:
             self.measurements.to_csv(output, index=False)
+        with open(str(self.measurements_path / IMAGE_STATS_FILE), 'w') as output:
+            self.photo_daytime_snow.to_csv(output, index=False)
 
     def get_state(self):
         state = self.__dict__.copy()
@@ -110,16 +147,16 @@ class Camera(QObject):
     def stick_count(self) -> int:
         return len(self.sticks)
 
-    @staticmethod
-    def build_from_state(state: Dict) -> 'Camera':
-        path = state['folder']
-        sticks = state['sticks']
-        _id = state['id']
-        measurements_path = state['measurements_path']
-        camera = Camera(path, _id, measurements_path)
-        camera.sticks = sticks
-        camera.rep_image_path = state['rep_image_path']
-        return camera
+    #@staticmethod
+    #def build_from_state(state: Dict) -> 'Camera':
+    #    path = state['folder']
+    #    sticks = state['sticks']
+    #    _id = state['id']
+    #    measurements_path = state['measurements_path']
+    #    camera = Camera(path, _id, measurements_path)
+    #    camera.sticks = sticks
+    #    camera.rep_image_path = state['rep_image_path']
+    #    return camera
 
     def add_stick(self, stick: Stick):
         stick.camera_id = self.id
@@ -156,8 +193,9 @@ class Camera(QObject):
     def save(self):
         stick_states = list(map(lambda s: s.get_state(), self.sticks))
         state = {
-            'folder': str(self.folder),
-            'rep_image_path': str(self.rep_image_path),
+            #'folder': str(self.folder),
+            #'rep_image_path': str(self.rep_image_path),
+            'rep_image': self.rep_image_path.name,
             'sticks': stick_states,
             'measurements_path': str(self.measurements_path),
             'next_stick_id': self.next_stick_id,
@@ -176,8 +214,8 @@ class Camera(QObject):
                 data[stick.label + '_snow_height'] = []
 
             self.measurements = pd.DataFrame(data=data)
-            self.save_measurements(self.folder / '_results/results.csv')
 
+        self.save_measurements()
         with open(self.folder / 'camera.json', 'w') as f:
             json.dump(state, f, indent=1)
 
@@ -189,8 +227,11 @@ class Camera(QObject):
         camera = None
         with open(str(camera_json), 'r') as f:
             state = json.load(f)
-            camera = Camera(Path(state['folder']))
-            camera.rep_image_path = Path(state['rep_image_path'])
+            #camera = Camera(Path(state['folder']))
+            camera = Camera(folder)
+            #camera.rep_image_path = Path(state['rep_image_path'])
+            camera.rep_image_path = camera.folder / state['rep_image']
+            #camera.measurements_path = Path(state['measurements_path'])
             camera.measurements_path = Path(state['measurements_path'])
             camera.next_stick_id = state['next_stick_id']
             camera.unused_stick_ids = state['unused_stick_ids']
@@ -263,7 +304,7 @@ class Camera(QObject):
     def insert_measurements(self, df: pd.DataFrame):
         self.measurements = self.measurements.append(df)
         self.next_photo_id += df.shape[0]
-        self.save_measurements(self.folder / '_results/results.csv')
+        self.save_measurements(self.measurements_path)
 
     def get_processed_count(self) -> int:
         return self.next_photo_id
@@ -271,3 +312,28 @@ class Camera(QObject):
     def get_photo_count(self) -> int:
         return len(self.image_list)
 
+    def photo_is_daytime(self, img_name: str) -> Optional[bool]:
+        idx = self.image_names_ids[img_name]
+        day = self.photo_daytime_snow.iloc[idx, PD_DAY]
+        if day == '-':
+            return None
+        return day == 'y'
+
+    def photo_is_snow(self, img_name: str) -> Optional[bool]:
+        idx = self.image_names_ids[img_name]
+        snow = self.photo_daytime_snow.iloc[idx, PD_SNOW]
+        if snow == '-':
+            return None
+        return snow == 'y'
+
+    def set_photo_daytime_snow(self, img_name: str, daytime: bool, snow: bool) -> int:
+        idx = self.image_names_ids[img_name]
+        self.photo_daytime_snow.iloc[idx, 1:] = ['y' if daytime else 'n', 'y' if snow else 'n']
+        self.next_photo_daytime_snow += 1
+        return idx
+
+    def get_next_photo_daytime_snow(self, count: int = 2) -> List[Path]:
+        if self.next_photo_daytime_snow >= len(self.image_list):
+            return []
+        until = min(self.next_photo_daytime_snow + count, len(self.image_list))
+        return list(map(lambda img: self.folder / img, self.image_list[self.next_photo_daytime_snow:until]))

@@ -6,14 +6,14 @@ from typing import List
 import os
 
 from PyQt5.QtWidgets import (QAction, QApplication, QFileDialog, QMainWindow,
-                             QToolBar, QMenu, QToolButton, QMessageBox)
+                             QToolBar, QMenu, QToolButton, QMessageBox, QPushButton)
 from PyQt5.QtCore import QThreadPool, QRunnable
 from PyQt5.Qt import QKeySequence
+from PyQt5.QtGui import QCloseEvent, QIcon
 
 from camera_processing.widgets.camera_processing_widget import \
     CameraProcessingWidget
 from dataset import Dataset
-
 
 
 class CameraLoadWorker(QRunnable):
@@ -30,6 +30,7 @@ class CameraLoadWorker(QRunnable):
 class MainWindow(QMainWindow):
     def __init__(self):
         QMainWindow.__init__(self)
+        self.setWindowTitle('Antarstick')
         self.toolbar = QToolBar()
         self.action_ = QAction("&Add camera")
         self.action_.triggered.connect(self.handle_add_camera_triggered)
@@ -60,9 +61,12 @@ class MainWindow(QMainWindow):
         self.open_dataset_action.triggered.connect(self.handle_open_dataset_triggered)
 
         self.toolbar.addWidget(self.open_dataset_btn)
-        self.addToolBar(self.toolbar)
+
         self.dataset = Dataset()
         self.analyzer_widget = CameraProcessingWidget(self.dataset)
+
+        self.toolbar.addWidget(self.analyzer_widget.pause_button)
+        self.addToolBar(self.toolbar)
         self.setCentralWidget(self.analyzer_widget)
         self.thread_pool = QThreadPool()
 
@@ -121,20 +125,29 @@ class MainWindow(QMainWindow):
             self.dataset_actions.append(action)
             self.recent_menu.addAction(action)
 
+    def remove_dataset_entry_from_recent(self, path: Path):
+        actions = list(filter(lambda action: action.toolTip() == str(path), self.dataset_actions))
+        if len(actions) > 0:
+            action = actions[0]
+            self.dataset_actions.remove(action)
+            self.recent_menu.removeAction(action)
+            self.recent_datasets.remove(path)
+
     def open_dataset(self, path: Path):
         if len(self.dataset.cameras) > 0:
             self.dataset.save()
 
         if not os.access(path, mode=os.F_OK):
+            self.remove_dataset_entry_from_recent(path)
             msg_box = QMessageBox(QMessageBox.Warning, 'File not found', f'The file {str(path)} does not exist.',
                                   QMessageBox.Open | QMessageBox.Close)
-
             if msg_box.exec_() == QMessageBox.Open:
                 self.open_dataset_action.trigger()
             else:
                 msg_box.close()
             return
         elif not os.access(path, mode=os.W_OK):
+            self.remove_dataset_entry_from_recent(path)
             msg_box = QMessageBox(QMessageBox.Warning, 'Permission denied', f'The application can\'t modify the '
                                                                             f'file {str(path)}', QMessageBox.Close)
             msg_box.exec_()
@@ -153,6 +166,12 @@ class MainWindow(QMainWindow):
                 return list(map(lambda p: Path(p), list(state)))
         except FileNotFoundError:
             return []
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self.analyzer_widget.cleanup()
+        self.save_state()
+        os.remove('process.log')
+        QMainWindow.closeEvent(self, event)
 
 
 if __name__ == "__main__":

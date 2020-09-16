@@ -5,7 +5,7 @@ from typing import Dict, Any
 from PyQt5.Qt import QBrush, QColor, QPen
 from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QPainter, QPixmap, QFontMetrics
-from PyQt5.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsSceneMouseEvent
+from PyQt5.QtWidgets import QGraphicsItem, QGraphicsObject
 
 from camera_processing.widgets.button import ButtonColor
 from camera_processing.widgets.button_menu import ButtonMenu
@@ -53,6 +53,7 @@ class OverlayGui(QGraphicsObject):
         self.top_menu.add_button("detect_sticks", "Re-detect sticks", call_back=self.redetect_sticks_clicked.emit)
         self.top_menu.add_button("edit_sticks", "Edit sticks", is_checkable=True, call_back=self.edit_sticks_clicked.emit)
         self.top_menu.add_button("link_sticks", "Link sticks", is_checkable=True, call_back=self.link_sticks_clicked.emit)
+        self.enable_link_sticks_button(False)
         #self.top_menu.add_button("show_overlay", "Show overlay")
         #self.top_menu.add_button("show_linked_cameras", "Show linked cameras")
         self.top_menu.add_button("reset_view", "Reset view", call_back=self.reset_view_requested.emit)
@@ -159,6 +160,9 @@ class OverlayGui(QGraphicsObject):
 
     def enable_process_photos_button(self, enable: bool):
         self.top_menu.get_button('process_photos').set_disabled(not enable)
+
+    def enable_link_sticks_button(self, enable: bool):
+        self.top_menu.get_button('link_sticks').set_disabled(not enable)
 
     #def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
     #    event.ignore()

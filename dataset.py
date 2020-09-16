@@ -1,10 +1,10 @@
-from pathlib import Path
+from pathlib import PurePath, PosixPath, Path
 from typing import Dict, List, Optional, Set, Tuple, Union, Any
 
 import jsonpickle
 import json
 from numpy import zeros
-from PyQt5.QtCore import QObject
+from PyQt5.QtCore import QObject, QTimer
 from PyQt5.QtCore import pyqtSignal as Signal
 from PyQt5.QtWidgets import QMessageBox
 
@@ -101,11 +101,17 @@ class Dataset(QObject):
         self.unused_stick_ids: List[int] = []
 
     def add_camera(self, folder: Path, camera_id: int = -1, first_time_add: bool = True) -> bool:
-        camera = Camera.load_from_path(folder)
+        if not folder.is_absolute():
+            camera = Camera.load_from_path(self.path.parent / folder)
+        else:
+            camera = Camera.load_from_path(folder)
         if first_time_add:
             camera_id = self.next_camera_id
             self.next_camera_id += 1
-            self.cameras_ids[str(folder)] = camera_id
+            try:
+                self.cameras_ids[str(folder.relative_to(self.path.parent))] = camera_id
+            except ValueError:
+                self.cameras_ids[str(folder)] = camera_id
         if camera is None:  # We didn't find camera.json file in `folder`
             # If this is the first time this dataset is adding this camera, meaning that `dataset.camera_folders`
             # does not contain `folder` we create a brand new camera.json and a corresponding Camera object
@@ -113,8 +119,8 @@ class Dataset(QObject):
             # reading from the file `folder/camera.json` that is now being created.
             if first_time_add:
                 camera = Camera(folder, camera_id)
-                if self.path:
-                    camera.measurements_path = self.path.parent / f"camera{camera.id}.csv"
+                #if self.path:
+                #    camera.measurements_path = self.path.parent / f"camera{camera.id}.csv"
                 #self.camera_folders.append(folder)
             else:
                 # And this is a case when dataset contains `folder` in `self.camera_folders`, so `folder/camera.json`
@@ -163,21 +169,20 @@ class Dataset(QObject):
             self.camera_removed.emit(camera)
 
     def save(self) -> bool:
+        for camera in self.cameras:
+            # path = self.path.parent / f"camera{camera.id}.csv"
+            camera.save_measurements()
+            camera.save()
         if self.path == Path("."):
             return False
         try:
+            #with open(self.path, "w") as output_file:
+            #    state = self.__dict__.copy()
+            #    state['cameras'] = [camera.get_state() for camera in self.cameras]
+            #    output_file.write(jsonpickle.encode(state))
             with open(self.path, "w") as output_file:
-                for camera in self.cameras:
-                    path = self.path.parent / f"camera{camera.id}.csv"
-                    #camera.save_measurements(path)
-                    camera.save()
-                state = self.__dict__.copy()
-                state['cameras'] = [camera.get_state() for camera in self.cameras]
-                output_file.write(jsonpickle.encode(state))
-
-            with open(self.path, "w") as output_file:
-                for camera in self.cameras:
-                    camera.save()
+                #for camera in self.cameras:
+                #    camera.save()
                 state = self.get_state()
                 json.dump(state, output_file, indent=1)
         except OSError as err:
@@ -405,12 +410,25 @@ class Dataset(QObject):
             'next_stick_id': self.next_stick_id,
             'path': str(self.path),
             #'camera_folders': list(map(lambda path: str(path), self.camera_folders)),
-            'cameras_ids': self.cameras_ids,
+            #'cameras_ids': self.cameras_ids,
+            'cameras_ids': self.make_camera_paths_relative(),
             'linked_cameras': list(self.linked_cameras),
             'stick_views_map': stick_views_list,
             'unused_stick_ids': self.unused_stick_ids,
             'stick_local_to_global_ids': self.stick_local_to_global_ids,
         }
+
+    def make_camera_paths_relative(self):
+        transformed: Dict[str, int] = {}
+        for path_str, cam_id in self.cameras_ids.items():
+            path = Path(path_str)
+            if path.is_absolute():
+                try:
+                    path = path.relative_to(self.path.parent)
+                except ValueError:
+                    pass
+            transformed[str(path)] = cam_id
+        return transformed
 
     def register_stick(self, stick: Stick, camera: Camera):
         stick.camera_id = camera.id
@@ -452,6 +470,6 @@ class Dataset(QObject):
         return None
 
     def handle_camera_sticks_added(self, sticks: List[Stick], camera: Camera):
-        print('dataset handling new sticks')
         for stick in sticks:
             self.register_stick(stick, camera)
+

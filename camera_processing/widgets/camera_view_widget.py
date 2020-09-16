@@ -1,6 +1,8 @@
 from queue import Queue
 from typing import List, Dict, Optional, Any
 from multiprocessing import Pool
+import json
+import time
 
 import cv2 as cv
 import numpy as np
@@ -9,8 +11,10 @@ from PyQt5.QtCore import (QMarginsF, QModelIndex, QPointF, QRectF, Qt,
                           pyqtSignal, QByteArray, QThreadPool, QRect, QThread)
 from PyQt5.QtCore import pyqtSlot as Slot, QTimer
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QBrush, QColor, QFont, QPen
-from PyQt5.QtWidgets import QGraphicsScene, QSpinBox, QGraphicsItem
+from PyQt5.QtWidgets import QGraphicsScene, QGraphicsItem, QInputDialog, QHeaderView
 from pandas import DataFrame
+from skimage.filters import apply_hysteresis_threshold
+from skimage.morphology import area_opening
 
 from camera import Camera
 from camera_processing.antarstick_processing import get_sticks_in_folder, process_batch, get_sticks_in_folder_non_mp, check_endpoints, estimate_sticks_width
@@ -23,6 +27,8 @@ from camera_processing.widgets.custom_pixmap import CustomPixmap
 from camera_processing.widgets.overlay_gui import OverlayGui
 from camera_processing.widgets.stick_link_manager import StickLinkManager
 from camera_processing.widgets.stick_widget import StickMode, StickWidget
+from stick_detection_dialog import StickDetectionDialog
+
 from dataset import Dataset
 from image_list_model import ImageListModel
 from my_thread_worker import MyThreadWorker
@@ -45,10 +51,16 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.image_list = ImageListModel()
         self.ui.image_list.setModel(self.image_list)
         self.ui.image_list.selectionModel().currentChanged.connect(self.handle_list_model_current_changed)
+        #self.ui.image_list.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        #self.ui.image_list.resizeColumnToContents(1)
+        #self.ui.image_list.resizeColumnToContents(2)
         self.ui.image_list.setEnabled(False)
 
-        self.ui.splitter.setStretchFactor(0, 1)
-        self.ui.splitter.setStretchFactor(1, 4)
+        #self.ui.splitter.setStretchFactor(0, 1)
+        #self.ui.splitter.setStretchFactor(1, 4)
+
+        self.ui.splitter.setStretchFactor(0, 0)
+        self.ui.splitter.setStretchFactor(1, 1)
 
         self.ui.splitter.splitterMoved.connect(self.handle_splitter_moved)
 
@@ -92,7 +104,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.edit_sticks_clicked.connect(self.handle_edit_sticks_clicked)
         self.overlay_gui.link_sticks_clicked.connect(self.handle_link_sticks_clicked)
         self.overlay_gui.delete_sticks_clicked.connect(self.handle_delete_sticks_clicked)
-        self.overlay_gui.redetect_sticks_clicked.connect(self.handle_redetect_sticks_clicked)
+        #self.overlay_gui.redetect_sticks_clicked.connect(self.handle_redetect_sticks_clicked)
         self.overlay_gui.process_photos_clicked.connect(self.handle_process_photos_clicked)
         self.overlay_gui.clicked.connect(self.handle_overlay_gui_clicked)
         #self.overlay_gui.sticks_length_clicked.connect(self.handle_sticks_length_clicked)
@@ -130,11 +142,34 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.photo_batch: List[str] = []
         self.timer: QTimer = QTimer()
 
+        #self.stick_width_input = QInputDialog(parent=None, flags=Qt.Dialog)
+        #self.stick_width_input.setInputMode(QInputDialog.IntInput)
+        #self.stick_width_input.setIntMinimum(3)
+        #self.stick_width_input.setIntMaximum(15)
+        #self.stick_width_input.intValueChanged.connect(self.detect_sticks)
+        #self.stick_width_input.intValueSelected.connect(lambda _: cv.destroyAllWindows())
+
+        self.stick_detection_dialog = StickDetectionDialog()
+        self.stick_detection_dialog.spinLength.valueChanged.connect(self.detect_sticks)
+        self.stick_detection_dialog.spinWidth.valueChanged.connect(self.detect_sticks)
+        self.stick_detection_dialog.spinP0.valueChanged.connect(self.detect_sticks)
+        self.stick_detection_dialog.buttonBox.clicked.connect(lambda _: cv.destroyAllWindows())
+        self.stick_detection_dialog.spinSensitivity.valueChanged.connect(self.detect_sticks)
+        #self.overlay_gui.redetect_sticks_clicked.connect(lambda: self.stick_detection_dialog.show())
+        self.overlay_gui.redetect_sticks_clicked.connect(self.handle_redetect_sticks_clicked_)
+        self.stick_detection_dialog.btnApply.clicked.connect(self.detect_sticks2)
+        #self.overlay_gui.redetect_sticks_clicked.connect(lambda: self.stick_detection_dialog.show())
+
+    def handle_redetect_sticks_clicked_(self):
+        param_json = json.dumps(antar.params)
+        self.stick_detection_dialog.paramsText.setPlainText(param_json)
+        self.stick_detection_dialog.show()
+
     def initialise_with(self, camera: Camera):
         self.camera = camera
         self.stick_link_manager.camera = self.camera
         self.stick_link_manager.update_links()
-        self.image_list.initialize(self.camera.folder, self.camera.get_processed_count())
+        self.image_list.initialize(self.camera, self.camera.get_processed_count())
         if len(self.camera.sticks) == 0:
             self._detect_sticks()
         else:
@@ -142,8 +177,6 @@ class CameraViewWidget(QtWidgets.QWidget):
                 self.camera.rep_image = cv.resize(cv.imread(str(self.camera.rep_image_path)),
                                                   (0, 0), fx=0.25, fy=0.25)
             self.initialize_rest_of_gui()
-        #print(f'next batch of 10 images is:')
-        #print(camera.get_batch(count=10))
 
     def initialize_rest_of_gui(self):
         self.ui.image_list.setModel(self.image_list)
@@ -186,7 +219,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         #img_sticks = get_sticks_in_folder_non_mp(self.camera.folder)
         #self.return_queue.put_nowait(img_sticks)
         #self.handle_first_time_init_done()
-        worker = MyThreadWorker(get_sticks_in_folder, args=(self.camera.folder,), kwargs={'return_queue': self.return_queue})
+        worker = MyThreadWorker(antar.get_sticks_in_folder2, args=(self.camera.folder,), kwargs={'return_queue': self.return_queue})
         worker.signals.finished.connect(self.handle_first_time_init_done)
         QThreadPool.globalInstance().start(worker)
 
@@ -266,7 +299,17 @@ class CameraViewWidget(QtWidgets.QWidget):
         #estimate_sticks_width(cv.resize(self.current_viewed_image, (0, 0), fx=0.5, fy=0.5), self.camera.sticks)
         #antar.look_for_endpoints(cv.resize(self.current_viewed_image, (0, 0), fx=0.5, fy=0.5), self.camera.sticks)
         #antar.look_for_endpoints(cv.GaussianBlur(self.current_viewed_image, (5, 5), 1.5), self.camera.sticks)
-        antar.look_for_endpoints(self.current_viewed_image, self.camera.sticks)
+        #antar.look_for_endpoints(self.current_viewed_image, self.camera.sticks)
+        #if self.stick_detection_dialog.isVisible():
+        #    self.detect_sticks2(0)
+        #    return
+        #    width = self.stick_detection_dialog.spinWidth.value()
+        #    length = max(3, self.stick_detection_dialog.spinLength.value())
+        #    hog_th = self.stick_detection_dialog.spinSensitivity.value()
+        #    if length % 2 == 0:
+        #        length = max(3, length - 1)
+        #    p0 = self.stick_detection_dialog.spinP0.value()
+        #    antar.find_sticks(self.current_viewed_image, hog_th, width, length, p0)
 
 
         measurements = self.camera.get_measurement_for(image_path.name)
@@ -320,6 +363,8 @@ class CameraViewWidget(QtWidgets.QWidget):
             sw.set_mode(mode)
     
     def handle_link_sticks_clicked(self):
+        self.gpixmap.left_add_button.setVisible(not self.overlay_gui.link_sticks_button_pushed())
+        self.gpixmap.right_add_button.setVisible(not self.overlay_gui.link_sticks_button_pushed())
         if self.overlay_gui.link_sticks_button_pushed():
             self.stick_link_manager.start()
         else:
@@ -383,6 +428,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self._recenter_view()
 
         self.sync_stick_link_manager()
+        self.overlay_gui.enable_link_sticks_button(True)
 
     def handle_cameras_unlinked(self, cam1: Camera, cam2: Camera):
         if cam1.id != self.camera.id and cam2.id != self.camera.id:
@@ -405,6 +451,8 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.gpixmap.right_add_button.set_default_state()
             self.gpixmap.right_add_button.set_label('+')
             self.gpixmap.right_add_button.set_tooltip("Link camera")
+        if self.left_link is None and self.right_link is None:
+            self.overlay_gui.enable_link_sticks_button(False)
         self._recenter_view()
 
     def handle_link_camera_button_left_clicked(self, data: Dict[str, Any]):
@@ -418,6 +466,11 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.dataset.unlink_cameras(self.camera,
                                         self.left_link.camera if button_position == "left" else self.right_link.camera)
             return
+
+        if self.link_menu_position == "right":
+            self.gpixmap.right_add_button.set_default_state()
+        elif self.link_menu_position == "left":
+            self.gpixmap.left_add_button.set_default_state()
 
         self.link_menu_position = button_position
         self.adjust_link_menu_position()
@@ -504,7 +557,11 @@ class CameraViewWidget(QtWidgets.QWidget):
 
     def handle_first_time_init_done(self):
         img_sticks_time = self.return_queue.get()
-        if img_sticks_time is None:
+        cv.imshow('draw', img_sticks_time[0])
+        cv.imshow('draw2', img_sticks_time[1])
+        cv.waitKey(0)
+        cv.destroyAllWindows()
+        if img_sticks_time is None or True:
             self.camera.rep_image_path = self.camera.folder / self.camera.image_list[0]
             self.camera.rep_image = cv.imread(str(self.camera.rep_image_path))
             self.camera.rep_image = cv.resize(self.camera.rep_image, (0, 0), fx=0.25, fy=0.25)
@@ -619,3 +676,77 @@ class CameraViewWidget(QtWidgets.QWidget):
         else:
             self.gpixmap.right_add_button.set_default_state()
             self.gpixmap.right_add_button.setVisible(True)
+
+    def detect_sticks(self, _: int):
+        if self.current_viewed_image is None:
+            return
+        antar.params = json.loads(self.stick_detection_dialog.paramsText.toPlainText())
+
+        width = self.stick_detection_dialog.spinWidth.value()
+        length = self.stick_detection_dialog.spinLength.value()
+        hog_th = self.stick_detection_dialog.spinSensitivity.value()
+        if length % 2 == 0:
+            length = max(3, length - 1)
+        p0 = self.stick_detection_dialog.spinP0.value()
+        antar.find_sticks(self.current_viewed_image, hog_th, width, length, p0)
+
+    def detect_sticks2(self, _: int):
+        if self.current_viewed_image is None:
+            return
+        antar.params = json.loads(self.stick_detection_dialog.paramsText.toPlainText())
+        antar.segment_sticks(self.current_viewed_image, True)
+        return
+        start = time.time()
+        gray = cv.pyrDown(cv.cvtColor(self.current_viewed_image, cv.COLOR_BGR2GRAY))
+        if antar.params['f'] == 1.0:
+            gray = cv.pyrUp(gray)
+        #gray = cv.morphologyEx(gray, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (1, 15)))
+        hmt_index = int(antar.params['hmt_se_size'] < 0)
+        hmts = antar.hmt_selems[hmt_index]
+        se_choice = abs(antar.params['hmt_se_size'])
+        if se_choice == 1:
+            se = hmts[0]
+        elif se_choice == 3:
+            se = hmts[1]
+        elif se_choice == 5:
+            se = hmts[2]
+        else:
+            se = hmts[3]
+        uhmt, mask = antar.uhmt(gray, se)
+        #print(f'shape is {gray.shape}')
+        #_, th = cv.threshold(uhmt, 10, 255.0, cv.THRESH_BINARY)
+        low = antar.params['hyst_low']
+        high = antar.params['hyst_high']
+        #th = 255 * apply_hysteresis_threshold(uhmt, low, high).astype(np.uint8)
+        #th = antar.asf(th, 9, 1, 'oco')
+        th = antar.asf(mask, 9, 1, 'oco')
+        if antar.params['f'] == 1.0:
+            th = cv.resize(th, (0, 0), fx=0.5, fy=0.5, interpolation=cv.INTER_NEAREST)
+            #th = area_opening(th, 10, 2)
+            th = cv.resize(th, (0, 0), fx=2.0, fy=2.0, interpolation=cv.INTER_NEAREST)
+        else:
+            pass
+            #th = area_opening(th, 10, 2)
+        hough_th = antar.params['hough_th']
+        line_len = antar.params['line_length']
+        gap = antar.params['line_gap']
+        lines = cv.HoughLinesP(th, 1.0, np.pi / 180.0, hough_th, None, line_len, gap)
+        print(f'total is {time.time() - start} secs')
+        draw = cv.pyrDown(self.current_viewed_image)
+        f = 0.5 if antar.params['f'] == 1.0 else 1.0
+        if lines is not None:
+            for line_ in lines:
+                line = line_[0]
+                cv.line(draw, (int(f * line[0]), int(f * line[1])), (int(f * line[2]), int(f * line[3])), [0, 255, 0], 1)
+        cv.imshow('uhmt', uhmt)
+        cv.imshow('uhmt_th', 255 * th)
+        cv.imshow('mask', 255 * mask)
+        cv.imshow('op', gray)
+        cv.imshow('lines', draw)
+        cv.waitKey(0)
+        cv.destroyAllWindows()
+
+    def update_image_list(self, start: int, end: int):
+        idx_from = self.image_list.createIndex(start, 0)
+        idx_to = self.image_list.createIndex(end, 2)
+        self.image_list.dataChanged.emit(idx_from, idx_to)
