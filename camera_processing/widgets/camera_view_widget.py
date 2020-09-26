@@ -1,24 +1,22 @@
-from queue import Queue
-from typing import List, Dict, Optional, Any
-from multiprocessing import Pool
 import json
 import time
+from multiprocessing import Pool
+from queue import Queue
+from typing import List, Dict, Optional, Any
 
 import cv2 as cv
 import numpy as np
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import (QMarginsF, QModelIndex, QPointF, QRectF, Qt,
-                          pyqtSignal, QByteArray, QThreadPool, QRect, QThread)
+                          pyqtSignal, QByteArray, QThreadPool, QRect)
 from PyQt5.QtCore import pyqtSlot as Slot, QTimer
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QBrush, QColor, QFont, QPen
-from PyQt5.QtWidgets import QGraphicsScene, QGraphicsItem, QInputDialog, QHeaderView
+from PyQt5.QtWidgets import QGraphicsScene, QGraphicsItem
 from pandas import DataFrame
-from skimage.filters import apply_hysteresis_threshold
-from skimage.morphology import area_opening
 
-from camera import Camera
-from camera_processing.antarstick_processing import get_sticks_in_folder, process_batch, get_sticks_in_folder_non_mp, check_endpoints, estimate_sticks_width
 import camera_processing.antarstick_processing as antar
+from camera import Camera
+from camera_processing.antarstick_processing import process_batch
 from camera_processing.widgets import ui_camera_view
 from camera_processing.widgets.button import Button
 from camera_processing.widgets.button_menu import ButtonMenu
@@ -27,12 +25,11 @@ from camera_processing.widgets.custom_pixmap import CustomPixmap
 from camera_processing.widgets.overlay_gui import OverlayGui
 from camera_processing.widgets.stick_link_manager import StickLinkManager
 from camera_processing.widgets.stick_widget import StickMode, StickWidget
-from stick_detection_dialog import StickDetectionDialog
-
 from dataset import Dataset
 from image_list_model import ImageListModel
 from my_thread_worker import MyThreadWorker
 from stick import Stick
+from stick_detection_dialog import StickDetectionDialog
 
 
 class CameraViewWidget(QtWidgets.QWidget):
@@ -107,6 +104,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         #self.overlay_gui.redetect_sticks_clicked.connect(self.handle_redetect_sticks_clicked)
         self.overlay_gui.process_photos_clicked.connect(self.handle_process_photos_clicked)
         self.overlay_gui.clicked.connect(self.handle_overlay_gui_clicked)
+        self.overlay_gui.find_sticks_clicked.connect(self.handle_find_sticks_clicked)
         #self.overlay_gui.sticks_length_clicked.connect(self.handle_sticks_length_clicked)
 
         #self.sticks_length_input = QSpinBox(None)
@@ -167,16 +165,21 @@ class CameraViewWidget(QtWidgets.QWidget):
 
     def initialise_with(self, camera: Camera):
         self.camera = camera
+        if self.camera.rep_image is None:
+            self.camera.rep_image = cv.resize(cv.imread(str(self.camera.folder / self.camera.rep_image_path)), (0, 0), fx=0.25, fy=0.25)
         self.stick_link_manager.camera = self.camera
         self.stick_link_manager.update_links()
         self.image_list.initialize(self.camera, self.camera.get_processed_count())
+        self.initialize_rest_of_gui()
         if len(self.camera.sticks) == 0:
-            self._detect_sticks()
-        else:
-            if self.camera.rep_image is None:
-                self.camera.rep_image = cv.resize(cv.imread(str(self.camera.rep_image_path)),
-                                                  (0, 0), fx=0.25, fy=0.25)
-            self.initialize_rest_of_gui()
+            select_index = self.image_list.index(0, 0)
+            self.ui.image_list.setCurrentIndex(select_index)
+            self.handle_find_sticks_clicked()
+        #else:
+        #    if self.camera.rep_image is None:
+        #        self.camera.rep_image = cv.resize(cv.imread(str(self.camera.rep_image_path)),
+        #                                          (0, 0), fx=0.25, fy=0.25)
+        #    self.initialize_rest_of_gui()
 
     def initialize_rest_of_gui(self):
         self.ui.image_list.setModel(self.image_list)
@@ -391,7 +394,7 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         c_pixmap.set_display_mode()
         c_pixmap.set_show_stick_widgets(True)
-        cam: Camera = None
+        cam: Optional[Camera] = None
         cam_position = "right"
 
         if self.camera.id == cam1.id:  # self.camera is on the left
@@ -688,7 +691,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         if length % 2 == 0:
             length = max(3, length - 1)
         p0 = self.stick_detection_dialog.spinP0.value()
-        antar.find_sticks(self.current_viewed_image, hog_th, width, length, p0)
+        #antar.find_sticks(self.current_viewed_image, hog_th, width, length, p0)
 
     def detect_sticks2(self, _: int):
         if self.current_viewed_image is None:
@@ -750,3 +753,16 @@ class CameraViewWidget(QtWidgets.QWidget):
         idx_from = self.image_list.createIndex(start, 0)
         idx_to = self.image_list.createIndex(end, 2)
         self.image_list.dataChanged.emit(idx_from, idx_to)
+
+    def handle_find_sticks_clicked(self):
+        #for sw in self.stick_widgets:
+        #    sw.btn_delete.click_button(True)
+        self.camera.remove_sticks()
+        print(self.current_viewed_image.shape)
+        gray = cv.pyrDown(cv.cvtColor(self.current_viewed_image, cv.COLOR_BGR2GRAY))
+        lines = antar.detect_sticks(gray)
+        valid_lines = list(filter(lambda line: antar.stick_pipeline.predict(antar.extract_features_from_line(gray, line, True)), lines))
+        f = 1.0
+        valid_lines = list(map(lambda line: (f * line).astype(np.int32), valid_lines))
+        sticks: List[Stick] = self.camera.create_new_sticks(valid_lines)
+        self.camera.save()

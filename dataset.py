@@ -379,7 +379,7 @@ class Dataset(QObject):
         self.unlink_stick_(stick)
         self.unused_stick_ids.append(stick.id)
         del self.stick_local_to_global_ids[stick.camera_id][stick.local_id]
-        self.stick_removed.emit(stick)
+        #self.stick_removed.emit(stick)
 
     def handle_sticks_removed(self, sticks: List[Stick]):
         for stick in sticks:

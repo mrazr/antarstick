@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple, Set
 import sys
 import multiprocessing as mp
 from random import randint
+import pickle
 
 import cv2 as cv
 import numpy as np
@@ -34,6 +35,7 @@ from pandas import DataFrame
 import joblib
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
 import math
 from math import comb
 import statistics
@@ -67,11 +69,19 @@ hog_desc = cv.HOGDescriptor(STICK_WINDOW, (16, 16), (8, 8), (8, 8), 18, 1, -1, c
 STICK_HOG_FILE = str(Path(sys.argv[0]).parent / 'camera_processing/stick_hog_32x64_gamma_18b')
 SNOW_SVC_FILE = str(Path(sys.argv[0]).parent / 'camera_processing/snow_svc.joblib')
 SNOW_SCALER_FILE = str(Path(sys.argv[0]).parent / 'camera_processing/snow_scaler.joblib')
+STICK_PIPELINE_FILE = Path(sys.argv[0]).parent / 'camera_processing/stick_verification_pipeline4.joblib'
 
 try:
     success = hog_desc.load(STICK_HOG_FILE)
 except:
     print(f'Could not load file {STICK_HOG_FILE}')
+    exit(-1)
+
+try:
+    with open(STICK_PIPELINE_FILE, 'rb') as f:
+        stick_pipeline: Pipeline = joblib.load(f)
+except FileNotFoundError:
+    print(f'Could not load file {STICK_PIPELINE_FILE}') #TODO show error message dialog
     exit(-1)
 
 snow_svc: SVC = joblib.load(SNOW_SVC_FILE)
@@ -882,26 +892,37 @@ def segment_sticks(img: np.ndarray, debug: bool):
     print(f'hough took {time() - start_hough} secs')
     print(f'it took {time() - start} secs')
     f = 1.0
-    draw = cv.cvtColor(gray, cv.COLOR_GRAY2BGR)
+    #draw = cv.cvtColor(gray, cv.COLOR_GRAY2BGR)
+    draw = orig.copy()
     draw2 = draw.copy()
     f = 1
     if lines is not None:
         lines = np.reshape(lines, (-1, 2, 2))
         lines_ = cluster_lines(lines, draw, debug)
+        #print(lines_)
+        #extract_features_from_lines(orig, gray, lines_)
+        #return
+        temp = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
         for line_ in lines_:
             p = line_[0]
             q = line_[1]
-            cv.line(draw, (int(f * p[0]), int(f * p[1])), (int(f * q[0]), int(f * q[1])), [0, 255, 0], 1)
+            _, f_vec = extract_features_from_line(temp, 2 * line_)
+            f_vec = np.reshape(list(f_vec.values()), (1, -1))
+            is_stick = stick_pipeline.predict(f_vec)
+            if is_stick:
+                color = [0, 255, 0]
+            else:
+                color = [0, 0, 255]
+            cv.line(draw, (int(f * p[0]), int(f * p[1])), (int(f * q[0]), int(f * q[1])), color, 1)
         for line_ in lines:
             p = line_[0]
             q = line_[1]
             cv.line(draw2, (int(f * p[0]), int(f * p[1])), (int(f * q[0]), int(f * q[1])), [0, 255, 0], 1)
-        visualize_line_signals(lines_, orig, gray)
-
-    cv.imshow('uhmt_th', 255 * th)
+        visualize_line_signals(lines_, orig, gray, img)
+    #cv.imshow('uhmt_th', 255 * th)
     cv.imshow('gray', gray)
-    cv.imshow('gray_eq', gray_eq)
-    cv.imshow('lines', draw2)
+    #cv.imshow('gray_eq', gray_eq)
+    #cv.imshow('lines', draw2)
     #cv.imshow('lines', cv.resize(draw2, (0, 0), fx=0.5, fy=0.5))
     #cv.imshow('lines_clustered', cv.resize(draw, (0, 0), fx=0.5, fy=0.5))
     cv.imshow('lines_clustered', draw)
@@ -950,7 +971,7 @@ def get_sticks_in_folder2(folder: Path) -> Optional[Tuple[List[np.ndarray], Path
     f = 1
     if lines is not None:
         lines = np.reshape(lines, (-1, 2, 2))
-        lines_ = cluster_lines(lines, draw, False)
+        lines_ = cluster_lines(lines)
         for line_ in lines_:
             p = line_[0]
             q = line_[1]
@@ -1011,7 +1032,7 @@ def get_rotated_bbox(line: np.ndarray) -> np.ndarray:
     #return cv.boxPoints(rect).astype(np.int32)
     return rect
 
-def cluster_lines(lines: np.ndarray, img: np.ndarray, debug: bool) -> np.ndarray:
+def cluster_lines(lines: np.ndarray) -> np.ndarray:
     box_points = np.array(list(map(lambda idx_line: (get_rotated_bbox(idx_line[1]), idx_line[0]), enumerate(lines))))
 
     for i, line in enumerate(lines):
@@ -1069,21 +1090,25 @@ def cluster_lines(lines: np.ndarray, img: np.ndarray, debug: bool) -> np.ndarray
 
     return result_lines
 
-def line_upright_bbox(line: np.ndarray, width = 25) -> np.ndarray:
+def line_upright_bbox(line: np.ndarray, max_width: int, max_height: int, width = 25) -> np.ndarray:
     w = max(1, int((width - 1) / 2))
-    return np.array([np.min(line, axis=0) - w, np.max(line, axis=0) + w])
+    top_left = np.maximum(np.min(line, axis=0) - w, 0)
+    bottom_right = np.max(line, axis=0) + w
+    bottom_right[0] = np.minimum(bottom_right[0], max_width-1)
+    bottom_right[1] = np.minimum(bottom_right[1], max_height-1)
+    return np.array([top_left, bottom_right])
 
-def visualize_line_signals(lines: np.ndarray, img: np.ndarray, gray: np.ndarray):
-    print('hello')
+def visualize_line_signals(lines: np.ndarray, img: np.ndarray, gray: np.ndarray, orig: np.ndarray):
     line_map = -1 * np.ones((img.shape[0], img.shape[1]), np.int8)
 
     #draw = cv.pyrDown(img)
     draw = img.copy()
     for i, line in enumerate(lines):
-        bbox = line_upright_bbox(line, 25)
+        bbox = line_upright_bbox(line, max_width=img.shape[1], max_height=img.shape[0], width=25)
         line_map[bbox[0,1]:bbox[1,1],bbox[0,0]:bbox[1,0]] = i
         mag = cv.magnitude(cv.Sobel(gray, cv.CV_32F, 1, 0), cv.Sobel(gray, cv.CV_32F, 0, 1))
-        mag_lines = skimage.measure.profile_line(mag, line[0,::-1], line[1,::-1], linewidth=15, reduce_func=None)
+        mag_lines = skimage.measure.profile_line(mag, line[0,::-1], line[1,::-1], linewidth=15, reduce_func=None,
+                                                 mode='constant')
         line_sums = np.sum(mag_lines, axis=0)
         left_edge_idx = np.argmax(line_sums[::-1][8:]) + 1
         right_edge_idx = np.argmax(line_sums[8:]) + 1
@@ -1098,11 +1123,12 @@ def visualize_line_signals(lines: np.ndarray, img: np.ndarray, gray: np.ndarray)
     gray_up = cv.pyrUp(gray)
     hsv = cv.cvtColor(cv.pyrUp(img), cv.COLOR_BGR2HSV)
     cv.namedWindow('lines')
-    cv.setMouseCallback('lines', line_click_handler, (line_map, lines, gray_up, hsv))
+    cv.setMouseCallback('lines', line_click_handler, (line_map, lines, cv.cvtColor(orig, cv.COLOR_BGR2GRAY), hsv, orig))
     cv.imshow('lines', draw)
 
     cv.waitKey(0)
     cv.destroyAllWindows()
+
 
 def line_click_handler(e, x, y, flags, params):
     if e != cv.EVENT_LBUTTONUP:
@@ -1111,19 +1137,26 @@ def line_click_handler(e, x, y, flags, params):
     lines = params[1]
     img = params[2]
     hsv = params[3]
+    orig = params[4]
     line_id = line_map[y,x]
     if line_id < 0:
         return
     line = 2 * lines[line_id]
-    bbox = line_upright_bbox(line, width=50)
+    bbox = line_upright_bbox(line, max_width=img.shape[1], max_height=img.shape[0], width=75)
+    off_y = 35
     line_roi = img[bbox[0,1]:bbox[1,1],bbox[0,0]:bbox[1,0]]
-
+    orig_line_roi = orig[bbox[0,1]:bbox[1,1],bbox[0,0]:bbox[1,0]]
 
     hsv_line_roi = hsv[bbox[0,1]:bbox[1,1],bbox[0,0]:bbox[1,0]]
 
     #line_roi = cv.equalizeHist(line_roi)
     line = line - bbox[0]
-    hsv_prof_line = np.array(skimage.measure.profile_line(hsv_line_roi, line[0,::-1] - np.array([25, 0]), line[1,::-1] + np.array([25, 0]), linewidth=25, reduce_func=None), np.uint8)
+    v = line[1] - line[0]
+    v = v / np.linalg.norm(v)
+    line[0] -= (off_y * v).astype(np.int32)
+    line[1] += (off_y * v).astype(np.int32)
+    hsv_prof_line = np.array(skimage.measure.profile_line(hsv_line_roi, line[0,::-1], line[1,::-1], linewidth=25,
+                                                          reduce_func=None, mode='constant'), np.uint8)
 
     prof_shape = (hsv_prof_line.shape[0], hsv_prof_line.shape[1])
     hsv_signal = np.dstack(((360.0 * (hsv_prof_line[:,:,0] / 255.0)).astype(np.float32), np.ones(prof_shape, np.float32), np.ones(prof_shape, np.float32)))
@@ -1134,19 +1167,31 @@ def line_click_handler(e, x, y, flags, params):
     sat_signal = cv.convertScaleAbs(cv.cvtColor(sat_signal, cv.COLOR_HSV2BGR), alpha=255)
     val_signal = cv.convertScaleAbs(cv.cvtColor(val_signal, cv.COLOR_HSV2BGR), alpha=255)
 
-    cv.imshow('hsv_s', hsv_signal)
-    cv.imshow('sat_s', sat_signal)
-    cv.imshow('val_s', val_signal)
+    #cv.imshow('hsv_s', hsv_signal)
+    #cv.imshow('sat_s', sat_signal)
+    #cv.imshow('val_s', val_signal)
 
     dx, dy = cv.Sobel(line_roi, cv.CV_32F, 1, 0), cv.Sobel(line_roi, cv.CV_32F, 0, 1)
     mag = cv.magnitude(dx, dy)
     mag /= np.max(mag)
 
-    angles = cv.phase(dx, dy, None, True)
+    angles = cv.phase(dx, np.abs(dy), None, True)
+    angles = np.mod(angles - 90, 180)
+    #angles = np.where(angles > 180, angles - 180, angles)
+    #if angle > 90:
+    #    angles = np.where(angles < 90, angles + 180, angles)
+    #else:
+    #    angles = np.where(angles > 90, angles - 180, angles)
+
     angle = line_angle(line, True)
 
     edge_pos = line_edge_offsets(line, mag)
-    is_line_on_stick(line, edge_pos, angles)
+    #is_line_on_stick(line, edge_pos, angles)
+
+    left_mag = skimage.measure.profile_line(mag, line[0,::-1] - [0, edge_pos[0]], line[1,::-1] - [0, edge_pos[0]],
+                                            linewidth=3, reduce_func=None)
+    right_mag = skimage.measure.profile_line(mag, line[0,::-1] + [0, edge_pos[1]], line[1,::-1] + [0, edge_pos[1]],
+                                             linewidth=3, reduce_func=None, mode='constant')
 
     low, high = (angle - 10) % 360, (angle + 10) % 360
     if low > high:
@@ -1160,16 +1205,43 @@ def line_click_handler(e, x, y, flags, params):
     else:
         good_angles = np.bitwise_or(good_angles, cv.inRange(angles, low, high))
     good_angles = cv.bitwise_and(good_angles, cv.inRange(mag, 0.1, 1.0))
-    hsv = np.dstack((angles, np.ones(angles.shape, np.float32), mag)) #np.ones(angles.shape, np.float32)))
-    bgr = cv.convertScaleAbs(cv.cvtColor(hsv, cv.COLOR_HSV2BGR), None, 255)
-    prof_line = np.array(skimage.measure.profile_line(bgr, line[0,::-1] - np.array([12, 0]), line[1,::-1] + np.array([12, 0]), linewidth=25, reduce_func=None), np.uint8)
-    viz = visualize_signal(prof_line)
-    line_viz_enlarged = cv.resize(bgr, (0, 0), fx=3, fy=3, interpolation=cv.INTER_NEAREST)
-    cv.imshow('line_signal', line_viz_enlarged)
-    cv.setMouseCallback('line_signal', pick_angle, (angles, angle,))
+    #hsv = np.dstack((angles, np.ones(angles.shape, np.float32), mag)) #np.ones(angles.shape, np.float32)))
+    #bgr = cv.convertScaleAbs(cv.cvtColor(hsv, cv.COLOR_HSV2BGR), None, 255)
+    left_angles = skimage.measure.profile_line(angles, line[0,::-1] - [0, edge_pos[0]], line[1,::-1] - [0, edge_pos[0]],
+                                               linewidth=5, reduce_func=None, mode='constant')
+    left_angles = np.where(left_angles > 180, left_angles - 180, left_angles)
+    left_diff = np.where(np.abs(left_angles - angle) < 11, 1, -1)
+    left_diff = np.reshape(np.max(left_diff, axis=1), (-1, 1))
+    right_angles = skimage.measure.profile_line(angles, line[0,::-1] + [0, edge_pos[1]], line[1,::-1] + [0, edge_pos[1]]
+                                                , linewidth=5, reduce_func=None, mode='constant')
+    right_angles = np.where(right_angles > 180, right_angles - 180, right_angles)
+    right_diff = np.where(np.abs(right_angles - angle) < 11, 1, -1)
+    right_diff = np.reshape(np.max(right_diff, axis=1), (-1, 1))
+    stick_edge_indicator = np.hstack((left_diff, right_diff))
+    top_end, bottom_end = find_stick_end(stick_edge_indicator)
+
+    cv.circle(orig_line_roi, (int(line[0,0]), int(line[0,1]) + top_end), 3, [0, 255, 0])
+    cv.circle(orig_line_roi, (int(line[1,0]), int(line[0,1]) + bottom_end), 3, [255, 0, 0])
+
+    #prof_line = np.array(skimage.measure.profile_line(bgr, line[0,::-1] - np.array([12, 0]), line[1,::-1] + np.array([12, 0]), linewidth=25, reduce_func=None, mode='constant'), np.uint8)
+    #viz = visualize_signal(prof_line)
+    #line_viz_enlarged = cv.resize(bgr, (0, 0), fx=3, fy=3, interpolation=cv.INTER_NEAREST)
+
+    #cv.imwrite(f'line{line_id}.jpg', orig_line_roi)
+    #cv.imwrite(f'line{line_id}_angles.jpg', bgr)
+    #with open(f'line{line_id}_coords.txt', 'wb') as f:
+    #    pickle.dump(line, f)
+
+    #cv.imshow('line_signal', line_viz_enlarged)
+    #cv.setMouseCallback('line_signal', pick_angle, (angles, angle, mag))
     cv.imshow('line_roi', line_roi)
-    cv.imshow('good', good_angles)
-    cv.imshow('mag', cv.convertScaleAbs(mag, alpha=255))
+    #cv.imshow('good', good_angles)
+    #cv.imshow('mag', cv.convertScaleAbs(mag, alpha=255))
+    #cv.imshow('left_mags', cv.convertScaleAbs(left_mag, alpha=255))
+    #cv.imshow('right_mags', cv.convertScaleAbs(right_mag, alpha=255))
+    #cv.imshow('left_ang', left_angles)
+    #cv.imshow('right_ang', right_angles)
+    cv.imshow('stick_ends', orig_line_roi)
 
 def visualize_signal(signal: np.ndarray) -> np.ndarray:
     if signal.ndim > 1:
@@ -1180,8 +1252,8 @@ def visualize_signal(signal: np.ndarray) -> np.ndarray:
     return viz
 
 def line_angle(line: np.ndarray, normal: bool = False) -> float:
-    v = line[0] - line[1]
-    return math.atan2(v[1], v[0])
+    v = line[1] - line[0]
+    return (math.degrees(math.atan2(v[1], v[0]))) % 180
     v = v / np.linalg.norm(v)
     angle = math.degrees(math.acos(np.dot(v, np.array([0, 1]))))
     if normal:
@@ -1193,12 +1265,15 @@ def pick_angle(e, x, y, flags, params):
         return
     angles = params[0]
     angle = params[1]
+    mag = params[2]
     print(f'angle is {angles[y // 3,x // 3]} and norma line angle is {params[1]}')
     print(f'range to check is {((angle - 5) % 360, (angle + 5) % 360)}, {((angle + 175) % 360, (angle + 185) % 360)}')
+    print(f'mag is {mag[y // 3, x // 3]}')
 
 def line_edge_offsets(line: np.ndarray, mag: np.ndarray) -> List[int]:
     #bbox = line_upright_bbox(line, 17)
-    mag_lines = skimage.measure.profile_line(mag, line[0, ::-1], line[1, ::-1], linewidth=15, reduce_func=None)
+    mag_lines = skimage.measure.profile_line(mag, line[0, ::-1], line[1, ::-1], linewidth=15, reduce_func=None,
+                                             mode='constant')
     line_sums = np.sum(mag_lines, axis=0)
     left_edge_idx = np.argmax(line_sums[::-1][8:]) + 1
     right_edge_idx = np.argmax(line_sums[8:]) + 1
@@ -1209,11 +1284,12 @@ def is_line_on_stick(line: np.ndarray, edge_pos: List[int], angles: np.ndarray) 
     left_angles = skimage.measure.profile_line(angles,
                                                line[0,::-1] - [0, edge_pos[0]],
                                                line[1,::-1] - [0, edge_pos[0]], mode='reflect')
-    left_angles = np.mod(left_angles + 180, 180)
-    left_angles = np.where(left_angles < 100, left_angles + 180, left_angles)
+    left_angles = np.where(left_angles > 180, left_angles - 180, left_angles)
     right_angles = skimage.measure.profile_line(angles,
                                                line[0,::-1] + [0, edge_pos[1]],
                                                line[1,::-1] + [0, edge_pos[1]], mode='reflect')
+
+    right_angles = np.where(right_angles > 180, right_angles - 180, right_angles)
 
     diff = np.abs(left_angles - right_angles)
 
@@ -1229,30 +1305,95 @@ def is_line_on_stick(line: np.ndarray, edge_pos: List[int], angles: np.ndarray) 
 
 features = None
 labels = None
-FEATURES = ['DIFF_MEAN', 'DIFF_STD', 'LEFT_MEAN', 'LEFT_STD', 'RIGHT_MEAN', 'RIGHT_STD', 'LR_MEAN_DIFF', 'I_STD']
+FEATURES = ['DIFF_MEAN', 'DIFF_STD', 'LEFT_STD', 'RIGHT_STD', 'LR_MEAN_DIFF', 'I_STD', 'DIFF_FROM_ANGLE', 'LEFT_PER', 'RIGHT_PER', 'LEFT_RIGHT_DIFF']
+lines_copied = None
 def extract_features_from_lines(img: np.ndarray, gray: np.ndarray, lines: np.ndarray):
+    global lines_copied, features, labels, FEATURES
     if features is None:
         features = {}
         labels = []
         for feature in FEATURES:
             features[feature] = []
-
-    line_map = np.zeros(gray.shape, np.uint8)
+    local_features = {}
+    local_labels = []
+    for feature in FEATURES:
+        local_features[feature] = []
+    line_map = -1 * np.ones(gray.shape, np.int8)
     line_img = img.copy()
-    line_count = line.shape[0]
-    for line in lines:
-        line = lines[line_idx]
-        bbox = line_upright_bbox(line, width=25)
+    line_count = len(lines)
+    lines_copied = lines.copy()
+    for i, line in enumerate(lines):
+        #line = lines[line_idx]
+        bbox = line_upright_bbox(line, width=25, max_width=line_img.shape[1], max_height=line_img.shape[0])
         line_map[bbox[0, 1]:bbox[1, 1], bbox[0, 0]:bbox[1, 0]] = i
         edge_pos, f_vec = extract_features_from_line(gray, line)
         draw_line_with_edge(line_img, line, edge_pos)
-        for f_id, feature in enumerat(f_vec):
-            features[FEATURES[f_id]].append(feature)
-        labels.append(1)
+        for feature_name, value in f_vec.items():
+            local_features[feature_name].append(value)
+        local_labels.append(1)
         cv.rectangle(line_img, (int(bbox[0,0]), int(bbox[0,1])),
                      (int(bbox[1,0]), int(bbox[1,1])), [0, 255, 0])
+    cv.namedWindow('lines')
+    cv.setMouseCallback('lines', feature_line_img_callback, param=(local_features, local_labels, line_map, gray,
+                                                                   lines_copied, line_img))
+
     cv.imshow('lines', line_img)
-    cv.setMouseCallback('lines', feature_line_img_callback, params=(lines_copy, ))
+    key = cv.waitKey(0)
+    if key == ord('a') or key == ord('q'):
+        for feature in FEATURES:
+            features[feature].extend(local_features[feature])
+        labels.extend(local_labels)
+        if key == ord('q'):
+            to_save = features.copy()
+            to_save['LABEL'] = labels
+            df = pd.DataFrame(data=to_save).dropna(axis=0)
+            df.to_csv('line_features.csv', mode='a', header=True)
+            features = None
+            labels = None
+    cv.destroyWindow('lines')
+
+def feature_line_img_callback(e, x, y, flags, params):
+    global lines_copied
+    line_map = params[2]
+    local_features = params[0]
+    local_labels = params[1]
+    lines = params[4]
+    gray = params[3]
+    line_img = params[5]
+    if e not in [cv.EVENT_LBUTTONUP, cv.EVENT_RBUTTONUP, cv.EVENT_MBUTTONUP]:
+        return
+    line_id = line_map[y,x]
+    if line_id < 0:
+        new_id = len(local_labels)
+        y_off = randint(20, 150)
+        x_off = randint(-20, 20)
+        line = np.array([[x+x_off, y-y_off], [x, y]], np.int32)
+        bbox = line_upright_bbox(line, max_width=line_map.shape[1], max_height=line_map.shape[0], width=25)
+        line_map[bbox[0,1]:bbox[1,1],bbox[0,0]:bbox[1,0]] = new_id
+        edge_pos, f_vec = extract_features_from_line(gray, line)
+        for feature_name, value in f_vec.items():
+            local_features[feature_name].append(value)
+        local_labels.append(0)
+        cv.rectangle(line_img, (int(bbox[0,0]), int(bbox[0,1])),
+                     (int(bbox[1,0]), int(bbox[1,1])), [0, 0, 255])
+        draw_line_with_edge(line_img, line, edge_pos)
+        #lines_copied = np.append(lines_copied, line)
+        lines_copied.append(line)
+    else:
+        if e == cv.EVENT_LBUTTONUP:
+            local_labels[line_id] = 1
+            color = [0, 255, 0]
+        elif e == cv.EVENT_RBUTTONUP:
+            local_labels[line_id] = 0
+            color = [0, 0, 255]
+        elif e == cv.EVENT_MBUTTONUP:
+            local_labels[line_id] = math.nan
+            color = [255, 0, 255]
+        line = lines[line_id]
+        bbox = line_upright_bbox(line, max_width=line_map.shape[1], max_height=line_map.shape[0], width=25)
+        cv.rectangle(line_img, (int(bbox[0,0]), int(bbox[0,1])),
+                     (int(bbox[1,0]), int(bbox[1,1])), color)
+    cv.imshow('lines', line_img)
 
 def draw_line_with_edge(line_img: np.ndarray, line: np.ndarray, edge_pos: List[int]):
     cv.line(line_img, (int(line[0, 0]), int(line[0, 1])),
@@ -1263,34 +1404,118 @@ def draw_line_with_edge(line_img: np.ndarray, line: np.ndarray, edge_pos: List[i
             (int(line[1, 0] + edge_pos[1]), int(line[1, 1])), [255, 0, 0], lineType=cv.LINE_8)
 
 
-def extract_features_from_line(gray: np.ndarray, line: np.ndarray) -> Tuple[List[int], List[float]]:
-    bbox = line_upright_bbox(line, width=25)
+def extract_features_from_line(gray: np.ndarray, line: np.ndarray, plain_fvec: bool = True) -> np.ndarray:
+    bbox = line_upright_bbox(line, max_width=gray.shape[1], max_height=gray.shape[0], width=25)
     line_roi = gray[bbox[0, 1]:bbox[1, 1], bbox[0, 0]:bbox[1, 0]]
-    intensity = skimage.measure.profile_line(gray, line[0, ::-1], line[1, ::-1], mode='reflect')
+    intensity = skimage.measure.profile_line(gray, line[0, ::-1], line[1, ::-1], mode='constant')
     dx, dy = cv.Sobel(line_roi, cv.CV_32F, 1, 0), cv.Sobel(line_roi, cv.CV_32F, 0, 1)
     mag, angles = cv.magnitude(dx, dy), cv.phase(dx, dy, angleInDegrees=True)
+
+    angles = np.mod(angles - 90, 180)
 
     line_l = line - bbox[0]
     edge_pos = line_edge_offsets(line_l, mag)
 
     left_angles = skimage.measure.profile_line(angles,
                                                line_l[0,::-1] - [0, edge_pos[0]],
-                                               line_l[1,::-1] - [0, edge_pos[0]], mode='reflect')
-    left_angles = np.mod(left_angles + 180, 180)
-    left_angles = np.where(left_angles < 100, left_angles + 180, left_angles)
+                                               line_l[1,::-1] - [0, edge_pos[0]], mode='constant', linewidth=3,
+                                               reduce_func=None)
+    #left_angles = np.where(left_angles > 180, left_angles - 180, np.mod(left_angles + 180, 180))
+    #left_angles = np.where(left_angles >= 270, left_angles - 180, left_angles)
+    left_angles = np.where(left_angles > 180, left_angles - 180, left_angles)
+    #left_angles = np.where(left_angles < 100, left_angles + 180, left_angles)
     right_angles = skimage.measure.profile_line(angles,
                                                 line_l[0,::-1] + [0, edge_pos[1]],
-                                                line_l[1,::-1] + [0, edge_pos[1]], mode='reflect')
+                                                line_l[1,::-1] + [0, edge_pos[1]], mode='constant', linewidth=3,
+                                                reduce_func=None)
+    #right_angles = np.where(right_angles >= 270, right_angles - 180, right_angles)
+    right_angles = np.where(right_angles > 180, right_angles - 180, right_angles)
 
-    diff = np.abs(left_angles - right_angles)
+    angle = line_angle(line)
 
-    return edge_pos, {
+    right_angle_diff = np.abs(right_angles - angle)
+    right_angle_diff = np.count_nonzero(right_angle_diff < 11) / 3.0
+    left_angle_diff = np.abs(left_angles - angle)
+    left_angle_diff = np.count_nonzero(left_angle_diff < 11) / 3.0
+
+    diff = np.abs(left_angles[:,1] - right_angles[:,1])
+    features = {
         FEATURES[0] : np.mean(diff),
         FEATURES[1] : np.std(diff),
-        FEATURES[2] : np.mean(left_angles),
-        FEATURES[3] : np.std(left_angles),
-        FEATURES[4] : np.mean(right_angles),
-        FEATURES[5] : np.std(right_angles),
-        FEATURES[6] : np.abs(np.mean(left_angles) - np.mean(right_angles)),
-        FEATURES[7] : np.std(intensity),
+        #FEATURES[2] : np.mean(left_angles),
+        FEATURES[2] : np.std(left_angles),
+        #FEATURES[4] : np.mean(right_angles),
+        FEATURES[3] : np.std(right_angles),
+        FEATURES[4] : np.abs(np.mean(left_angles) - np.mean(right_angles)),
+        FEATURES[5] : np.std(intensity),
+        FEATURES[6] : np.mean(np.abs(left_angles - angle)),
+        FEATURES[7] : left_angle_diff / float(left_angles.shape[0]),
+        FEATURES[8] : right_angle_diff / float(right_angles.shape[0]),
+        #FEATURES[9] : np.abs(left_angles - right_angles),
     }
+    if plain_fvec:
+        return np.reshape(list(features.values()), (1, -1))
+    return edge_pos, features
+
+def find_stick_end(stick_edge_indicator: np.ndarray) -> List[int]:
+    top_sums = np.zeros((stick_edge_indicator.shape[0],), np.int32)
+    bottom_sums = np.zeros((stick_edge_indicator.shape[0],), np.int32)
+
+    for i in range(stick_edge_indicator.shape[0]):
+        top_sums[i] = np.sum(stick_edge_indicator[i:])
+        bottom_sums[i] = np.sum(stick_edge_indicator[:i])
+
+    top_end = np.argmax(top_sums)
+    bottom_end = np.argmax(bottom_sums)
+
+    return [int(top_end), int(bottom_end)]
+
+def detect_sticks(gray: np.ndarray):
+    clahe.setClipLimit(5.0)
+    gray_eq = clahe.apply(gray)
+
+    hmt_dbd1, _ = uhmt(gray_eq, hmt_selems[0][0])
+    hmt_dbd3, _ = uhmt(gray_eq, hmt_selems[0][1])
+    hmt_dbd5, _ = uhmt(gray_eq, hmt_selems[0][2])
+    hmt_dbd7, _ = uhmt(gray_eq, hmt_selems[0][3])
+    hmt_bdb1, _ = uhmt(gray_eq, hmt_selems[1][0])
+    hmt_bdb3, _ = uhmt(gray_eq, hmt_selems[1][1])
+    hmt_bdb5, _ = uhmt(gray_eq, hmt_selems[1][2])
+    hmt_bdb7, _ = uhmt(gray_eq, hmt_selems[1][3])
+
+    _, hmt_dbd1_ = cv.threshold(hmt_dbd1, 7.0, 1.0, cv.THRESH_BINARY)# | cv.THRESH_OTSU)
+    _, hmt_dbd3_ = cv.threshold(hmt_dbd3, 7.0, 1.0, cv.THRESH_BINARY)# | cv.THRESH_OTSU)
+    _, hmt_dbd5_ = cv.threshold(hmt_dbd5, 7.0, 1.0, cv.THRESH_BINARY)# | cv.THRESH_OTSU)
+    _, hmt_dbd7_ = cv.threshold(hmt_dbd7, 7.0, 1.0, cv.THRESH_BINARY)# | cv.THRESH_OTSU)
+    _, hmt_bdb1_ = cv.threshold(hmt_bdb1, 7.0, 1.0, cv.THRESH_BINARY)# | cv.THRESH_OTSU)
+    _, hmt_bdb3_ = cv.threshold(hmt_bdb3, 7.0, 1.0, cv.THRESH_BINARY)# | cv.THRESH_OTSU)
+    _, hmt_bdb5_ = cv.threshold(hmt_bdb5, 7.0, 1.0, cv.THRESH_BINARY)# | cv.THRESH_OTSU)
+    _, hmt_bdb7_ = cv.threshold(hmt_bdb7, 7.0, 1.0, cv.THRESH_BINARY)# | cv.THRESH_OTSU)
+
+    th1 =  asf(hmt_dbd1_, 9, 1, 'co') #cv.morphologyEx(hmt_dbd1_, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (1, 9)))
+    th2 =  asf(hmt_dbd3_, 9, 1, 'co') #cv.morphologyEx(hmt_dbd3_, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (1, 9)))
+    th3 =  asf(hmt_bdb1_, 9, 1, 'co') #cv.morphologyEx(hmt_dbd5_, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (1, 9)))
+    th4 =  asf(hmt_bdb3_, 9, 1, 'co') #cv.morphologyEx(hmt_dbd7_, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (1, 9)))
+    th5 =  asf(hmt_bdb5_, 9, 1, 'co') #cv.morphologyEx(hmt_bdb1_, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (1, 9)))
+    th6 =  asf(hmt_dbd5_, 9, 1, 'co') #cv.morphologyEx(hmt_bdb3_, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (1, 9)))
+    th7 =  asf(hmt_dbd7_, 9, 1, 'co') #cv.morphologyEx(hmt_bdb5_, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (1, 9)))
+    th8 =  asf(hmt_bdb7_, 9, 1, 'co') #cv.morphologyEx(hmt_bdb7_, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (1, 9)))
+
+    th = np.bitwise_or(th1, th2)
+    th = np.bitwise_or(th, th3)
+    th = np.bitwise_or(th, th4)
+    th = np.bitwise_or(th, th5)
+    th = np.bitwise_or(th, th6)
+    th = np.bitwise_or(th, th7)
+    th = np.bitwise_or(th, th8)
+
+    th_ = cv.erode(th, cv.getStructuringElement(cv.MORPH_RECT, (2, 1)), anchor=(0,0))
+    th_ = cv.dilate(th_, cv.getStructuringElement(cv.MORPH_RECT, (2, 1)), anchor=(1,0))
+
+    lines = cv.HoughLinesP(th_, 1.0, np.pi / 180.0, params['hough_th'], None, params['line_length'], params['line_gap'])
+    f = 1.0
+    f = 1
+    if lines is None:
+        return []
+    lines = np.reshape(lines, (-1, 2, 2))
+    return cluster_lines(lines)

@@ -66,7 +66,7 @@ class Stick:
         """
         return Stick(self.local_id, factor * self.top, factor * self.bottom)
     
-    def set_endpoints(self, y1: int, x1: int, y2: int, x2: int):
+    def set_endpoints(self, x1: int, y1: int, x2: int, y2: int):
         self.top = np.array([x1, y1])
         self.bottom = np.array([x2, y2])
         self.__post_init__()

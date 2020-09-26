@@ -78,9 +78,9 @@ class Camera(QObject):
         #self.rep_image_path = self.folder / Path(listdir(self.folder)[0]) #TODO listdir - filter out non image files
         #self.rep_image: np.ndarray = cv.resize(cv.imread(str(self.rep_image_path)), (0, 0), fx=0.25, fy=0.25,
         #                                      interpolation=cv.INTER_NEAREST)
-        self.rep_image_path: Path = None
-        self.rep_image = None
         self.image_list: List[str] = list(sorted(filter(lambda f: f[-4:].lower() == 'jpeg' or f[-3:].lower() == 'jpg', listdir(self.folder))))
+        self.rep_image_path: str = self.image_list[0]
+        self.rep_image: Optional[np.ndarray] = None
 
         self.stick_labels_column_ids = dict({})
 
@@ -195,7 +195,7 @@ class Camera(QObject):
         state = {
             #'folder': str(self.folder),
             #'rep_image_path': str(self.rep_image_path),
-            'rep_image': self.rep_image_path.name,
+            'rep_image': self.rep_image_path,
             'sticks': stick_states,
             'measurements_path': str(self.measurements_path),
             'next_stick_id': self.next_stick_id,
@@ -230,7 +230,7 @@ class Camera(QObject):
             #camera = Camera(Path(state['folder']))
             camera = Camera(folder)
             #camera.rep_image_path = Path(state['rep_image_path'])
-            camera.rep_image_path = camera.folder / state['rep_image']
+            camera.rep_image_path = state['rep_image']
             #camera.measurements_path = Path(state['measurements_path'])
             camera.measurements_path = Path(state['measurements_path'])
             camera.next_stick_id = state['next_stick_id']

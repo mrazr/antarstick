@@ -323,6 +323,8 @@ class CustomPixmap(QGraphicsObject):
         self.update()
 
     def handle_sticks_added(self, sticks: List[Stick]):
+        if len(sticks) == 0:
+            return
         if sticks[0].camera_id != self.camera.id:
             return
         for stick in sticks:
