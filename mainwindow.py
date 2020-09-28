@@ -8,8 +8,8 @@ import os
 from PyQt5.QtWidgets import (QAction, QApplication, QFileDialog, QMainWindow,
                              QToolBar, QMenu, QToolButton, QMessageBox, QPushButton)
 from PyQt5.QtCore import QThreadPool, QRunnable
-from PyQt5.Qt import QKeySequence
-from PyQt5.QtGui import QCloseEvent, QIcon
+from PyQt5.Qt import QKeySequence, Qt
+from PyQt5.QtGui import QCloseEvent, QIcon, QFontDatabase, QFont
 
 from camera_processing.widgets.camera_processing_widget import \
     CameraProcessingWidget
@@ -30,35 +30,55 @@ class CameraLoadWorker(QRunnable):
 class MainWindow(QMainWindow):
     def __init__(self):
         QMainWindow.__init__(self)
+        family_id = QFontDatabase.addApplicationFont(str(Path(sys.argv[0]).parent / 'camera_processing/TwitterEmoji.ttf'))
+        family = QFontDatabase.applicationFontFamilies(family_id)[0]
+        self.icon_font = QFont(family)
         self.setWindowTitle('Antarstick')
         self.toolbar = QToolBar()
-        self.action_ = QAction("&Add camera")
-        self.action_.triggered.connect(self.handle_add_camera_triggered)
-        self.toolbar.addAction(self.action_)
+        self.add_camera = QAction("&Add camera")
+        self.add_camera.setShortcut(QKeySequence.fromString('Ctrl+A'))
+        self.add_camera.triggered.connect(self.handle_add_camera_triggered)
+        self.add_camera.setIcon(QIcon.fromTheme('camera-photo'))
+        self.add_camera_btn = QToolButton()
+        self.add_camera_btn.setDefaultAction(self.add_camera)
+        self.add_camera_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        #self.add_camera_btn.clicked.connect(self.handle_add_camera_triggered)
+        self.toolbar.addWidget(self.add_camera_btn)
+        #self.toolbar.addAction(self.action_)
+
+        self.open_dataset_action = QAction("&Open dataset")
+        self.open_dataset_action.setShortcut(QKeySequence.fromString("Ctrl+O"))
+        self.open_dataset_action.setIcon(QIcon.fromTheme('document-open'))
+        self.open_dataset_action.triggered.connect(self.handle_open_dataset_triggered)
+
         self.open_dataset_btn = QToolButton()
+        self.open_dataset_btn.setDefaultAction(self.open_dataset_action)
+
+        self.state = self.get_config_state()
 
         self.recent_datasets: List[Path] = []
-        _recent_datasets: List[Path] = MainWindow.get_config_state()
         self.recent_menu = QMenu()
         self.recent_menu.setToolTipsVisible(True)
         self.dataset_actions = []
 
-        for ds in _recent_datasets:
-            self.add_dataset_entry_to_recent(ds)
+        for ds in self.state['recent_datasets']:
+            self.add_dataset_entry_to_recent(Path(ds))
         self.recent_menu.triggered.connect(lambda action: self.open_dataset(Path(action.toolTip())))
 
         self.open_dataset_btn.setMenu(self.recent_menu if len(self.recent_menu.actions()) > 0 else None)
 
         self.open_dataset_btn.setMenu(self.recent_menu)
         self.open_dataset_btn.setPopupMode(QToolButton.MenuButtonPopup)
-        self.save_action = self.toolbar.addAction("&Save dataset")
+        self.save_action = QAction("Save dataset")
         self.save_action.setShortcut(QKeySequence.fromString("Ctrl+S"))
         self.save_action.triggered.connect(self.handle_save_dataset_triggered)
+        self.save_action.setIcon(QIcon.fromTheme('document-save'))
+        self.save_dataset_btn = QToolButton()
+        self.save_dataset_btn.setDefaultAction(self.save_action)
+        self.save_dataset_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        #self.save_dataset_btn.addAction(self.save_action)
+        self.toolbar.addWidget(self.save_dataset_btn)
 
-        self.open_dataset_action = QAction("&Open dataset")
-        self.open_dataset_action.setShortcut(QKeySequence.fromString("Ctrl+O"))
-        self.open_dataset_btn.setDefaultAction(self.open_dataset_action)
-        self.open_dataset_action.triggered.connect(self.handle_open_dataset_triggered)
 
         self.toolbar.addWidget(self.open_dataset_btn)
 
@@ -90,7 +110,7 @@ class MainWindow(QMainWindow):
         file_dialog = QFileDialog(self)
         file_dialog.setFileMode(QFileDialog.Directory)
         if file_dialog.exec_():
-            self.setWindowTitle(file_dialog.selectedFiles()[0])
+            #self.setWindowTitle(file_dialog.selectedFiles()[0])
             self.dataset.add_camera(Path(file_dialog.selectedFiles()[0]))
 
     def handle_open_dataset_triggered(self, checked: bool):
@@ -113,7 +133,9 @@ class MainWindow(QMainWindow):
     def save_state(self):
         try:
             with open(Path(sys.argv[0]).parent / 'state.json', 'w') as f:
-                json.dump(list(map(lambda p: str(p), self.recent_datasets)), f)
+                self.state['recent_datasets'] = list(map(lambda p: str(p), self.recent_datasets))
+                json.dump(self.state, f)
+                #json.dump(list(map(lambda p: str(p), self.recent_datasets)), f)
         except PermissionError:
             pass
 
@@ -163,9 +185,14 @@ class MainWindow(QMainWindow):
         try:
             with open(Path(sys.argv[0]).parent / 'state.json', 'r') as f:
                 state = json.load(f)
-                return list(map(lambda p: Path(p), list(state)))
-        except FileNotFoundError:
-            return []
+                if sorted(list(state.keys())) != ['first_time_startup', 'recent_datasets']:
+                    raise AttributeError
+                return state
+        except (FileNotFoundError, AttributeError) as _:
+            return {
+                'first_time_startup': True,
+                'recent_datasets': [],
+            }
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self.analyzer_widget.cleanup()

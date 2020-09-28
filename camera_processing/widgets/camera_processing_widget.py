@@ -1,4 +1,5 @@
 # This Python file uses the following encoding: utf-8
+import typing
 from multiprocessing.connection import Connection
 from os import scandir, remove
 from pathlib import Path
@@ -10,11 +11,11 @@ from queue import Empty
 
 import cv2 as cv
 import numpy as np
-from PyQt5 import QtWidgets
+from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtCore import pyqtSignal as Signal, QRunnable, QThreadPool, QTimer
 from PyQt5.QtCore import pyqtSlot as Slot
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QPushButton
+from PyQt5.QtGui import QIcon, QColor, QBrush, QPalette
+from PyQt5.QtWidgets import QPushButton, QProxyStyle, QStyle, QWidget, QStyleOption, QStyleOptionTab, QTabBar
 
 import camera_processing.antarstick_processing as antar
 from camera import Camera
@@ -23,6 +24,44 @@ from dataset import Dataset
 
 logging_start = time()
 logging.basicConfig(filename='process.log', level=logging.DEBUG)
+
+
+class TabProxyStyle(QProxyStyle):
+    def __init__(self, base_style_name: str):
+        QProxyStyle.__init__(self, base_style_name)
+        self.tab_color_map: Dict[str, QBrush] = {}
+        self.next_hue = -30
+        self.should_offset = True
+
+    def drawControl(self, element: QStyle.ControlElement, option: QStyleOption, painter: QtGui.QPainter,
+                    widget: typing.Optional[QWidget] = ...) -> None:
+        if element == QStyle.CE_TabBarTab:
+            if tab := QStyleOptionTab(option):
+                if tab.text in self.tab_color_map:
+                    opt = QStyleOptionTab(tab)
+                    opt.palette.setBrush(QPalette.Background, self.tab_color_map[tab.text])
+                    return super().drawControl(element, opt, painter, widget)
+
+        super().drawControl(element, option, painter, widget)
+
+    def add_new_tab_group(self, tabs: List[str]):
+        if self.should_offset:
+            self.next_hue += 30
+            self.should_offset = False
+        else:
+            self.should_offset = True
+            self.next_hue = (self.next_hue + 180) % 360
+        color = QColor.fromHsvF(self.next_hue / 360.0, 1.0, 1.0, 1.0)
+        brush = QBrush(color)
+        for tab in tabs:
+            self.tab_color_map[tab] = brush
+
+    def set_tab_groups(self, groups: List[List[str]]):
+        self.next_hue = -30
+        self.should_offset = True
+        for group in groups:
+            self.add_new_tab_group(group)
+
 
 class Worker(QRunnable):
 
@@ -33,6 +72,9 @@ class Worker(QRunnable):
 
     def run(self) -> None:
         self.cam_widget.initialise_with(self.camera)
+
+
+LINK_MARKERS = ['🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '🟥', '🟧', '🟨', '🟩', '🟦', '🟪']
 
 
 class CameraProcessingWidget(QtWidgets.QTabWidget):
@@ -50,6 +92,8 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
     """
     def __init__(self, dataset: Dataset):
         QtWidgets.QTabWidget.__init__(self)
+        self.tab_style = TabProxyStyle('')
+        self.tabBar().setStyle(self.tab_style)
         self.setTabsClosable(True)
         self.tabCloseRequested.connect(self.handle_tab_close_requested)
         self.currentChanged.connect(self.handle_current_tab_changed)
@@ -57,6 +101,8 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self.dataset.camera_added.connect(self.handle_camera_added)
         self.dataset.camera_removed.connect(self.handle_camera_removed)
         self.dataset.loading_finished.connect(self.handle_dataset_loading_finished)
+        self.dataset.cameras_linked.connect(self.handle_cameras_linked)
+        self.dataset.cameras_unlinked.connect(self.handle_cameras_unlinked)
         self._camera_tab_map: Dict[int, int] = dict({})
 
         #self.process: Optional[Process] = None
@@ -74,7 +120,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
         self.process = Process(target=analyze_daytime_snow, args=(self.to_process, self.result_queue, self.conn1,))
 
-        self.pause_button = QPushButton(icon=QIcon.fromTheme('media-play'), text='Daytime && snow analysis')
+        self.pause_button = QPushButton(icon=QIcon.fromTheme('media-playback-start'), text='Daytime && snow analysis')
         self.pause_button.setEnabled(False)
         self.pause_button.toggled.connect(self.handle_pause_button_toggled)
         self.pause_button.setCheckable(True)
@@ -92,6 +138,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self.camera_link_available.connect(camera_widget.link_cameras_enabled)
         self._camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
         self.setCurrentIndex(self._camera_tab_map[camera.id])
+        self.setTabToolTip(self.currentIndex(), str(camera.folder))
 
         camera_widget.initialization_done.connect(self.handle_camera_widget_initialization_done)
 
@@ -173,6 +220,8 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self.dataset.camera_added.disconnect(self.handle_camera_added)
         self.dataset.camera_removed.disconnect(self.handle_camera_removed)
         self.dataset.loading_finished.disconnect(self.handle_dataset_loading_finished)
+        self.dataset.cameras_linked.disconnect(self.handle_cameras_linked)
+        self.dataset.cameras_unlinked.disconnect(self.handle_cameras_unlinked)
         self.dataset = None
         for i in range(self.count()):
             widget = self.widget(i)
@@ -186,6 +235,8 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self.dataset.camera_added.connect(self.handle_camera_added)
         self.dataset.camera_removed.connect(self.handle_camera_removed)
         self.dataset.loading_finished.connect(self.handle_dataset_loading_finished)
+        self.dataset.cameras_linked.connect(self.handle_cameras_linked)
+        self.dataset.cameras_unlinked.connect(self.handle_cameras_unlinked)
         self._camera_tab_map: Dict[int, int] = dict({})
 
     def handle_timeout(self):
@@ -227,16 +278,53 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
     def handle_pause_button_toggled(self, checked: bool):
         if not checked:
-            self.pause_button.setIcon(QIcon.fromTheme('media-play'))
+            self.pause_button.setIcon(QIcon.fromTheme('media-playback-start'))
         else:
-            self.pause_button.setIcon(QIcon.fromTheme('media-pause'))
+            self.pause_button.setIcon(QIcon.fromTheme('media-playback-pause'))
             self.logging_start = time()
             self.process = Process(target=analyze_daytime_snow, args=(self.to_process, self.result_queue, self.conn1, self.logging_start,))
             self.process.start()
             self.pause_button.setEnabled(True)
-            self.pause_button.setIcon(QIcon.fromTheme('media-pause'))
+            self.pause_button.setIcon(QIcon.fromTheme('media-playback-pause'))
             self.fetch_next_batch()
             self.timer.start(1000)
+
+    def handle_cameras_linked(self, cam1: Camera, cam2: Camera, camera_group: int):
+        #self.tab_style.add_new_tab_group([cam1.get_folder_name(), cam2.get_folder_name()])
+        #self.tab_style.set_tab_groups(list(map(lambda group: list(map(lambda cam: cam.get_folder_name(), group)),
+        #                                       self.dataset.get_camera_groups())))
+        separator = '|'
+        cam1_tab = self._camera_tab_map[cam1.id]
+        cam1_tab_text = self.tabText(cam1_tab)
+        if separator not in cam1_tab_text:
+            cam1_tab_text += separator
+        cam1_tab_text += LINK_MARKERS[camera_group]
+        self.setTabText(cam1_tab, cam1_tab_text)
+        cam2_tab = self._camera_tab_map[cam2.id]
+        cam2_tab_text = self.tabText(cam2_tab)
+        if separator not in cam2_tab_text:
+            cam2_tab_text += separator
+        cam2_tab_text += LINK_MARKERS[camera_group]
+        self.setTabText(cam2_tab, cam2_tab_text)
+
+        self.tabBar().update()
+
+    def handle_cameras_unlinked(self, cam1: Camera, cam2: Camera, camera_group: int):
+        separator = '|'
+        cam1_tab = self._camera_tab_map[cam1.id]
+        cam1_tab_text = self.tabText(cam1_tab)
+        cam1_tab_text = cam1_tab_text.replace(LINK_MARKERS[camera_group], '')
+        if cam1_tab_text.index(separator) == len(cam1_tab_text) - 1:
+            cam1_tab_text = cam1_tab_text[:-1]
+        self.setTabText(cam1_tab, cam1_tab_text)
+        cam2_tab = self._camera_tab_map[cam2.id]
+        cam2_tab_text = self.tabText(cam2_tab)
+        cam2_tab_text = cam2_tab_text.replace(LINK_MARKERS[camera_group], '')
+        if cam2_tab_text.index(separator) == len(cam2_tab_text) - 1:
+            cam2_tab_text = cam2_tab_text[:-1]
+        self.setTabText(cam2_tab, cam2_tab_text)
+
+        self.tabBar().update()
 
 
 def analyze_daytime_snow(to_process: Queue, result_queue: Queue, channel: Connection, logging_start: int):
@@ -258,3 +346,4 @@ def analyze_daytime_snow(to_process: Queue, result_queue: Queue, channel: Connec
 
         channel.send(results)
         keep_processing, items = channel.recv()
+
