@@ -12,7 +12,7 @@ from queue import Empty
 import cv2 as cv
 import numpy as np
 from PyQt5 import QtWidgets, QtGui
-from PyQt5.QtCore import pyqtSignal as Signal, QRunnable, QThreadPool, QTimer
+from PyQt5.QtCore import pyqtSignal as Signal, QRunnable, QThreadPool, QTimer, pyqtSignal
 from PyQt5.QtCore import pyqtSlot as Slot
 from PyQt5.QtGui import QIcon, QColor, QBrush, QPalette
 from PyQt5.QtWidgets import QPushButton, QProxyStyle, QStyle, QWidget, QStyleOption, QStyleOptionTab, QTabBar
@@ -90,19 +90,21 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
     camera_tab_map : Dict[int, int]
         mapping between Camera.id and QTab id
     """
-    def __init__(self, dataset: Dataset):
+    camera_loaded = pyqtSignal()
+    def __init__(self):
         QtWidgets.QTabWidget.__init__(self)
         self.tab_style = TabProxyStyle('')
         self.tabBar().setStyle(self.tab_style)
         self.setTabsClosable(True)
         self.tabCloseRequested.connect(self.handle_tab_close_requested)
         self.currentChanged.connect(self.handle_current_tab_changed)
-        self.dataset: Dataset = dataset
-        self.dataset.camera_added.connect(self.handle_camera_added)
-        self.dataset.camera_removed.connect(self.handle_camera_removed)
-        self.dataset.loading_finished.connect(self.handle_dataset_loading_finished)
-        self.dataset.cameras_linked.connect(self.handle_cameras_linked)
-        self.dataset.cameras_unlinked.connect(self.handle_cameras_unlinked)
+        self.dataset: Optional[Dataset] = None
+        #self.dataset: Dataset = dataset
+        #self.dataset.camera_added.connect(self.handle_camera_added)
+        #self.dataset.camera_removed.connect(self.handle_camera_removed)
+        #self.dataset.loading_finished.connect(self.handle_dataset_loading_finished)
+        #self.dataset.cameras_linked.connect(self.handle_cameras_linked)
+        #self.dataset.cameras_unlinked.connect(self.handle_cameras_unlinked)
         self._camera_tab_map: Dict[int, int] = dict({})
 
         #self.process: Optional[Process] = None
@@ -140,6 +142,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self.setCurrentIndex(self._camera_tab_map[camera.id])
         self.setTabToolTip(self.currentIndex(), str(camera.folder))
 
+        self.camera_loaded.emit()
         camera_widget.initialization_done.connect(self.handle_camera_widget_initialization_done)
 
         camera_widget.initialise_with(camera)
@@ -231,6 +234,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self._camera_tab_map: Dict[int, int] = dict({})
 
     def set_dataset(self, dataset: Dataset):
+        self.cleanup()
         self.dataset = dataset
         self.dataset.camera_added.connect(self.handle_camera_added)
         self.dataset.camera_removed.connect(self.handle_camera_removed)
@@ -320,8 +324,11 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         cam2_tab = self._camera_tab_map[cam2.id]
         cam2_tab_text = self.tabText(cam2_tab)
         cam2_tab_text = cam2_tab_text.replace(LINK_MARKERS[camera_group], '')
-        if cam2_tab_text.index(separator) == len(cam2_tab_text) - 1:
-            cam2_tab_text = cam2_tab_text[:-1]
+        try:
+            if cam2_tab_text.index(separator) == len(cam2_tab_text) - 1:
+                cam2_tab_text = cam2_tab_text[:-1]
+        except ValueError:
+            pass
         self.setTabText(cam2_tab, cam2_tab_text)
 
         self.tabBar().update()
