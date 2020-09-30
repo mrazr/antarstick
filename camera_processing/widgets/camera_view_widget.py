@@ -11,7 +11,7 @@ from PyQt5.QtCore import (QMarginsF, QModelIndex, QPointF, QRectF, Qt,
                           pyqtSignal, QByteArray, QThreadPool, QRect)
 from PyQt5.QtCore import pyqtSlot as Slot, QTimer
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QBrush, QColor, QFont, QPen
-from PyQt5.QtWidgets import QGraphicsScene, QGraphicsItem
+from PyQt5.QtWidgets import QGraphicsScene, QGraphicsItem, QSizePolicy, QAbstractScrollArea
 from pandas import DataFrame
 
 import camera_processing.antarstick_processing as antar
@@ -46,20 +46,15 @@ class CameraViewWidget(QtWidgets.QWidget):
         #self.ui.detectionSensitivitySlider.valueChanged.connect(self._handle_slider_value_changed)
 
         self.image_list = ImageListModel()
+        self.ui.image_list.setHorizontalHeader(None)
+        self.ui.image_list.setVerticalHeader(None)
         self.ui.image_list.setModel(self.image_list)
         self.ui.image_list.selectionModel().currentChanged.connect(self.handle_list_model_current_changed)
+        self.ui.image_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
         #self.ui.image_list.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         #self.ui.image_list.resizeColumnToContents(1)
         #self.ui.image_list.resizeColumnToContents(2)
         self.ui.image_list.setEnabled(False)
-
-        #self.ui.splitter.setStretchFactor(0, 1)
-        #self.ui.splitter.setStretchFactor(1, 4)
-
-        self.ui.splitter.setStretchFactor(0, 0)
-        self.ui.splitter.setStretchFactor(1, 1)
-
-        self.ui.splitter.splitterMoved.connect(self.handle_splitter_moved)
 
         self.dataset = dataset
         self.dataset.cameras_linked.connect(self.handle_cameras_linked)
@@ -75,7 +70,10 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.stick_link_manager.setVisible(False)
 
         self.cam_view = CamGraphicsView(self.stick_link_manager, self)
-        self.ui.cam_view_placeholder.addWidget(self.cam_view)
+        self.cam_view.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding))
+
+        self.ui.graphicsViewLayout.addWidget(self.cam_view)
+
         self.cam_view.setScene(self.graphics_scene)
         self.cam_view.rubberBandChanged.connect(self.handle_cam_view_rubber_band_changed)
         self.cam_view.rubber_band_started.connect(self.handle_cam_view_rubber_band_started)
@@ -105,6 +103,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.process_photos_clicked.connect(self.handle_process_photos_clicked)
         self.overlay_gui.clicked.connect(self.handle_overlay_gui_clicked)
         self.overlay_gui.find_sticks_clicked.connect(self.handle_find_sticks_clicked)
+        self.detect_thin_sticks = False
+        self.overlay_gui.detect_thin_sticks_set.connect(self.handle_detect_thin_sticks_set)
         #self.overlay_gui.sticks_length_clicked.connect(self.handle_sticks_length_clicked)
 
         #self.sticks_length_input = QSpinBox(None)
@@ -170,10 +170,13 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.stick_link_manager.camera = self.camera
         self.stick_link_manager.update_links()
         self.image_list.initialize(self.camera, self.camera.get_processed_count())
+        self.ui.image_list.resizeColumnToContents(1)
+        self.ui.image_list.resizeColumnToContents(2)
+        self.ui.image_list.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred))
         self.initialize_rest_of_gui()
+        select_index = self.image_list.index(0, 0)
+        self.ui.image_list.setCurrentIndex(select_index)
         if len(self.camera.sticks) == 0:
-            select_index = self.image_list.index(0, 0)
-            self.ui.image_list.setCurrentIndex(select_index)
             self.handle_find_sticks_clicked()
         #else:
         #    if self.camera.rep_image is None:
@@ -415,6 +418,7 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.gpixmap.left_add_button.set_on(True)
             self.gpixmap.left_add_button.set_tooltip("Unlink")
             self.left_link = c_pixmap
+            self.gpixmap.left_hide_button.setVisible(True)
         else:
             pos.setX(pos.x() + self.gpixmap.boundingRect().width())
             if self.right_link is not None:
@@ -424,6 +428,7 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.gpixmap.right_add_button.set_on(True)
             self.gpixmap.right_add_button.set_tooltip("Unlink")
             self.right_link = c_pixmap
+            self.gpixmap.right_hide_button.setVisible(True)
 
         c_pixmap.setPos(pos)
         c_pixmap.stick_link_requested.connect(self.stick_link_manager.handle_stick_widget_link_requested)
@@ -759,10 +764,16 @@ class CameraViewWidget(QtWidgets.QWidget):
         #    sw.btn_delete.click_button(True)
         self.camera.remove_sticks()
         print(self.current_viewed_image.shape)
-        gray = cv.pyrDown(cv.cvtColor(self.current_viewed_image, cv.COLOR_BGR2GRAY))
+        gray = cv.cvtColor(self.current_viewed_image, cv.COLOR_BGR2GRAY)
+        f = 0.5
+        if not self.detect_thin_sticks:
+            gray = cv.pyrDown(gray)
+            f = 1.0
         lines = antar.detect_sticks(gray)
         valid_lines = list(filter(lambda line: antar.stick_pipeline.predict(antar.extract_features_from_line(gray, line, True)), lines))
-        f = 1.0
         valid_lines = list(map(lambda line: (f * line).astype(np.int32), valid_lines))
         sticks: List[Stick] = self.camera.create_new_sticks(valid_lines)
         self.camera.save()
+
+    def handle_detect_thin_sticks_set(self, btn_info: Dict[str, Any]):
+        self.detect_thin_sticks = btn_info['checked']
