@@ -1,0 +1,6 @@
+"moon.svg",
+"snowflake.svg",
+"sun.svg"
+from "Weather icon set" (https://www.iconfinder.com/iconsets/weather-29)
+by "Joey Yakimowich-Payne" (https://www.iconfinder.com/jyapayne) 
+licensed under CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)

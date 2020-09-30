@@ -1,0 +1,10 @@
+"camera.svg", 
+"camera-photo.svg", 
+"dialog-close.svg", 
+"document-open.svg", 
+"document-open-recent.svg", 
+"document-save.svg", 
+"document-save-as.svg"
+from "Treepata High Contrast" (https://www.gnome-look.org/p/1015854/)
+by "Treepata" (https://www.pling.com/u/treepata/) 
+licensed under CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
