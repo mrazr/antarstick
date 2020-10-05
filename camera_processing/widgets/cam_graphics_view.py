@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, QRectF, pyqtSignal
+from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QEvent, QPointF
 from PyQt5.QtGui import QPainter, QWheelEvent, QResizeEvent, QMouseEvent, QKeyEvent
 from PyQt5.QtWidgets import QGraphicsView, QWidget, QSizePolicy
 
@@ -15,7 +15,7 @@ class CamGraphicsView(QGraphicsView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        self.setViewportUpdateMode(QGraphicsView.SmartViewportUpdate)
         self.setRenderHint(QPainter.Antialiasing)
 
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
@@ -56,7 +56,6 @@ class CamGraphicsView(QGraphicsView):
         #painter.restore()
 
     def wheelEvent(self, event: QWheelEvent) -> None:
-        pass
         delta = 1
         if event.angleDelta().y() < 0:
             delta = -1
@@ -70,7 +69,10 @@ class CamGraphicsView(QGraphicsView):
         m.setMatrix(m11, m.m12(), m.m13(), m.m21(), m22, m.m23(),
                     m.m31() + m31, m.m32() + m32, m.m33())
         self.setTransform(m, False)
-        #self.gui.setRect(self.mapToScene(self.viewport().rect()).boundingRect())
+        srect = self.sceneRect()
+        rrect = self.mapToScene(self.rect()).boundingRect()
+        if delta < 0 and rrect.height() > srect.height():
+            self.fitInView(srect, Qt.KeepAspectRatio)
         self.scene().update()
         self.view_changed.emit()
     
@@ -78,14 +80,28 @@ class CamGraphicsView(QGraphicsView):
         self.view_changed.emit()
 
     def mousePressEvent(self, event: QMouseEvent):
-        QGraphicsView.mousePressEvent(self, event)
+        if event.button() == Qt.MidButton:
+            self.setDragMode(QGraphicsView.ScrollHandDrag)
+            self.viewport().setCursor(Qt.ClosedHandCursor)
+            self.original_event = event
+            handmade_event = QMouseEvent(QEvent.MouseButtonPress, QPointF(event.pos()), Qt.LeftButton, event.buttons(),
+                                         Qt.KeyboardModifiers())
+            self.mousePressEvent(handmade_event)
+            return None
+        super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.RightButton:
             self.stick_link_manager.cancel()
         elif event.button() == Qt.LeftButton:
             self.stick_link_manager.accept()
-        QGraphicsView.mouseReleaseEvent(self, event)
+        elif event.button() == Qt.MidButton:
+            self.viewport().setCursor(Qt.OpenHandCursor)
+            handmade_event = QMouseEvent(QEvent.MouseButtonRelease, QPointF(event.pos()), Qt.LeftButton,
+                                         event.buttons(), Qt.KeyboardModifiers())
+            self.mouseReleaseEvent(handmade_event)
+            self.setDragMode(QGraphicsView.NoDrag)
+        super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if not self.stick_link_manager.anchored:
