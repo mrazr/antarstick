@@ -16,6 +16,7 @@ import sys
 import multiprocessing as mp
 from random import randint
 import pickle
+from functools import reduce
 
 import cv2 as cv
 import numpy as np
@@ -33,6 +34,7 @@ from skimage.util import img_as_ubyte
 import skimage.measure
 from pandas import DataFrame
 import joblib
+from joblib import delayed, Parallel
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
@@ -244,11 +246,11 @@ hmt_selems = [
     ]
 ]
 
-def uhmt(img: np.ndarray, se: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def uhmt(img: np.ndarray, se: np.ndarray, anchor: Tuple[int] = (-1, -1)) -> Tuple[np.ndarray, np.ndarray]:
     e_se = (1 * (se == 1)).astype(np.uint8)
     d_se = (1 * (se == 0)).astype(np.uint8)
-    e = cv.erode(img, e_se, borderType=cv.BORDER_REPLICATE)
-    d = cv.dilate(img, d_se, borderType=cv.BORDER_REPLICATE)
+    e = cv.erode(img, e_se, borderType=cv.BORDER_REPLICATE, anchor=anchor)
+    d = cv.dilate(img, d_se, borderType=cv.BORDER_REPLICATE, anchor=anchor)
     mask = e > d
     diff = (e.astype(np.int16) - d.astype(np.int16))
     diff[diff < 0] = 0
@@ -823,10 +825,11 @@ def is_snow_(gray: np.ndarray, bgr: np.ndarray, th: int = 15) -> bool:
     X = snow_scaler.transform([[np.count_nonzero(bth > th) / (ground.shape[0] * ground.shape[1]), np.mean(ground_bgr[:,:,0])]])
     return snow_svc.predict(X)[0] > 0.0
 
-def segment_sticks(img: np.ndarray, debug: bool):
+def segment_sticks(img: np.ndarray, debug: bool, orig_: np.ndarray):
     #orig = gray.copy()
     start = time()
     #gray = cv.cvtColor(draw, cv.COLOR_BGR2GRAY)
+    big = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
     if debug:
         #draw = cv.pyrDown(gray)
         #draw = gray
@@ -839,6 +842,7 @@ def segment_sticks(img: np.ndarray, debug: bool):
     #gray = img_as_ubyte(skimage.exposure.equalize_adapthist(gray, clip_limit=0.01))
     clahe.setClipLimit(5.0)
     gray_eq = clahe.apply(gray)
+    big = clahe.apply(big)
 
     hmt_dbd1, _ = uhmt(gray_eq, hmt_selems[0][0])
     hmt_dbd3, _ = uhmt(gray_eq, hmt_selems[0][1])
@@ -889,16 +893,17 @@ def segment_sticks(img: np.ndarray, debug: bool):
         return th
     start_hough = time()
     lines = cv.HoughLinesP(th_, 1.0, np.pi / 180.0, params['hough_th'], None, params['line_length'], params['line_gap'])
-    print(f'hough took {time() - start_hough} secs')
-    print(f'it took {time() - start} secs')
+    #print(f'hough took {time() - start_hough} secs')
+    #print(f'it took {time() - start} secs')
     f = 1.0
     #draw = cv.cvtColor(gray, cv.COLOR_GRAY2BGR)
     draw = orig.copy()
-    draw2 = draw.copy()
+    draw2 = img.copy()
+    draw3 = draw2.copy()
     f = 1
     if lines is not None:
         lines = np.reshape(lines, (-1, 2, 2))
-        lines_ = cluster_lines(lines, draw, debug)
+        lines_ = cluster_lines(lines)
         #print(lines_)
         #extract_features_from_lines(orig, gray, lines_)
         #return
@@ -906,19 +911,52 @@ def segment_sticks(img: np.ndarray, debug: bool):
         for line_ in lines_:
             p = line_[0]
             q = line_[1]
-            _, f_vec = extract_features_from_line(temp, 2 * line_)
-            f_vec = np.reshape(list(f_vec.values()), (1, -1))
+            f_vec = extract_features_from_line(temp, 2 * line_)
+            f_vec = np.reshape(f_vec, (1, -1))
             is_stick = stick_pipeline.predict(f_vec)
             if is_stick:
                 color = [0, 255, 0]
             else:
                 color = [0, 0, 255]
             cv.line(draw, (int(f * p[0]), int(f * p[1])), (int(f * q[0]), int(f * q[1])), color, 1)
-        for line_ in lines:
-            p = line_[0]
-            q = line_[1]
-            cv.line(draw2, (int(f * p[0]), int(f * p[1])), (int(f * q[0]), int(f * q[1])), [0, 255, 0], 1)
-        visualize_line_signals(lines_, orig, gray, img)
+        for line__ in lines_:
+            #p = line_[0]
+            #q = line_[1]
+            #cv.line(draw2, (int(f * p[0]), int(f * p[1])), (int(f * q[0]), int(f * q[1])), [0, 255, 0], 1)
+            line_ = line__.copy()
+            vec = line_[1] - line_[0]
+            vec = vec / np.linalg.norm(vec)
+            line_[0] -= (30 * vec).astype(np.int32)
+            line_[1] += (30 * vec).astype(np.int32)
+            line_ *= 2
+            line_bbox = line_upright_bbox(line_, big.shape[1], big.shape[0])
+            line_roi = big[line_bbox[0,1]:line_bbox[1,1],line_bbox[0,0]:line_bbox[1,0]]
+            h_edges_mean = find_horizontal_edges(line_roi, orig, line_ - line_bbox[0], method='mean')[1]
+            b_edges_mean = find_horizontal_edges(line_roi, orig, line_ - line_bbox[0], look_for_top=False, method='mean')[1]
+            h_edges = find_horizontal_edges(line_roi, orig, line_ - line_bbox[0])[0]
+            b_edges = find_horizontal_edges(line_roi, orig, line_ - line_bbox[0], look_for_top=False)[0]
+            #cv.line(draw2, (int(line_[0, 0]), int(line_[0, 1])), (int(line_[1, 0]), int(line_[1, 1])), [0, 255, 0])
+            for h_edge in h_edges:
+                #cv.circle(draw2, (int(vec[0] * h_edge + line_[0,0]), int(vec[1] * h_edge + line_[0,1])), 4, [255, 0, 0])
+                p = line_[0] + h_edge * vec
+                cv.line(draw2, (int(p[0] - 8), int(p[1])), (int(p[0] + 8), int(p[1])), [255, 0, 0])
+            for b_edge in b_edges:
+                #cv.circle(draw2, (int(vec[0] * b_edge + line_[0, 0]), int(vec[1] * b_edge + line_[0, 1])), 4, [0, 0, 255])
+                p = line_[0] + b_edge * vec
+                cv.line(draw2, (int(p[0] - 5), int(p[1])), (int(p[0] + 5), int(p[1])), [0, 0, 255])
+            for h_edge in h_edges_mean:
+                # cv.circle(draw2, (int(vec[0] * h_edge + line_[0,0]), int(vec[1] * h_edge + line_[0,1])), 4, [255, 0, 0])
+                p = line_[0] + h_edge * vec
+                x = int(p[0])
+                y = int(p[1])
+                #cv.line(draw3, (int(p[0] - 8), int(p[1])), (int(p[0] + 8), int(p[1])), [255, 0, 0])
+                draw3[y,x-8:x+8,:] = (draw3[y,x-8:x+8,:] * .6 + [60, 0, 0]).astype(np.uint8)
+            for b_edge in b_edges_mean:
+                # cv.circle(draw2, (int(vec[0] * b_edge + line_[0, 0]), int(vec[1] * b_edge + line_[0, 1])), 4, [0, 0, 255])
+                p = line_[0] + b_edge * vec
+                #cv.line(draw3, (int(p[0] - 5), int(p[1])), (int(p[0] + 5), int(p[1])), [0, 0, 255])
+                draw3[y, x - 8:x + 8, :] = (draw3[y, x - 8:x + 8, :] * .6 + [60, 0, 0]).astype(np.uint8)
+        #visualize_line_signals(lines_, orig, gray, img)
     #cv.imshow('uhmt_th', 255 * th)
     cv.imshow('gray', gray)
     #cv.imshow('gray_eq', gray_eq)
@@ -926,6 +964,8 @@ def segment_sticks(img: np.ndarray, debug: bool):
     #cv.imshow('lines', cv.resize(draw2, (0, 0), fx=0.5, fy=0.5))
     #cv.imshow('lines_clustered', cv.resize(draw, (0, 0), fx=0.5, fy=0.5))
     cv.imshow('lines_clustered', draw)
+    cv.imshow('hedges_mean', cv.resize(draw3, (0,0), fx=0.5, fy=0.5))
+    cv.imshow('hedges', cv.resize(draw2, (0,0), fx=0.5, fy=0.5))
 
     cv.waitKey(0)
     cv.destroyAllWindows()
@@ -1192,7 +1232,8 @@ def line_click_handler(e, x, y, flags, params):
                                             linewidth=3, reduce_func=None)
     right_mag = skimage.measure.profile_line(mag, line[0,::-1] + [0, edge_pos[1]], line[1,::-1] + [0, edge_pos[1]],
                                              linewidth=3, reduce_func=None, mode='constant')
-
+    left_mag = np.max(left_mag, axis=1)
+    rigth_mag = np.max(right_mag, axis=1)
     low, high = (angle - 10) % 360, (angle + 10) % 360
     if low > high:
         good_angles = np.bitwise_or(cv.inRange(angles, 0, high), cv.inRange(angles, low, 360))
@@ -1207,16 +1248,19 @@ def line_click_handler(e, x, y, flags, params):
     good_angles = cv.bitwise_and(good_angles, cv.inRange(mag, 0.1, 1.0))
     #hsv = np.dstack((angles, np.ones(angles.shape, np.float32), mag)) #np.ones(angles.shape, np.float32)))
     #bgr = cv.convertScaleAbs(cv.cvtColor(hsv, cv.COLOR_HSV2BGR), None, 255)
+
     left_angles = skimage.measure.profile_line(angles, line[0,::-1] - [0, edge_pos[0]], line[1,::-1] - [0, edge_pos[0]],
                                                linewidth=5, reduce_func=None, mode='constant')
     left_angles = np.where(left_angles > 180, left_angles - 180, left_angles)
     left_diff = np.where(np.abs(left_angles - angle) < 11, 1, -1)
     left_diff = np.reshape(np.max(left_diff, axis=1), (-1, 1))
+    left_diff[np.nonzero(left_mag < 0.2)[0]]# = -1
     right_angles = skimage.measure.profile_line(angles, line[0,::-1] + [0, edge_pos[1]], line[1,::-1] + [0, edge_pos[1]]
                                                 , linewidth=5, reduce_func=None, mode='constant')
     right_angles = np.where(right_angles > 180, right_angles - 180, right_angles)
     right_diff = np.where(np.abs(right_angles - angle) < 11, 1, -1)
     right_diff = np.reshape(np.max(right_diff, axis=1), (-1, 1))
+    right_diff[np.nonzero(right_mag < 0.2)[0]] = -1
     stick_edge_indicator = np.hstack((left_diff, right_diff))
     top_end, bottom_end = find_stick_end(stick_edge_indicator)
 
@@ -1270,7 +1314,7 @@ def pick_angle(e, x, y, flags, params):
     print(f'range to check is {((angle - 5) % 360, (angle + 5) % 360)}, {((angle + 175) % 360, (angle + 185) % 360)}')
     print(f'mag is {mag[y // 3, x // 3]}')
 
-def line_edge_offsets(line: np.ndarray, mag: np.ndarray) -> List[int]:
+def line_edge_offsets(line: np.ndarray, mag: np.ndarray) -> Tuple[List[int], np.ndarray]:
     #bbox = line_upright_bbox(line, 17)
     mag_lines = skimage.measure.profile_line(mag, line[0, ::-1], line[1, ::-1], linewidth=15, reduce_func=None,
                                              mode='constant')
@@ -1278,7 +1322,7 @@ def line_edge_offsets(line: np.ndarray, mag: np.ndarray) -> List[int]:
     left_edge_idx = np.argmax(line_sums[::-1][8:]) + 1
     right_edge_idx = np.argmax(line_sums[8:]) + 1
 
-    return [left_edge_idx, right_edge_idx]
+    return [left_edge_idx, right_edge_idx], mag_lines
 
 def is_line_on_stick(line: np.ndarray, edge_pos: List[int], angles: np.ndarray) -> bool:
     left_angles = skimage.measure.profile_line(angles,
@@ -1414,7 +1458,7 @@ def extract_features_from_line(gray: np.ndarray, line: np.ndarray, plain_fvec: b
     angles = np.mod(angles - 90, 180)
 
     line_l = line - bbox[0]
-    edge_pos = line_edge_offsets(line_l, mag)
+    edge_pos, _ = line_edge_offsets(line_l, mag)
 
     left_angles = skimage.measure.profile_line(angles,
                                                line_l[0,::-1] - [0, edge_pos[0]],
@@ -1470,9 +1514,17 @@ def find_stick_end(stick_edge_indicator: np.ndarray) -> List[int]:
 
     return [int(top_end), int(bottom_end)]
 
-def detect_sticks(gray: np.ndarray):
+def partial_t(gray: np.ndarray, se) -> np.ndarray:
+    hmt_dbd1, _ = uhmt(gray, se)
+    _, hmt_dbd1_ = cv.threshold(hmt_dbd1, 7.0, 1.0, cv.THRESH_BINARY)# | cv.THRESH_OTSU)
+    return asf(hmt_dbd1_, 9, 1, 'co') #cv.morphologyEx(hmt_dbd1_, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (1, 9)))
+
+def detect_sticks(gray: np.ndarray, align_endpoints: bool = False, equalize: bool = True):
     clahe.setClipLimit(5.0)
-    gray_eq = clahe.apply(gray)
+    if equalize:
+        gray_eq = clahe.apply(gray)
+    else:
+        gray_eq = gray
 
     hmt_dbd1, _ = uhmt(gray_eq, hmt_selems[0][0])
     hmt_dbd3, _ = uhmt(gray_eq, hmt_selems[0][1])
@@ -1501,6 +1553,10 @@ def detect_sticks(gray: np.ndarray):
     th7 =  asf(hmt_dbd7_, 9, 1, 'co') #cv.morphologyEx(hmt_bdb5_, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (1, 9)))
     th8 =  asf(hmt_bdb7_, 9, 1, 'co') #cv.morphologyEx(hmt_bdb7_, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (1, 9)))
 
+    #ths = Parallel(n_jobs=8)(delayed(partial_t)(gray_eq, hmt_selems[i][j]) for i in [0,1] for j in range(len(hmt_selems[0])))
+    #th = reduce(np.bitwise_or, ths)
+    #return
+
     th = np.bitwise_or(th1, th2)
     th = np.bitwise_or(th, th3)
     th = np.bitwise_or(th, th4)
@@ -1518,4 +1574,584 @@ def detect_sticks(gray: np.ndarray):
     if lines is None:
         return []
     lines = np.reshape(lines, (-1, 2, 2))
-    return cluster_lines(lines)
+    clustered = cluster_lines(lines)
+    return clustered
+
+def find_horizontal_edges(gray: np.ndarray, bgr: np.ndarray, line: np.ndarray, look_for_top: bool = True, method='hmt') -> Tuple[List[int], List[List[int]]]:
+    start_43 = time()
+    #dx, dy = cv.Sobel(gray, cv.CV_32F, 1, 0), cv.Sobel(gray, cv.CV_32F, 0, 1)
+    #mag = cv.magnitude(np.zeros(dy.shape, dy.dtype), dy)
+    #mag = cv.normalize(mag, None, alpha=0.0, beta=1.0, norm_type=cv.NORM_MINMAX)
+    start_line = time()
+    mag_line = skimage.measure.profile_line(gray, line[0,::-1], line[1,::-1], linewidth=1, mode='constant',
+                                            reduce_func=None).astype(np.uint8)
+    print(f'line took {time() - start_line} secs')
+    hmt_method = []
+    if method == 'hmt' or method == 'both':
+        start_hmt = time()
+        top_se = np.array([
+            [-1],# -1, -1],
+            [-1],# -1, -1],
+            [-1],# -1, -1],
+            [-1],# -1, -1],
+            [ 0],#  0,  0],
+            [ 0],#  0,  0],
+            [ 0],#  0,  0],
+            [ 1],#  1,  1],
+            [ 1],#  1,  1],
+            [ 1],#  1,  1],
+            [ 1],  # 1,  1],
+            [ 1],  # 1,  1],
+            [ 1],  # 1,  1],
+            [ 1],  # 1,  1],
+            [ 1],  # 1,  1],
+            [ 1],  # 1,  1],
+            [ 1],  # 1,  1],
+        ], dtype=np.int32)
+        bottom_se = top_se[::-1].copy()
+        #if look_for_top:
+        #    mag_hmt = uhmt(mag_line, top_se, anchor=(0,7))[0]
+        #else:
+        #    mag_hmt = uhmt(mag_line, bottom_se, anchor=(0, 9))[0]
+        top_hmt = uhmt(mag_line, top_se, anchor=(0, 7))[0]
+        bottom_hmt = uhmt(mag_line, bottom_se, anchor=(0, 9))[0]
+
+        #hmt_method = np.nonzero(mag_hmt > 10)[0]
+        top_indices = np.nonzero(top_hmt > 10)[0]
+        bottom_indices = np.nonzero(bottom_hmt > 10)[0]
+        top_vals = top_hmt[top_indices]
+        bottom_vals = bottom_hmt[bottom_indices]
+        #hmt_method = np.array([hmt_method, np.reshape(mag_hmt[hmt_method], (-1,))])
+        #hmt_method = np.hstack((np.reshape(hmt_method, (-1,1)), vals))
+        hmt_method = (np.hstack((np.reshape(top_indices, (-1,1)), top_vals)),
+                      np.hstack((np.reshape(bottom_indices, (-1,1)), bottom_vals)))
+        print(f'hmt took {time() - start_hmt} secs')
+    mean_method = []
+    regions = []
+    if method == 'mean' or method == 'both':
+        start_for = time()
+        mag_line = np.reshape(mag_line, (-1,)).astype(np.int32)
+        edges = []
+        region = [-1, -1]
+        regions.append(region)
+        sz = 20
+        f = 1/float(sz)
+        running_sum1 = np.sum(mag_line[:sz]).astype(np.int32)
+        running_sum2 = np.sum(mag_line[sz:2*sz]).astype(np.int32)
+
+        #means1 = [f * running_sum2]
+        #means2 = [np.mean(mag_line[sz:2*sz])]
+        mean_times = 0
+        mean_count = 0
+        run_times = 0
+
+        if look_for_top:
+            if f * (running_sum2 - running_sum1) > 30:
+                edges.append([sz, f * (running_sum2 - running_sum1)])
+                region[0] = region[1] = sz
+        else:
+            if f * (running_sum1 - running_sum2) > 30:
+                edges.append([sz, f * (running_sum1 - running_sum2)])
+                region[0] = region[1] = sz
+        for i in range(sz+1, mag_line.shape[0] - sz):
+            start = time()
+            #abc = np.mean(mag_line[i:i+sz])
+            #abc = np.mean(mag_line[i-1-sz:i-1])
+            mean_times += (time() - start)
+            start = time()
+            running_sum1 += mag_line[i-1] - mag_line[i-1-sz]
+            running_sum2 += mag_line[i+sz-1] - mag_line[i-1]
+            mean1 = running_sum1 * f
+            mean2 = running_sum2 * f
+            run_times += (time() - start)
+            if look_for_top:
+                #if f * running_sum2 - f * running_sum1 > 30:
+                if mean2 - mean1 > 30:
+                    #edges.append([i, f * (running_sum2 - running_sum1)])
+                    edges.append([i, mean2 - mean1])
+                    if region[0] < 0:
+                        region[0] = region[1] = i
+                    else:
+                        if i - region[1] <= 2:
+                            region[1] = i
+                        else:
+                            region = [i, i]
+                            regions.append(region)
+            else:
+                #if f * running_sum1 - f * running_sum2 > 30:
+                if mean1 - mean2 > 30:
+                    #edges.append([i, f * (running_sum1 - running_sum2)])
+                    edges.append([i, mean1 - mean2])
+                    if region[0] < 0:
+                        region[0] = region[1] = i
+                    else:
+                        if i - region[1] <= 2:
+                            region[1] = i
+                        else:
+                            region = [i, i]
+                            regions.append(region)
+            mean_count += 1
+            #diff = np.array(means1) - np.array(means2)
+            #dcd = np.sum(diff)
+            mean_method = np.array(edges)
+            #print(f'np.mean took {mean_times / mean_count} secs and running sums took {run_times / mean_count} secs')
+        print(f'mean took {time() - start_for} secs')
+    c_time = time()
+    print(f'finding took {c_time - start_43} secs or {(1000 * (c_time - start_43))} ms')
+    return hmt_method, mean_method, regions
+
+def process_photos(images: List[str], folder: Path, sticks: List[Stick]) -> Dict[str, List[Stick]]:
+    measurements: Dict[str, List[Stick]] = {}
+    sticks_ = list(map(lambda stick: stick.scale(0.5), sticks))
+    loading_time = 0
+    for img_name in images:
+        start = time()
+        img = cv.imread(str(folder / img_name), cv.IMREAD_GRAYSCALE)
+        loading_time += time() - start
+        img = cv.pyrDown(cv.resize(img, (0, 0), fx=0.5, fy=0.5))
+
+        measured_sticks: List[Stick] = []
+
+        for stick in sticks_:
+            #new_stick = stick.scale(0.5)
+            new_stick = stick.scale(1.0)
+            new_stick.view = img_name
+            old_stick = stick.scale(1.0)
+            old_line = np.array([old_stick.top, old_stick.bottom])
+            old_line_length = old_stick.length_px
+            old_line_angle = line_angle(old_line)
+            bbox = line_upright_bbox(old_line, img.shape[1], img.shape[0], width=35)
+            line_roi = img[bbox[0,1]:bbox[1,1],bbox[0,0]:bbox[1,0]]
+            lines = detect_sticks(line_roi, equalize=False)
+            # 3 cases here - 0, 1 or multiple lines detected in the stick region
+            # 0 lines case - take note and handle after all sticks went through this loop
+            # 1 line case - compare angle, endpoints
+            # >= 2 lines case - compare angles, find matching endpoints, merge, extend to match stick length
+
+            if len(lines) == 1:
+                # 3 cases here:
+                # 1) both line's endpoints match stick's endpoints: do nothing
+                # 2) one endpoint matches stick's top endpoint:
+                    # it's probable that a layer of snow covers the bottom-ish part of the stick.
+                    # The detected line might actually represent the visible part of the stick.
+                    # To verify this, use find_horizontal_edges and compare the found edge with detected bottom endpoint
+                # 2) one endpoint matches stick's bottom endpoint:
+                #   a) stick's orientation changed - compare lengths, find top endpoint with `find_horizontal_edges`
+                #   b) orientation matches, extend line by finding endpoint with `find_horizontal_edges`
+                # 3) no endpoint matches stick's endpoints: might be camera's movement, then all lines will be misaligned.
+                #   with their respective sticks. Deal with it after the loop.
+                new_line = lines[0] + bbox[0]
+                new_line_length = np.linalg.norm(new_line[0] - new_line[1])
+                new_line_angle = line_angle(new_line)
+                new_line_vec = (new_line[1] - new_line[0]) / np.linalg.norm(new_line[1] - new_line[0])
+                top_diff = new_line[0] - old_line[0]
+                top_diff_mag = np.linalg.norm(top_diff)
+                bottom_diff = new_line[1] - old_line[1]
+                bottom_diff_mag = np.linalg.norm(bottom_diff)
+
+                if top_diff_mag < 2 and bottom_diff_mag < 2:
+                    new_stick.set_endpoints(new_line[0, 0], new_line[0, 1],
+                                            new_line[1, 0], new_line[1, 1])
+                elif abs(old_line_angle - new_line_angle) < 3:
+                    if abs(old_line_length - new_line_length) < 2:
+                        new_stick.set_endpoints(new_line[0, 0], new_line[0, 1],
+                                                new_line[1, 0], new_line[1, 1])
+                    elif top_diff_mag < 2:
+                        new_bottom = new_line[0] + stick.length_px * new_line_vec
+                    elif bottom_diff_mag < 2:
+                        new_top = new_line[1] - stick.length_px * new_line_vec
+
+            measured_sticks.append(new_stick)
+
+        measurements[img_name] = measured_sticks
+        sticks_ = measured_sticks
+    print(f'loading took {loading_time} secs, or {loading_time / float(len(images))} per image')
+    return measurements
+
+def extend_line(line: np.ndarray, amount: int, endpoints: str = 'both') -> np.ndarray:
+    """
+    Extends `line` by `amount` units from top and/or bottom. If the line length < 1, then returns `line`.
+
+    Parameters
+    ----------
+    line : (2, 2) np.ndarray
+        The line to be extended.
+    amount : int
+        Number of units to extend the line by.
+    endpoints : str
+        if 'both' then the line is extended from both top and bottom therefore adding 2 * `amount`
+
+    Returns
+    -------
+    np.ndarray
+        the extended line
+    """
+    vec = (line[1] - line[0]).astype(np.float32)
+    line_len = np.linalg.norm(vec)
+    if line_len < 1:
+        return line
+    vec /= line_len
+    new_line = line.copy()
+
+    if endpoints == 'top' or endpoints == 'both':
+        new_line[0] -= (amount * vec).astype(np.int32)
+    if endpoints == 'bottom' or endpoints == 'both':
+        new_line[1] += (amount * vec).astype(np.int32)
+
+    return new_line
+
+def extract_line_from_stick(gray: np.ndarray, line: np.ndarray, sz: int, bounds: List[int], line_width: int = 1) -> Tuple[np.ndarray]:
+    mag_line = skimage.measure.profile_line(gray, line[0, ::-1], line[1, ::-1], linewidth=line_width, mode='constant',
+                                            reduce_func=None).astype(np.uint8)
+    if len(bounds) == 2:
+        mag_line = mag_line[:,7-bounds[0]:7+bounds[1]]
+        mag_line = np.mean(mag_line, axis=1)
+
+    hmt_method = []
+    top_se = np.array([
+        [-1],# -1, -1],
+        [-1],# -1, -1],
+        [-1],# -1, -1],
+        [-1],# -1, -1],
+        [ 0],#  0,  0],
+        [ 0],#  0,  0],
+        [ 0],#  0,  0],
+        [ 1],#  1,  1],
+        [ 1],#  1,  1],
+        [ 1],#  1,  1],
+        [ 1],  # 1,  1],
+        [ 1],  # 1,  1],
+        [ 1],  # 1,  1],
+        [ 1],  # 1,  1],
+        [ 1],  # 1,  1],
+        [ 1],  # 1,  1],
+        [ 1],  # 1,  1],
+    ], dtype=np.int32)
+    bottom_se = top_se[::-1].copy()
+    top_hmt = uhmt(mag_line, top_se, anchor=(0, 7))[0]
+    bottom_hmt = uhmt(mag_line, bottom_se, anchor=(0, 9))[0]
+
+    hmt_method = [top_hmt, bottom_hmt]
+
+    mag_line = np.reshape(mag_line, (-1,)).astype(np.int32)
+
+    mean_diffs = np.nan * np.ones((len(mag_line),), np.float32)
+
+    f = 1 / float(sz)
+
+    running_sum1 = np.sum(mag_line[:sz]).astype(np.int32)
+    running_sum2 = np.sum(mag_line[sz:2 * sz]).astype(np.int32)
+
+    mean_diffs[sz] = f * (running_sum2 - running_sum1)
+
+    for i in range(sz + 1, mag_line.shape[0] - sz):
+        running_sum1 += mag_line[i - 1] - mag_line[i - 1 - sz]
+        running_sum2 += mag_line[i + sz - 1] - mag_line[i - 1]
+        mean1 = running_sum1 * f
+        mean2 = running_sum2 * f
+        mean_diffs[i] = mean2 - mean1
+
+    return hmt_method, mean_diffs
+
+def get_endpoint_regions(mean_diffs: np.ndarray) -> List[List[int]]:
+    region = [mean_diffs[0], mean_diffs[0]]
+    regions = [region]
+
+    for v in mean_diffs:
+        if v - region[1] <= 2:
+            region[1] = v
+        else:
+            region = [v, v]
+            regions.append(region)
+
+    return regions
+
+def find_sticks(gray: np.ndarray, bgr: np.ndarray, equalize: bool = True) -> List[np.ndarray]:
+    vis = cv.cvtColor(gray, cv.COLOR_GRAY2BGR)
+    start_io = time()
+    lines = detect_sticks(gray, equalize=equalize)
+
+    gray_e = clahe.apply(gray)
+
+    dx, dy = cv.Sobel(gray, cv.CV_32F, 1, 0), cv.Sobel(gray, cv.CV_32F, 0, 1)
+    mag = cv.magnitude(dx, dy)
+    #angles = cv.phase(dx, dy, None, angleInDegrees=True)
+    #angles = np.mod(angles - 90, 180)
+    for line in lines:
+        line_vec = (line[1] - line[0]).astype(np.float32)
+        if np.linalg.norm(line_vec) < 2:
+            continue
+        line_vec /= np.linalg.norm(line_vec)
+        a = 50
+        line_ = extend_line(line, amount=a, endpoints='both')
+        line_[1,1] = np.minimum(line_[1,1], gray.shape[0]-1)
+        bbox = line_upright_bbox(line_, gray.shape[1], gray.shape[0])
+        line_roi = gray[bbox[0,1]:bbox[1,1], bbox[0,0]:bbox[1,0]]
+
+        edge_offsets, mag_line = line_edge_offsets(line_, mag)
+
+        print(f'swidth = {edge_offsets[0] + edge_offsets[1]}')
+
+        hmt, mean_diffs = extract_line_from_stick(line_roi, line_ - bbox[0], sz=20, line_width=15, bounds=edge_offsets)
+
+        if edge_offsets[0] > 7:
+            print('oh no')
+        left = 7 - edge_offsets[0]
+        right = 7 + edge_offsets[1]
+
+        top_hmt = hmt[0]
+        bottom_hmt = hmt[1]
+
+        top_hmt_indices = np.nonzero(top_hmt > 10)[0]
+        top_hmt_values = top_hmt[top_hmt_indices]
+
+        bottom_hmt_indices = np.nonzero(bottom_hmt > 10)[0]
+        bottom_hmt_values = bottom_hmt[bottom_hmt_indices]
+
+        top_indices = np.nonzero(mean_diffs > 15)[0]
+        top_values = mean_diffs[top_indices]
+
+        bottom_indices = np.nonzero(mean_diffs < -15)[0]
+        bottom_values = mean_diffs[bottom_indices]
+
+        if len(top_indices) == 0 or len(bottom_indices) == 0:
+            continue
+
+        top_regions = get_endpoint_regions(top_indices)
+        bottom_regions = get_endpoint_regions(bottom_indices)
+
+        regions = top_regions.copy()
+        regions.extend(bottom_regions)
+
+        for region in top_regions:
+            reg = region.copy()
+            reg[0] = line_[0,1] + (reg[0] * line_vec[1]).astype(np.int32)
+            reg[1] = line_[0,1] + (reg[1] * line_vec[1]).astype(np.int32)
+            if reg[0] <= line[0,1] <= reg[1]:
+                #print('offsetting top')
+                region_vals = mean_diffs[region[0]:region[1] + 1]
+                reg_max = np.argmax(region_vals) + region[0]
+                line[0] = line_[0] + (reg_max * line_vec).astype(np.int32)
+            elif reg[0] <= line[1,1] <= reg[1]:
+                #print('ofsetting bottom')
+                region_vals = mean_diffs[region[0]:region[1] + 1]
+                reg_max = np.argmax(region_vals) + region[0]
+                line[1] = line_[0] + (reg_max * line_vec).astype(np.int32)
+
+        for region in bottom_regions:
+            reg = region.copy()
+            reg[0] = line_[0,1] + (reg[0] * line_vec[1]).astype(np.int32)
+            reg[1] = line_[0,1] + (reg[1] * line_vec[1]).astype(np.int32)
+            if reg[0] <= line[0,1] <= reg[1]:
+                #print('snow offsetting top')
+                region_vals = mean_diffs[region[0]:region[1] + 1]
+                reg_max = np.argmin(region_vals) + region[0]
+                line[0] = line_[0] + (reg_max * line_vec).astype(np.int32)
+            elif reg[0] <= line[1,1] <= reg[1]:
+                #print('snow ofsetting bottom')
+                region_vals = mean_diffs[region[0]:region[1] + 1]
+                reg_max = np.argmin(region_vals) + region[0]
+                line[1] = line_[0] + (reg_max * line_vec).astype(np.int32)
+
+
+        true_regions = []
+        for region in regions:
+            reg = region.copy()
+            reg[0] = line_[0,1] + (reg[0] * line_vec[1]).astype(np.int32)
+            reg[1] = line_[0,1] + (reg[1] * line_vec[1]).astype(np.int32)
+            if reg[0] <= line[0,1] <= reg[1]:
+                true_regions.append(region)
+            if reg[0] <= line[1,1] <= reg[1]:
+                true_regions.append(region)
+        #cv.imshow('roi_s', cv.resize(roi_sample_bgr, (0,0), fx=3, fy=3))
+        #cv.waitKey(0)
+        #visualize_endpoint_regions(vis, line_,
+        #                           (top_hmt_indices, top_indices, top_values, true_regions, mean_diffs),
+        #                           (bottom_hmt_indices, bottom_indices, bottom_values, true_regions))
+
+    #print(f'took {time() - start_io} secs')
+    #cv.imshow('vis', vis)
+    #cv.waitKey(0)
+    #cv.destroyWindow('vis')
+    #cv.destroyWindow('roi_s')
+    return lines
+
+def visualize_endpoint_regions(vis: np.ndarray, line: np.ndarray,
+                               tops: Tuple[np.ndarray, np.ndarray, np.ndarray, List[List[int]], np.ndarray],
+                               bottoms: Tuple[np.ndarray, np.ndarray, np.ndarray, List[List[int]]]):
+    top_hmt = tops[0]
+    bottom_hmt = bottoms[0]
+
+    top_indices = tops[1]
+    top_values = tops[2]
+
+    bottom_indices = bottoms[1]
+    bottom_values = bottoms[2]
+
+    mean_diffs = tops[4]
+
+    top_regions = tops[3]
+    bottom_regions = bottoms[3]
+
+    line_vec = (line[1] - line[0]).astype(np.float32)
+    line_vec /= np.linalg.norm(line_vec)
+
+    for region in top_regions:
+        p1 = line[0] + (region[0] * line_vec).astype(np.int32)
+        p2 = line[0] + (region[1] * line_vec).astype(np.int32)
+
+        if p1[0] > p2[0]:
+            p1[0], p2[0] = p2[0], p1[0]
+        p1 -= [5, 0]
+        p2 += [5, 0]
+        cv.rectangle(vis, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), [255, 0, 0])
+
+        region_vals = mean_diffs[region[0]:region[1]+1]
+        #region_vals = (region_vals - np.min(region_vals)) / (np.max(region_vals) + 0.00001)
+        reg_max = np.argmax(region_vals) + region[0]
+
+        q = line[0] + (reg_max * line_vec).astype(np.int32)
+        x, y = int(q[0]), int(q[1])
+
+        vis[y, x-5:x+5] = (vis[y, x-5:x+5] * 0.3 + [170, 0, 170]).astype(np.uint8)
+
+
+
+    for region in bottom_regions:
+        p1 = line[0] + (region[0] * line_vec).astype(np.int32)
+        p2 = line[0] + (region[1] * line_vec).astype(np.int32)
+
+        if p1[0] > p2[0]:
+            p1[0], p2[0] = p2[0], p1[0]
+        p1 -= [5, 0]
+        p2 += [5, 0]
+        cv.rectangle(vis, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), [255, 0, 0])
+
+        region_vals = mean_diffs[region[0]:region[1]+1]
+        # region_vals = (region_vals - np.min(region_vals)) / (np.max(region_vals) + 0.00001)
+        reg_min = np.argmin(region_vals) + region[0]
+
+        q = line[0] + (reg_min * line_vec).astype(np.int32)
+        x, y = int(q[0]), int(q[1])
+
+        vis[y, x - 5:x + 5] = (vis[y, x - 5:x + 5] * 0.3 + [170, 0, 170]).astype(np.uint8)
+
+    #for i in top_hmt:
+    #    p = line[0] + (i * line_vec).astype(np.int32)
+    #    x, y = int(p[0]), int(p[1])
+    #    vis[y, x-3:x+3] = (vis[y, x-3:x+3] * 0.6 + [0, 60, 0]).astype(np.uint8)
+
+    #for i in bottom_hmt:
+    #    p = line[0] + (i * line_vec).astype(np.int32)
+    #    x, y = int(p[0]), int(p[1])
+    #    vis[y, x-3:x+3] = (vis[y, x-3:x+3] * 0.6 + [0, 0, 60]).astype(np.uint8)
+
+
+def find_endpoints__(line:np.ndarray, gray: np.ndarray):
+    if np.linalg.norm(line[0] - line[1]) < 2:
+        return 1
+    a = 50
+    line_ = extend_line(line, amount=a, endpoints='both')
+    bbox = line_upright_bbox(line_, gray.shape[1], gray.shape[0])
+    line_roi = gray[bbox[0,1]:bbox[1,1], bbox[0,0]:bbox[1,0]]
+    hmt, mean_diffs = extract_line_from_stick(line_roi, line_ - bbox[0], sz=20)
+
+    top_hmt = hmt[0]
+    bottom_hmt = hmt[1]
+
+    top_hmt_indices = np.nonzero(top_hmt > 10)[0]
+    top_hmt_values = top_hmt[top_hmt_indices]
+
+    bottom_hmt_indices = np.nonzero(bottom_hmt > 10)[0]
+    bottom_hmt_values = bottom_hmt[bottom_hmt_indices]
+
+    top_indices = np.nonzero(mean_diffs >= 30)[0]
+    top_values = mean_diffs[top_indices]
+
+    bottom_indices = np.nonzero(mean_diffs <= -30)[0]
+    bottom_values = mean_diffs[bottom_indices]
+
+    if len(top_indices) == 0 or len(bottom_indices) == 0:
+        return 1
+
+    top_regions = get_endpoint_regions(top_indices)
+    bottom_regions = get_endpoint_regions(bottom_indices)
+
+    return 1
+
+#if not align_endpoints:
+#    return clustered
+#draw = cv.cvtColor(gray, cv.COLOR_GRAY2BGR)
+#for line in clustered:
+#    line_len = np.linalg.norm(line[0] - line[1])
+#    if line_len < 1:
+#        continue
+#    line_vec = (line[1] - line[0]) / line_len
+#    # line_ = line.copy()
+#    # line_[0] += (100 * line_vec).astype(np.int32)
+#    line_ = extend_line(line, 100)
+#    w = 200
+#    bbox = line_upright_bbox(line_, gray_eq.shape[1], gray_eq.shape[0], width=w)
+#    line_roi = gray[bbox[0, 1]:bbox[1, 1], bbox[0, 0]:bbox[1, 0]]
+#    _l = line_ - bbox[0]
+#    line_roi_c = cv.cvtColor(line_roi, cv.COLOR_GRAY2BGR)
+#    edges, b_edges, regions = find_horizontal_edges(line_roi, None, line_ - bbox[0], method='both', look_for_top=True)
+#    tops = edges[:, 0]
+#    sz = 20
+#    if len(edges) == 0 or len(b_edges) == 0:
+#        continue
+#    b_edges_mean = b_edges[:, 0]
+#    strengths = b_edges[:, 1]
+#    strengths = (strengths - np.min(strengths)) / (np.max(strengths) - np.min(strengths) + 0.0001)
+#    # tops = np.array(tops)
+#    regions = np.array(regions)
+#    # b_edges_mean = np.array(b_edges_mean)
+#    # bottoms = find_horizontal_edges(line_roi, None, line - bbox[0], False)
+#    # tops += bbox[0,1] - line_[0,1]
+#    w_h = int(w * 0.5)
+#    tops += w_h
+#    # tops += bbox[0, 1]
+#    regions += w_h
+#    # b_edges_mean += w_h
+#    # b_edges_mean += w_h
+#    # top = tops[np.argmin(np.abs(tops + bbox[0,1] - line[0,1]))]
+#    top = b_edges_mean[np.argmax(b_edges[:, 1])]
+#    cv.line(line_roi_c, (0, int(line[0, 1] - bbox[0, 1])), (int(line_roi.shape[1] - 1), int(line[0, 1] - bbox[0, 1])),
+#            [255, 0, 0], thickness=1)
+#    for i, t in enumerate(b_edges_mean):
+#        # cv.line(line_roi_c, (0, int(t)), (int(line_roi.shape[1]-1), int(t)), [255, 0, int(strengths[i] * 255)], thickness=1)
+#        p = _l[0] + t * line_vec
+#        x = int(p[0])
+#        y = int(p[1])
+#        line_roi_c[y, x - 8:x + 8, :] = (
+#                line_roi_c[y, x - 8:x + 8, :] * .8 + [int(0.2 * 255), 0, int(0.2 * strengths[i] * 255)]).astype(
+#            np.uint8)
+#    # top += line_[0,1]
+#    regions += bbox[0, 1]
+#    # b_edges_mean += bbox[0,1]
+#    # top -= (20 * line_vec).astype(np.int32)[1]
+#    # for r in regions:
+#    #    cv.rectangle(draw, (int(line[0,0]-7), int(r[0])), (int(line[0,0]+7), int(r[1])), [0, 0, 255])
+#    for i, b_edge in enumerate((b_edges_mean - w_h)):
+#        # cv.circle(draw2, (int(vec[0] * b_edge + line_[0, 0]), int(vec[1] * b_edge + line_[0, 1])), 4, [0, 0, 255])
+#        p = line[0] + b_edge * line_vec
+#        x = int(p[0])
+#        y = int(p[1])
+#        # cv.line(draw3, (int(p[0] - 5), int(p[1])), (int(p[0] + 5), int(p[1])), [0, 0, 255])
+#        draw[y, x - 8:x + 8, :] = (
+#                draw[y, x - 8:x + 8, :] * .8 + [int(0.2 * 255), 0, int(0.2 * strengths[i] * 255)]).astype(np.uint8)
+#        # draw[y, x - 8:x + 8, :] = (draw[y, x - 8:x + 8, :] * .6 + [60, 0, 0]).astype(np.uint8)
+#    tt = line_[0] - (top * line_vec).astype(np.int32)
+#    cv.circle(draw, (int(line[0, 0]), int(line[0, 1])), 3, [255, 0, 0])
+#    # cv.circle(draw, (int(tt[0]), int(tt[1])), 3, [0, 255, 0])
+#    y = int(tt[1])
+#    x = int(tt[0])
+#    draw[y, x - 8:x + 8, :] = (draw[y, x - 8:x + 8, :] * .4 + [0, int(0.6 * 255), 0]).astype(np.uint8)
+#    # show_imgs_([line_roi_c], ['sj'])
+#    # cv.waitKey(0)
+#    # cv.destroyWindow('sj')
+#
+#show_imgs_([draw], ['ends'])
+#cv.waitKey(0)
+#cv.destroyWindow('ends')
+
