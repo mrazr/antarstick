@@ -227,7 +227,8 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self.dataset.cameras_unlinked.disconnect(self.handle_cameras_unlinked)
         self.dataset = None
         for i in range(self.count()):
-            widget = self.widget(i)
+            widget: CameraViewWidget = self.widget(i)
+            widget.dispose()
             widget.deleteLater()
         #TODO save camera states
         self.clear()

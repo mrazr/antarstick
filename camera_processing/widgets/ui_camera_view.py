@@ -21,7 +21,7 @@ class Ui_CameraView(object):
         self.imageListLayout.setSizeConstraint(QtWidgets.QLayout.SetMinimumSize)
         self.imageListLayout.setObjectName("imageListLayout")
         self.image_list = QtWidgets.QTableView(CameraView)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.image_list.sizePolicy().hasHeightForWidth())
