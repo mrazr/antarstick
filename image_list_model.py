@@ -2,12 +2,14 @@ from PyQt5.Qt import QAbstractListModel, QWidget, QModelIndex, QAbstractTableMod
 from PyQt5.QtCore import Qt, QSize
 from typing import List, Optional
 from pathlib import Path
+import random
 from os import scandir
 import sys
 
-from PyQt5.QtGui import QBrush, QColor, QFontDatabase, QFont
+from PyQt5.QtGui import QBrush, QColor, QFontDatabase, QFont, QIcon
 
 from camera import Camera
+import resources_rc
 
 
 class ImageListModel(QAbstractTableModel):
@@ -18,14 +20,17 @@ class ImageListModel(QAbstractTableModel):
         self.image_names: List[Path] = []
         self.processed_images_count: int = 0
         self.camera: Optional[Camera] = None
-        id = QFontDatabase.addApplicationFont(str(Path(sys.argv[0]).parent / 'camera_processing/TwitterEmoji.ttf'))
-        fam = QFontDatabase.applicationFontFamilies(id)[0]
-        self.emoji_font = QFont(fam)
-        self.emoji_font.setPointSize(16)
-        self.snow = "❄"
-        self.sun = "☀"
-        self.moon = "🌙"
-        self.hourglass = "⏳"
+        #family_id = QFontDatabase.addApplicationFont(':/fonts/camera_processing/TwitterEmoji.ttf')
+        #fam = QFontDatabase.applicationFontFamilies(family_id)[0]
+        #self.emoji_font = QFont(fam)
+        #self.emoji_font.setPointSize(16)
+        #self.snow = "❄"
+        self.snow = QIcon(':/icons/snowflake.svg')
+        self.sun = QIcon(':/icons/sun.svg')
+        self.moon = QIcon(':/icons/moon.svg')
+        #self.sun = "☀"
+        #self.moon = "🌙"
+        #self.hourglass = "⏳"
 
     def initialize(self, camera: Camera, processed_count: int) -> bool:
         self.camera = camera
@@ -44,7 +49,7 @@ class ImageListModel(QAbstractTableModel):
         return len(self.image_names)
 
     def columnCount(self, parent: QModelIndex = QModelIndex()):
-        return 2
+        return 3
 
     def data(self, index: QModelIndex, role=Qt.DisplayRole):
         if not index.isValid():
@@ -54,7 +59,7 @@ class ImageListModel(QAbstractTableModel):
             if index.column() == 0:
                 return self.image_names[index.row()].name
             elif index.column() == 1:
-                return self.snow
+                return None
                 text = ""
                 daytime = self.camera.photo_is_daytime(self.image_names[index.row()].name)
                 if daytime is None:
@@ -86,6 +91,20 @@ class ImageListModel(QAbstractTableModel):
         #    if index.column() == 1:
         #        return QSize(64, 64)
 
+        if role == Qt.DecorationRole and index.column() == 1:
+            r = random.random()
+            if r < .5:
+                return self.sun
+            return self.moon
+        if role == Qt.DecorationRole and index.column() == 2:
+            if random.random() > .75:
+                return self.snow
+            return None
+
+        if role == Qt.SizeHintRole:
+            if index.column() == 1 or index.column() == 2:
+                return QSize(32, 32)
+
         if role == Qt.ForegroundRole:
             if index.column() == 1:
                 return QBrush(QColor(180, 200, 0))
@@ -95,9 +114,9 @@ class ImageListModel(QAbstractTableModel):
         if role == Qt.UserRole:
             return self.image_names[index.row()]
 
-        if role == Qt.FontRole:
-            if index.column() == 1 or index.column() == 2:
-                return self.emoji_font
+        #if role == Qt.FontRole:
+        #    if index.column() == 1 or index.column() == 2:
+        #        return self.emoji_font
 
         if role == Qt.ForegroundRole and index.row() < self.processed_images_count:
             return QBrush(QColor(0, 150, 0))
