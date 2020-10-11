@@ -173,6 +173,8 @@ class Button(QGraphicsObject):
 
     def __init__(self, btn_id: str, label: str, tooltip: str = "", parent: QGraphicsItem = None):
         QGraphicsObject.__init__(self, parent)
+        self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+        self.scaling = 1.0
         self.label = QGraphicsSimpleTextItem(label, self)
         self.label.setFont(Button.font)
         #self.label.setDefaultTextColor(QColor(255, 255, 255, 255))
@@ -205,7 +207,7 @@ class Button(QGraphicsObject):
         self.hovered = False
         self.setAcceptHoverEvents(True)
         self.setZValue(4)
-        self.set_height(30)
+        self.set_height(12)
 
         self.pixmap: QPixmap = None
         self.max_pixmap_height = 128
@@ -213,15 +215,16 @@ class Button(QGraphicsObject):
 
     def set_height(self, h: int):
         self.prepareGeometryChange()
-        self.rect.setHeight(h)
         self.ver_margin = int(0.25 * h)
         font: QFont = self.label.font()
-        font.setPixelSize(h - 2 * self.ver_margin)
+        font.setPointSize(h)
         self.label.setFont(font)
         self.rect.setWidth(self.label.boundingRect().width() + 2 * self.hor_margin)
+        self.rect.setHeight(self.label.boundingRect().height() + 2 * self.ver_margin)
         self._reposition_text()
 
     def set_width(self, w: int):
+        self.prepareGeometryChange()
         self.rect.setWidth(w)
         self.hor_margin = self.ver_margin
         if self.label.boundingRect().width() > self.rect.width():
@@ -234,8 +237,14 @@ class Button(QGraphicsObject):
         self._reposition_text()
 
     def scale_button(self, factor: float):
+        #self.scaling = factor
+        factor = 1.0
         self.rect.setHeight(int(factor * self.rect.height()))
         self.rect.setWidth(int(factor * self.rect.width()))
+        #self.font.setPointSize(int(factor * self.font.pointSize()))
+        #self.label.setFont(self.font)
+        self.label.setScale(self.scaling)
+        self.fit_to_contents()
 
     def _reposition_text(self):
         x = self.rect.width() / 2 - self.label.boundingRect().width() / 2
@@ -250,7 +259,7 @@ class Button(QGraphicsObject):
         painter.setBrush(QBrush(self.fill_color_current))
         painter.setPen(QPen(QColor(0, 0, 0, 0)))
         if self.pixmap is not None:
-            painter.drawPixmap(self.hor_margin, self.ver_margin, self.pixmap)
+            painter.drawPixmap(self.hor_margin * self.scaling, self.ver_margin * self.scaling, self.pixmap)
 
         painter.drawRoundedRect(self.rect, 5, 5)
         if self.tooltip_shown:
@@ -352,23 +361,24 @@ class Button(QGraphicsObject):
             self.logic = PushbuttonLogic("gray")
 
     def set_pixmap(self, pixmap: QPixmap):
-        self.pixmap = pixmap.scaledToHeight(self.max_pixmap_height) if pixmap is not None else None
-        self.fit_to_contents()
+        if pixmap is not None:
+            self.pixmap = pixmap.scaledToHeight(self.max_pixmap_height * self.scaling) if pixmap is not None else None
+            self.fit_to_contents()
 
     def fit_to_contents(self):
         self.prepareGeometryChange()
-        width = 2 * self.hor_margin
-        height = 2 * self.ver_margin + self.label.boundingRect().height()
+        width = 2 * self.hor_margin * self.label.scale()
+        height = 2 * self.ver_margin * self.label.scale() + self.label.boundingRect().height() * self.label.scale()
         if self.pixmap is not None:
-            width += max(self.pixmap.width(), self.label.boundingRect().width())
-            height += self.ver_margin + self.pixmap.height()
+            width += max(self.pixmap.width(), self.label.boundingRect().width() * self.label.scale())
+            height += self.ver_margin * self.scaling + self.pixmap.height()
         else:
-            width += self.label.boundingRect().width()
+            width += self.label.boundingRect().width() * self.label.scale()
         self.rect.setWidth(width)
         self.rect.setHeight(height)
 
-        self.label.setPos(0.5 * width - 0.5 * self.label.boundingRect().width() + 0.0 * self.hor_margin,
-                          height - self.label.boundingRect().height() - self.ver_margin)
+        self.label.setPos(0.5 * width - 0.5 * self.label.boundingRect().width() * self.label.scale() + 0.0 * self.hor_margin,
+                          height - self.label.boundingRect().height() * self.label.scale() - self.ver_margin * self.scaling)
         self.update()
 
     def set_label(self, text: str):
@@ -380,9 +390,11 @@ class Button(QGraphicsObject):
             return
         self.logic.do_click()
         self.fill_color_current = self.logic.release_color() if not artificial_emit else self.logic.idle_color()
+        if artificial_emit:
+            self.update()
         if self.scene() is not None:
-            self.scene().update(self.sceneBoundingRect())
-        self.clicked.emit({"btn_id": self.btn_id, "btn_label": self.label, "button": self})
+            self.scene().update()
+        self.clicked.emit({"btn_id": self.btn_id, "btn_label": self.label, "button": self, 'checked': self.is_on()})
 
     def set_opacity(self, opacity: float):
         self.setOpacity(opacity)
