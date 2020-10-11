@@ -37,13 +37,16 @@ class Stick:
     """
 
     local_id: int
-    stick_views: List['Stick']
-    top: ndarray = np.zeros((2,))
-    bottom: ndarray = np.zeros((2,))
+    #stick_views: List['Stick']
+    view: str
+    top: ndarray = np.zeros((2,), np.int32)
+    bottom: ndarray = np.zeros((2,), np.int32)
     camera_id: int = -1
     id: int = -1
     length_px: float = field(init=False)
     length_cm: int = 60
+    snow_height_cm: int = 0
+    snow_height_px: int = 0
     label: str = "stick"
     scale_: float = 1.0
 
@@ -64,11 +67,12 @@ class Stick:
         Stick
             a scaled version of the original stick
         """
-        return Stick(self.local_id, factor * self.top, factor * self.bottom)
+        return Stick(self.local_id, self.view, (factor * self.top).astype(np.int32),
+                     (factor * self.bottom).astype(np.int32), label=self.label, scale_=factor*self.scale_)
     
     def set_endpoints(self, x1: int, y1: int, x2: int, y2: int):
-        self.top = np.array([x1, y1])
-        self.bottom = np.array([x2, y2])
+        self.top = np.array([x1, y1], np.int32)
+        self.bottom = np.array([x2, y2], np.int32)
         self.__post_init__()
 
     def get_state(self) -> Dict[str, Any]:
@@ -83,7 +87,8 @@ class Stick:
             'length_px': self.length_px,
             'length_cm': self.length_cm,
             'label': self.label,
-            'scale_': self.scale_
+            'scale_': self.scale_,
+            'view': self.view
         }
 
     @staticmethod
@@ -93,10 +98,11 @@ class Stick:
         top = np.array(state['top'])
         bottom = np.array(state['bottom'])
 
-        stick = Stick(local_id, stick_views=[], top=top, bottom=bottom)
+        stick = Stick(local_id, view='', top=top, bottom=bottom)
         stick.length_px = state['length_px']
         stick.length_cm = state['length_cm']
         stick.label = state['label']
         stick.scale_ = state['scale_']
+        stick.view = state['view']
 
         return stick
