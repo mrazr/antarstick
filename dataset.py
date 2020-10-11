@@ -110,10 +110,10 @@ class Dataset(QObject):
         if first_time_add:
             camera_id = self.next_camera_id
             self.next_camera_id += 1
-            try:
-                self.cameras_ids[str(folder.relative_to(self.path.parent))] = camera_id
-            except ValueError:
-                self.cameras_ids[str(folder)] = camera_id
+            #try:
+            #    self.cameras_ids[str(folder.relative_to(self.path.parent))] = camera_id
+            #except ValueError:
+            self.cameras_ids[str(folder)] = camera_id
         if camera is None:  # We didn't find camera.json file in `folder`
             # If this is the first time this dataset is adding this camera, meaning that `dataset.camera_folders`
             # does not contain `folder` we create a brand new camera.json and a corresponding Camera object
@@ -173,7 +173,7 @@ class Dataset(QObject):
     def save(self) -> bool:
         for camera in self.cameras:
             # path = self.path.parent / f"camera{camera.id}.csv"
-            camera.save_measurements()
+            #camera.save_measurements()
             camera.save()
         if self.path == Path("."):
             return False
@@ -450,7 +450,7 @@ class Dataset(QObject):
                 except ValueError:
                     pass
             transformed[str(path)] = cam_id
-        return transformed
+        return self.cameras_ids
 
     def register_stick(self, stick: Stick, camera: Camera):
         stick.camera_id = camera.id
