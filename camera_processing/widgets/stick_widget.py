@@ -33,12 +33,12 @@ class StickWidget(QGraphicsObject):
     stick_changed = pyqtSignal('PyQt_PyObject')
     sibling_changed = pyqtSignal(bool)
 
-    handle_idle_brush = QBrush(QColor(0, 125, 125, 100))
-    handle_hover_brush = QBrush(QColor(125, 125, 0, 150))
+    handle_idle_brush = QBrush(QColor(0, 125, 125, 50))
+    handle_hover_brush = QBrush(QColor(125, 125, 0, 50))
     handle_press_brush = QBrush(QColor(200, 200, 0, 0))
     handle_idle_pen = QPen(QColor(0, 0, 0, 255))
     handle_press_pen = QPen(QColor(200, 200, 0, 255))
-    handle_size = 8
+    handle_size = 20
 
     def __init__(self, stick: Stick, parent: Optional[QGraphicsItem] = None):
         QGraphicsObject.__init__(self, parent)
@@ -55,18 +55,25 @@ class StickWidget(QGraphicsObject):
         self.mode = StickMode.DISPLAY
 
         self.btn_delete = Button("delete", "x", parent=self)
+        self.btn_delete.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
         self.btn_delete.set_base_color([ButtonColor.RED])
         self.btn_delete.setVisible(False)
         btn_size = max(int(np.linalg.norm(self.stick.top - self.stick.bottom) / 5.0), 15)
-        self.btn_delete.set_height(btn_size)
-        self.btn_delete.set_width(btn_size)
+        self.btn_delete.set_height(12)
+        #self.btn_delete.set_height(btn_size)
+        #self.btn_delete.set_width(btn_size)
         self.btn_delete.clicked.connect(self.handle_btn_delete_clicked)
         self.btn_delete.setPos(self.line.p1() - QPointF(0.5 * self.btn_delete.boundingRect().width(), 1.1 * self.btn_delete.boundingRect().height()))
         self.btn_delete.set_opacity(0.7)
 
-        self.top_handle = QGraphicsRectItem(0, 0, self.handle_size, self.handle_size, self)
-        self.mid_handle = QGraphicsRectItem(0, 0, self.handle_size, self.handle_size, self)
-        self.bottom_handle = QGraphicsRectItem(0, 0, self.handle_size, self.handle_size, self)
+        #self.top_handle = QGraphicsRectItem(0, 0, self.handle_size, self.handle_size, self)
+        #self.mid_handle = QGraphicsRectItem(0, 0, self.handle_size, self.handle_size, self)
+        #self.bottom_handle = QGraphicsRectItem(0, 0, self.handle_size, self.handle_size, self)
+
+        self.top_handle = QGraphicsEllipseItem(0, 0, self.handle_size, self.handle_size, self)
+        self.mid_handle = QGraphicsEllipseItem(0, 0, self.handle_size, self.handle_size, self)
+        self.bottom_handle = QGraphicsEllipseItem(0, 0, self.handle_size, self.handle_size, self)
+
         self.top_handle.setAcceptedMouseButtons(Qt.NoButton)
         self.mid_handle.setAcceptedMouseButtons(Qt.NoButton)
         self.bottom_handle.setAcceptedMouseButtons(Qt.NoButton)
@@ -116,29 +123,44 @@ class StickWidget(QGraphicsObject):
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem,
               widget: Optional[PyQt5.QtWidgets.QWidget] = ...):
-            
+        painter.setPen(QPen(QColor(0, 200, 120), 1.0))
+        painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)))
+
         if self.highlight_color is not None:
             brush = QBrush(self.highlight_color)
             pen = QPen(brush, 4)
             painter.setPen(pen)
             painter.drawLine(self.line.p1(), self.line.p2())
 
-        pen = QPen(QColor(0, 255, 255, 255))
+        pen = QPen(QColor(0, 255, 0, 255))
+
+        pen.setWidth(1.0)
+        pen.setColor(QColor(255, 0, 255, 255))
+        pen.setStyle(Qt.DotLine)
+        painter.setPen(pen)
+        off = 10
+        painter.drawLine(self.line.p1() - QPointF(0, off), self.line.p1() + QPointF(0, off))
+        painter.drawLine(self.line.p1() - QPointF(off, 0), self.line.p1() + QPointF(off, 0))
+        painter.drawLine(self.line.p2() - QPointF(0, off), self.line.p2() + QPointF(0, off))
+        painter.drawLine(self.line.p2() - QPointF(off, 0), self.line.p2() + QPointF(off, 0))
+        pen.setStyle(Qt.SolidLine)
+        pen.setColor(QColor(0, 255, 0, 255))
+        painter.setPen(pen)
+
         if self.mode != StickMode.EDIT:
-            pen.setStyle(Qt.DotLine)
-            pen.setWidth(1.0)
+            #pen.setStyle(Qt.DotLine)
+            pen.setWidth(2.0)
+            #painter.setPen(pen)
+            #painter.drawEllipse(self.line.p1(), 6, 6)
+            #painter.drawEllipse(self.line.p2(), 6, 6)
+            br = painter.brush()
+            #painter.setBrush(QBrush(QColor(255, 0, 0, 60)))
             painter.setPen(pen)
-            painter.drawEllipse(self.line.p1(), 6, 6)
-            painter.drawEllipse(self.line.p2(), 6, 6)
-            pen.setBrush(QBrush(QColor(255, 0, 0, 255)))
-            painter.setPen(pen)
-            #painter.drawEllipse(self.line.p1(), 1, 1)
-            #painter.drawEllipse(self.line.p2(), 1, 1)
-            off = 2
-            painter.drawLine(self.line.p1() - QPointF(0, off), self.line.p1() + QPointF(0, off))
-            painter.drawLine(self.line.p1() - QPointF(off, 0), self.line.p1() + QPointF(off, 0))
-            painter.drawLine(self.line.p2() - QPointF(0, off), self.line.p2() + QPointF(0, off))
-            painter.drawLine(self.line.p2() - QPointF(off, 0), self.line.p2() + QPointF(off, 0))
+            painter.drawEllipse(self.line.p1(), 10, 10)
+            painter.drawEllipse(self.line.p2(), 10, 10)
+            painter.setBrush(br)
+
+
 
             if self.measured_height >= 0:
                 vec = (self.stick.top - self.stick.bottom) / np.linalg.norm(self.stick.top - self.stick.bottom)
@@ -148,6 +170,7 @@ class StickWidget(QGraphicsObject):
                 painter.drawLine(point - QPointF(20.0, 0.0), point + QPointF(20.0, 0.0))
         else:
             painter.drawLine(self.line.p1(), self.line.p2())
+
 
         if self.selected:
             pen.setColor(QColor(255, 125, 0, 255))
