@@ -34,9 +34,11 @@ class CustomPixmap(QGraphicsObject):
     font: QFont = QFont("monospace", 16)
     stick_link_requested = pyqtSignal(StickWidget)
     stick_widgets_out_of_sync = pyqtSignal('PyQt_PyObject')
+    visibility_toggled = pyqtSignal()
 
-    def __init__(self, dataset: Dataset, parent: Optional[QGraphicsItem] = None):
+    def __init__(self, dataset: Dataset, scale: float, parent: Optional[QGraphicsItem] = None):
         QGraphicsObject.__init__(self, parent)
+        self.scaling = scale
         self.gpixmap = QGraphicsPixmapItem(self)
         self.stick_widgets: List[StickWidget] = []
         self.reference_line = QLine()
@@ -47,24 +49,39 @@ class CustomPixmap(QGraphicsObject):
         self.link_cam_text.setPos(0, 0)
         self.link_cam_text.setPen(QPen(QColor(255, 255, 255, 255)))
         self.link_cam_text.setBrush(QBrush(QColor(255, 255, 255, 255)))
-        self.left_add_button = Button('btn_left_add', '+', tooltip='Link camera', parent=self)
+        self.left_add_button = Button('btn_left_add', '+', tooltip='Link camera', parent=self.gpixmap)
         self.left_add_button.set_is_check_button(True) #, ['green', 'red'])
         self.left_add_button.set_base_color([ButtonColor.GREEN, ButtonColor.RED])
-        self.right_add_button = Button('btn_right_add', '+', tooltip='Link camera', parent=self)
+        #self.left_hide_button = Button('btn_left_hide', 'Hide', tooltip='Hide', parent=None)
+        #self.left_hide_button.set_base_color([ButtonColor.GREEN, ButtonColor.RED])
+        #self.left_hide_button.update()
+        #self.left_hide_button.setZValue(3)
+        #self.left_hide_button.setVisible(False)
+        self.right_add_button = Button('btn_right_add', '+', tooltip='Link camera', parent=self.gpixmap)
+        self.right_add_button.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+        self.left_add_button.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
         self.right_add_button.set_is_check_button(True) #, ['green', 'red'])
         #self.right_add_button.set_base_color('green')
         #self.right_add_button.set_custom_color(['green', 'red'])
         self.right_add_button.set_base_color([ButtonColor.GREEN, ButtonColor.RED])
-        self.right_add_button.update()
         self.left_add_button.setZValue(3)
         self.right_add_button.setZValue(3)
+        #self.right_hide_button = Button('btn_right_hide', 'Hide', tooltip='Hide', parent=None)
+        #self.right_hide_button.set_base_color([ButtonColor.GREEN, ButtonColor.RED])
+        #self.right_hide_button.update()
+        #self.right_hide_button.setZValue(3)
+        #self.right_hide_button.setVisible(False)
         self.right_add_button.setVisible(False)
         self.left_add_button.setVisible(False)
+        #self.right_add_button.scale_button(self.scaling)
+        #self.left_add_button.scale_button(self.scaling)
+        self.right_add_button.update()
 
         self.show_add_buttons = False
         self.camera = None
         self.title_rect = QGraphicsRectItem(self)
         self.title_rect.setBrush(QBrush(QColor(50, 50, 50, 150)))
+        #self.title_rect.setScale(self.scale)
 
         self.progress_tracker_rect = QGraphicsRectItem(self.title_rect)
         self.progress_tracker_rect.setBrush(QBrush(QColor(0, 200, 0, 200)))
@@ -73,6 +90,7 @@ class CustomPixmap(QGraphicsObject):
         self.title.setFont(CustomPixmap.font)
         self.title.setBrush(QBrush(QColor(255, 255, 255, 255)))
         self.title.setPen(QPen(QColor(255, 255, 255, 255)))
+        #self.title.setScale(self.scale)
 
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
         self.show_stick_widgets = False
@@ -100,11 +118,13 @@ class CustomPixmap(QGraphicsObject):
         self.stick_length_btn.setVisible(False)
         self.stick_length_btn.set_is_check_button(True)
 
-        self.stick_length_input = StickLengthInput(self)
+        self.stick_length_input = StickLengthInput(self.gpixmap)
+        self.stick_length_input.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
         self.stick_length_input.input_entered.connect(self.handle_stick_length_input_entered)
         self.stick_length_input.input_cancelled.connect(self.handle_stick_length_input_cancelled)
         #self.stick_length_input.setZValue(10)
         self.thread_pool = QThreadPool()
+
 
     def paint(self, painter: QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
         if self.gpixmap.pixmap().isNull():
@@ -133,11 +153,19 @@ class CustomPixmap(QGraphicsObject):
         self.show_add_buttons = value
         if self.show_add_buttons:
             #offset = 0.5 * self.right_add_button.radius
-            offset = 0.5 * self.right_add_button.boundingRect().width()
-            self.right_add_button.setPos(self.gpixmap.pixmap().width() - offset, self.gpixmap.pixmap().height() * 0.5 - offset)
+            brect = self.gpixmap.mapFromItem(self.right_add_button, self.right_add_button.boundingRect()).boundingRect()
+            print(f'brect = {brect}')
+            #offset = 0.5 * self.right_add_button.rect.width()
+            offset = brect.width() * 0.5
+            self.right_add_button.setPos(self.gpixmap.pixmap().width() - offset,
+                                         self.gpixmap.pixmap().height() * 0.5 - offset)
             self.left_add_button.setPos(-offset, self.gpixmap.pixmap().height() * 0.5 - offset)
             self.right_add_button.setVisible(True)
             self.left_add_button.setVisible(True)
+            self.right_add_button.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+            self.left_add_button.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+            #self.right_hide_button.setPos(self.right_hide_button.boundingRect().width() * -0.25, self.right_hide_button.boundingRect().height())
+            #self.left_hide_button.setPos(self.left_hide_button.boundingRect().width() * -0.25, self.left_hide_button.boundingRect().height())
         else:
             self.right_add_button.setVisible(False)
             self.left_add_button.setVisible(False)
@@ -154,10 +182,11 @@ class CustomPixmap(QGraphicsObject):
             self.camera.sticks_removed.disconnect(self.handle_sticks_removed)
             self.camera.stick_changed.disconnect(self.handle_stick_changed)
         self.camera = camera
+        self.stick_length_btn.btn_id = str(self.camera.folder)
         self.prepareGeometryChange()
         self.set_image(camera.rep_image)
-        self.stick_length_btn.setVisible(True)
-        self.stick_length_lbl.setVisible(True)
+        #self.stick_length_btn.setVisible(True)
+        #self.stick_length_lbl.setVisible(True)
         self.camera.stick_added.connect(self.handle_stick_created)
         self.camera.sticks_added.connect(self.handle_sticks_added)
         self.camera.stick_removed.connect(self.handle_stick_removed)
@@ -174,28 +203,34 @@ class CustomPixmap(QGraphicsObject):
         self.layout_title_area()
 
     def layout_title_area(self):
+        return
         self.prepareGeometryChange()
         self.title.setText(str(self.camera.folder.name))
-        self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
+        #self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
+        self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), 3 * self.stick_length_btn.boundingRect().height())
         self.title_rect.setPos(0, self.gpixmap.boundingRect().height())
+        self.title_rect.setZValue(120)
         self.title_rect.setVisible(True)
 
-        self.progress_tracker_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
+        self.progress_tracker_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.stick_length_btn.boundingRect().height())
         self.progress_tracker_rect.setPos(0, 0)  #self.gpixmap.boundingRect().height())
         self.progress_tracker_rect.setVisible(False)
 
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2,
                           0)
         self.title.setVisible(True)
-        self.stick_length_btn.set_height(self.title_rect.boundingRect().height() - 4)
+        #self.stick_length_btn.set_height(self.title_rect.boundingRect().height() - 4)
         self.stick_length_btn.setPos(self.title_rect.boundingRect().width() - 5 - self.stick_length_btn.boundingRect().width(),
                                      2)
         self.stick_length_lbl.setPos(self.stick_length_btn.pos().x() - self.stick_length_lbl.boundingRect().width(), 0)
 
         self.stick_length_input.adjust_layout()
+        view = self.scene().views()[0]
         self.stick_length_input.setPos(QPointF(0.5 * self.boundingRect().width(),
                                                0.5 * self.boundingRect().height()))
         self.stick_length_input.setVisible(self.stick_length_btn.is_on())
+        #self.setPos(0.5 * view.size().width(), 0.5 * view.size().height())
+        #self.stick_length_input.setVisible(self.stick_length_btn.is_on())
         self.update()
 
     def set_show_title(self, value: bool):
@@ -204,7 +239,6 @@ class CustomPixmap(QGraphicsObject):
 
     def update_stick_widgets(self):
         stick_length = 60
-        print(self.camera.sticks)
         for stick in self.camera.sticks:
             sw = StickWidget(stick, self)
             sw.set_mode(self.stick_widget_mode)
@@ -223,7 +257,8 @@ class CustomPixmap(QGraphicsObject):
         self.__update_title()
 
     def __update_title(self):
-        self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
+        #self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
+        self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.stick_length_btn.boundingRect().height())
         self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2, 0)
         self.stick_length_btn.setPos(self.title.pos() + QPointF(self.title.boundingRect().width(), 0))
@@ -369,6 +404,9 @@ class CustomPixmap(QGraphicsObject):
 
     def handle_stick_length_clicked(self):
         self.stick_length_input.setVisible(self.stick_length_btn.is_on())
+        rect = self.scene().views()[0].size()
+        self.stick_length_input.setPos(rect.width() * 0.5 - self.stick_length_input.boundingRect().width() * 0.0,
+                                               rect.height() * 0.5 - self.stick_length_input.boundingRect().height() * 0.0)
         self.stick_length_input.set_focus()
         self.startTimer(1000)
 
