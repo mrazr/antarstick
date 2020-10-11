@@ -2,14 +2,14 @@
 import sys
 from pathlib import Path
 import json
-from typing import List, Optional
+from typing import List, Optional, Dict
 import os
 
 from PyQt5.QtWidgets import (QAction, QApplication, QFileDialog, QMainWindow,
-                             QToolBar, QMenu, QToolButton, QMessageBox, QPushButton, QWidget)
-from PyQt5.QtCore import QThreadPool, QRunnable
+                             QToolBar, QMenu, QToolButton, QMessageBox, QPushButton, QWidget, QSizePolicy, QStyle)
+from PyQt5.QtCore import QThreadPool, QRunnable, QResource
 from PyQt5.Qt import QKeySequence, Qt
-from PyQt5.QtGui import QCloseEvent, QIcon, QFontDatabase, QFont
+from PyQt5.QtGui import QCloseEvent, QIcon, QFontDatabase, QFont, QPicture, QPixmap
 
 from camera_processing.widgets.camera_processing_widget import \
     CameraProcessingWidget
@@ -32,11 +32,13 @@ class CameraLoadWorker(QRunnable):
 class MainWindow(QMainWindow):
     def __init__(self):
         QMainWindow.__init__(self)
-        family_id = QFontDatabase.addApplicationFont(str(Path(sys.argv[0]).parent / 'camera_processing/TwitterEmoji.ttf'))
-        family = QFontDatabase.applicationFontFamilies(family_id)[0]
+        #if not QResource.registerResource('./resources.rcc'):
+        #    print('failure')
+        #family_id = QFontDatabase.addApplicationFont(':/fonts/camera_processing/TwitterEmoji.ttf')
+        #family = QFontDatabase.applicationFontFamilies(family_id)[0]
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        self.icon_font = QFont(family)
+        #self.icon_font = QFont(family)
 
         self.ui.actionAdd_camera.triggered.connect(self.handle_add_camera_triggered)
         self.ui.actionOpen_dataset.triggered.connect(self.handle_open_dataset_triggered)
@@ -52,29 +54,63 @@ class MainWindow(QMainWindow):
         self.startup_page_ui.openDataset_button.setMenu(None)
         self.startup_page_ui.openDataset_button.setArrowType(Qt.NoArrow)
 
+        self.startup_page_ui.label_recent_datasets_image_placeholder.setPixmap(
+            QPixmap(':/icons/document-open-recent.svg'))
+        self.startup_page_ui.label_recent_cameras_image_placeholder.setPixmap(
+            QPixmap(':/icons/document-open-recent.svg'))
+
         self.startup_dataset_buttons: List[QToolButton] = []
         self.startup_camera_buttons: List[QToolButton] = []
 
         self.state = self.get_config_state()
 
         self.recent_datasets: List[Path] = []
-        self.recent_menu = QMenu()
-        self.recent_menu.setToolTipsVisible(True)
-        self.dataset_actions = []
+        self.recent_datasets_menu = QMenu()
+        self.recent_datasets_menu.setToolTipsVisible(True)
+        self.recent_dataset_qactions = []
+
+        self.startup_page_ui.verticalLayout_recentDatasets.removeWidget(self.startup_page_ui.label_noRecentDatasets)
+        self.startup_page_ui.label_noRecentDatasets.hide()
 
         for ds in self.state['recent_datasets']:
             self.add_dataset_entry_to_recent(Path(ds))
-        self.recent_menu.triggered.connect(lambda action: self.open_dataset(Path(action.toolTip())))
 
-        self.ui.actionOpen_dataset.setMenu(self.recent_menu)
+        if len(self.recent_datasets) == 0:
+            self.startup_page_ui.verticalLayout_recentDatasets.addWidget(self.startup_page_ui.label_noRecentDatasets)
+            self.startup_page_ui.label_noRecentDatasets.show()
+
+        self.recent_datasets_menu.triggered.connect(lambda action: self.open_dataset(Path(action.toolTip())))
+
+        self.ui.actionOpen_dataset.setMenu(self.recent_datasets_menu)
+
+        self.recent_cameras: List[Path] = []
+        self.recent_cameras_menu = QMenu()
+        self.recent_cameras_menu.setToolTipsVisible(True)
+        self.recent_cameras_qactions: Dict[str, QAction] = {}
+
+        self.startup_page_ui.verticalLayout_recentCameras.removeWidget(self.startup_page_ui.label_noRecentCameras)
+        self.startup_page_ui.label_noRecentCameras.hide()
+
+        for cam in self.state['recent_cameras']:
+            self.add_camera_entry_to_recent(Path(cam))
+
+        if len(self.recent_cameras) == 0:
+            self.startup_page_ui.verticalLayout_recentCameras.addWidget(self.startup_page_ui.label_noRecentCameras)
+            self.startup_page_ui.label_noRecentCameras.show()
+
+        self.recent_cameras_menu.triggered.connect(self.handle_add_recent_camera_triggered)
+        self.ui.actionAdd_camera.setMenu(self.recent_cameras_menu)
 
         self.dataset = Dataset()
         self.analyzer_widget = CameraProcessingWidget()
         self.analyzer_widget.set_dataset(self.dataset)
         self.analyzer_widget.camera_loaded.connect(self.handle_camera_added)
 
-        self.ui.stackedWidget.insertWidget(0, self.startup_page)
-        self.ui.stackedWidget.insertWidget(1, self.analyzer_widget)
+        self.ui.stackedWidget.removeWidget(self.ui.page)
+        self.ui.stackedWidget.removeWidget(self.ui.page_2)
+
+        self.ui.stackedWidget.addWidget(self.startup_page)
+        self.ui.stackedWidget.addWidget(self.analyzer_widget)
         self.ui.stackedWidget.setCurrentIndex(0)
         self.setCentralWidget(self.ui.stackedWidget)
         self.ui.toolBar.hide()
@@ -149,7 +185,7 @@ class MainWindow(QMainWindow):
             #    self.setCentralWidget(self.analyzer_widget)
             #self.setWindowTitle(file_dialog.selectedFiles()[0])
             if self.dataset.add_camera(Path(file_dialog.selectedFiles()[0])):
-                pass
+                self.add_camera_entry_to_recent(Path(file_dialog.selectedFiles()[0]))
 
     def handle_open_dataset_triggered(self, checked: bool):
         file_dialog = QFileDialog(self)
@@ -162,8 +198,12 @@ class MainWindow(QMainWindow):
             #self.dataset.load_from(Path(file_path))  # TODO handle the bool return value
             self.setWindowTitle(str(self.dataset.path))
             self.add_dataset_entry_to_recent(file_path)
-            self.ui.actionOpen_dataset.setMenu(self.recent_menu)
+            self.ui.actionOpen_dataset.setMenu(self.recent_datasets_menu)
             self.save_state()
+
+    def handle_add_recent_camera_triggered(self, action: QAction):
+        if self.dataset.add_camera(Path(action.toolTip())):
+            self.add_camera_entry_to_recent(Path(action.toolTip()))
 
     def connect_dataset_signals(self):
         self.dataset.camera_added.connect(self.handle_camera_added)
@@ -172,34 +212,71 @@ class MainWindow(QMainWindow):
         try:
             with open(Path(sys.argv[0]).parent / 'state.json', 'w') as f:
                 self.state['recent_datasets'] = list(map(lambda p: str(p), self.recent_datasets))
+                self.state['recent_cameras'] = list(map(lambda p: str(p), self.recent_cameras))
                 json.dump(self.state, f)
                 #json.dump(list(map(lambda p: str(p), self.recent_datasets)), f)
         except PermissionError:
             pass
 
+    def add_camera_entry_to_recent(self, p: Path):
+        if self.startup_page_ui.label_noRecentCameras.isVisible():
+            self.startup_page_ui.label_noRecentCameras.hide()
+            self.startup_page_ui.verticalLayout_recentCameras.removeWidget(self.startup_page_ui.label_noRecentCameras)
+        if p not in self.recent_cameras:
+            self.recent_cameras.append(p)
+            action = QAction(str(p.name))
+            action.setToolTip(str(p))
+            self.recent_cameras_qactions[str(p)] = action
+            self.recent_cameras_menu.addAction(action)
+            btn = QToolButton()
+            btn.setDefaultAction(action)
+            btn.setStyleSheet('font-size: 12pt')
+            btn.setText(str(p.name))
+            btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+            self.startup_page_ui.label_noRecentCameras.hide()
+            self.startup_page_ui.verticalLayout_recentCameras.addWidget(btn)
+        else:
+            action_idx = self.recent_cameras_menu.actions().index(self.recent_cameras_qactions[str(p)])
+            #btn = self.startup_page_ui.verticalLayout_recentCameras.itemAt(action_idx)
+            btn = self.startup_page_ui.verticalLayout_recentCameras.itemAt(action_idx).widget() #self.startup_page_ui.verticalLayout_recentCameras.removeItem(btn)
+            self.startup_page_ui.verticalLayout_recentCameras.removeWidget(btn)
+            self.startup_page_ui.verticalLayout_recentCameras.insertWidget(0, btn)
+            self.recent_cameras.remove(p)
+            self.recent_cameras.insert(0, p)
+            self.recent_cameras_menu.clear()
+            for i in range(self.startup_page_ui.verticalLayout_recentCameras.count()):
+                btn: QToolButton = self.startup_page_ui.verticalLayout_recentCameras.itemAt(i).widget()
+                self.recent_cameras_menu.addAction(btn.defaultAction())
+
     def add_dataset_entry_to_recent(self, p: Path):
+        if self.startup_page_ui.label_noRecentDatasets.isVisible():
+            self.startup_page_ui.label_noRecentDatasets.hide()
+            self.startup_page_ui.verticalLayout_recentDatasets.removeWidget(self.startup_page_ui.label_noRecentDatasets)
         if p not in self.recent_datasets:
             self.recent_datasets.append(p)
             action = QAction(str(p.name))
             action.setToolTip(str(p))
-            self.dataset_actions.append(action)
-            self.recent_menu.addAction(action)
+            self.recent_dataset_qactions.append(action)
+            self.recent_datasets_menu.addAction(action)
             btn = QToolButton()
             btn.setDefaultAction(action)
             btn.setStyleSheet('font-size: 12pt')
             btn.setText(str(p))
-            self.startup_page_ui.label_noRecentDatasets.hide()
+            btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
             self.startup_page_ui.verticalLayout_recentDatasets.addWidget(btn)
-            self.startup_page_ui.verticalLayout_recentDatasets.setAlignment(btn, Qt.AlignHCenter)
+            #self.startup_page_ui.verticalLayout_recentDatasets.setAlignment(btn, Qt.AlignHCenter)
             self.startup_dataset_buttons.append(btn)
 
     def remove_dataset_entry_from_recent(self, path: Path):
-        actions = list(filter(lambda action: action.toolTip() == str(path), self.dataset_actions))
+        actions = list(filter(lambda action: action.toolTip() == str(path), self.recent_dataset_qactions))
         if len(actions) > 0:
             action = actions[0]
-            self.dataset_actions.remove(action)
-            self.recent_menu.removeAction(action)
+            self.recent_dataset_qactions.remove(action)
+            self.recent_datasets_menu.removeAction(action)
             self.recent_datasets.remove(path)
+        if len(self.recent_datasets) == 0:
+            self.startup_page_ui.verticalLayout_recentDatasets.addWidget(self.startup_page_ui.label_noRecentDatasets)
+            self.startup_page_ui.label_noRecentDatasets.show()
 
     def open_dataset(self, path: Path):
         if len(self.dataset.cameras) > 0:
@@ -248,8 +325,9 @@ class MainWindow(QMainWindow):
         if self.analyzer_widget is not None:
             self.analyzer_widget.cleanup()
         self.save_state()
-        os.remove('process.log')
-        QMainWindow.closeEvent(self, event)
+        #os.remove('process.log')
+        #QMainWindow.closeEvent(self, event)
+        super().closeEvent(event)
 
     def handle_close_dataset_triggered(self):
         self.dataset.save()
