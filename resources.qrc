@@ -1,0 +1,17 @@
+<RCC>
+  <qresource>
+    <file>icons/sun.svg</file>
+    <file>icons/snowflake.svg</file>
+    <file>icons/moon.svg</file>
+    <file>icons/moon.png</file>
+    <file>icons/snowflake.png</file>
+    <file>icons/sun.png</file>
+    <file>icons/dialog-close.svg</file>
+    <file>icons/camera-photo.svg</file>
+    <file>icons/camera.svg</file>
+    <file>icons/document-open.svg</file>
+    <file>icons/document-open-recent.svg</file>
+    <file>icons/document-save-as.svg</file>
+    <file>icons/document-save.svg</file>
+  </qresource>
+</RCC>
