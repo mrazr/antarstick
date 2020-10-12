@@ -16,13 +16,15 @@ class NumberInputWidget(QGraphicsTextItem):
 
     def __init__(self, parent: Optional[QGraphicsItem] = None):
         QGraphicsItem.__init__(self, parent)
+        self.setTabChangesFocus(True)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        if len(event.text()) == 0:
-            return
-        allowed_keys = [Qt.Key_Backspace, Qt.Key_Escape, Qt.Key_Return, Qt.Key_Enter, Qt.Key_Right, Qt.Key_Direction_L, Qt.Key_Delete]
         text = event.text()
-        if (48 > ord(text) or ord(text) > 57) and event.key() not in allowed_keys:
+        allowed_keys = [Qt.Key_Backspace, Qt.Key_Escape, Qt.Key_Return, Qt.Key_Enter, Qt.Key_Left, Qt.Key_Right, Qt.Key_Direction_L,
+                        Qt.Key_Delete]
+        if event.key() == Qt.Key_Tab:
+            return
+        if event.key() not in allowed_keys and (event.key() < Qt.Key_0 or event.key() > Qt.Key_9):
             return
         if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
             self.accepted.emit()
@@ -30,9 +32,20 @@ class NumberInputWidget(QGraphicsTextItem):
         elif event.key() == Qt.Key_Escape:
             self.cancelled.emit()
             return
+        elif event.key() == Qt.Key_Left:
+            cursor = self.textCursor()
+            cursor.movePosition(QTextCursor.Left)
+            self.setTextCursor(cursor)
+        elif event.key() == Qt.Key_Right:
+            cursor = self.textCursor()
+            cursor.movePosition(QTextCursor.Right)
+            self.setTextCursor(cursor)
         else:
-            QGraphicsTextItem.keyPressEvent(self, event)
-        self.text_changed.emit()
+            if event.key() == Qt.Key_0:
+                if len(self.toPlainText()) == 0 or self.textCursor().position() == 0:
+                    return
+            super().keyPressEvent(event)
+            self.text_changed.emit()
 
     def keyReleaseEvent(self, event: QKeyEvent) -> None:
         pass
@@ -48,6 +61,7 @@ class NumberInputWidget(QGraphicsTextItem):
             return None
         return int(text)
 
+
 class StickLengthInput(QGraphicsObject):
 
     input_entered = pyqtSignal()
@@ -61,8 +75,8 @@ class StickLengthInput(QGraphicsObject):
         self.cancel_button = Button("btn_cancel", "X", parent=self)
         self.cancel_button.set_base_color([ButtonColor.RED])
         self.cancel_button.clicked.connect(self.input_cancelled.emit)
-        self.accept_button.set_height(30)
-        self.cancel_button.set_height(30)
+        self.accept_button.set_height(12)
+        self.cancel_button.set_height(12)
         self.hor_padding = 2
         self.background_rect = QGraphicsRectItem(parent=self)
         self.background_rect.setBrush(QBrush(QColor(50, 50, 50, 200)))
@@ -113,6 +127,7 @@ class StickLengthInput(QGraphicsObject):
     def set_length(self, length_cm: int):
         self.text_field.setPlainText(str(length_cm))
         self.adjust_layout()
+        self.set_focus()
 
     def set_focus(self):
         self.text_field.setFocus(Qt.PopupFocusReason)
