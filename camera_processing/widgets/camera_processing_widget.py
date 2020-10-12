@@ -22,8 +22,8 @@ from camera import Camera
 from camera_processing.widgets.camera_view_widget import CameraViewWidget
 from dataset import Dataset
 
-logging_start = time()
-logging.basicConfig(filename='process.log', level=logging.DEBUG)
+#logging_start = time()
+#logging.basicConfig(filename='process.log', level=logging.DEBUG)
 
 
 class TabProxyStyle(QProxyStyle):
@@ -120,7 +120,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self.to_process = Queue()
         self.conn1, self.conn2 = Pipe()
 
-        self.process = Process(target=analyze_daytime_snow, args=(self.to_process, self.result_queue, self.conn1,))
+        #self.process = #Process(target=analyze_daytime_snow, args=(self.to_process, self.result_queue, self.conn1,))
 
         self.pause_button = QPushButton(icon=QIcon.fromTheme('media-playback-start'), text='Daytime && snow analysis')
         self.pause_button.setEnabled(False)
@@ -215,8 +215,8 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
             cam_widget.handle_camera_added(camera)
 
     def cleanup(self):
-        if self.process is not None and self.process.is_alive():
-            self.process.terminate()
+        #if self.process is not None and self.process.is_alive():
+        #    self.process.terminate()
         if self.dataset is None:
             return
         self.dataset.save()
@@ -287,8 +287,8 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         else:
             self.pause_button.setIcon(QIcon.fromTheme('media-playback-pause'))
             self.logging_start = time()
-            self.process = Process(target=analyze_daytime_snow, args=(self.to_process, self.result_queue, self.conn1, self.logging_start,))
-            self.process.start()
+            #self.process = Process(target=analyze_daytime_snow, args=(self.to_process, self.result_queue, self.conn1, self.logging_start,))
+            #self.process.start()
             self.pause_button.setEnabled(True)
             self.pause_button.setIcon(QIcon.fromTheme('media-playback-pause'))
             self.fetch_next_batch()

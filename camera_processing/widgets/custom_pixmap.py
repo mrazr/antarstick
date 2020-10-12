@@ -277,7 +277,7 @@ class CustomPixmap(QGraphicsObject):
         self.scene().update(self.sceneBoundingRect())
     
     def mousePressEvent(self, e: QGraphicsSceneMouseEvent):
-        QGraphicsPixmapItem.mousePressEvent(self, e)
+        super().mousePressEvent(e)
 
     def mouseReleaseEvent(self, e: QGraphicsSceneMouseEvent):
         if self.mode == 1:
