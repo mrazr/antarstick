@@ -73,11 +73,11 @@ SNOW_SVC_FILE = str(Path(sys.argv[0]).parent / 'camera_processing/snow_svc.jobli
 SNOW_SCALER_FILE = str(Path(sys.argv[0]).parent / 'camera_processing/snow_scaler.joblib')
 STICK_PIPELINE_FILE = Path(sys.argv[0]).parent / 'camera_processing/stick_verification_pipeline4.joblib'
 
-try:
-    success = hog_desc.load(STICK_HOG_FILE)
-except:
-    print(f'Could not load file {STICK_HOG_FILE}')
-    exit(-1)
+#try:
+#    success = hog_desc.load(STICK_HOG_FILE)
+#except:
+#    print(f'Could not load file {STICK_HOG_FILE}')
+#    exit(-1)
 
 try:
     with open(STICK_PIPELINE_FILE, 'rb') as f:
@@ -86,8 +86,8 @@ except FileNotFoundError:
     print(f'Could not load file {STICK_PIPELINE_FILE}') #TODO show error message dialog
     exit(-1)
 
-snow_svc: SVC = joblib.load(SNOW_SVC_FILE)
-snow_scaler: StandardScaler = joblib.load(SNOW_SCALER_FILE)
+#snow_svc: SVC = joblib.load(SNOW_SVC_FILE)
+#snow_scaler: StandardScaler = joblib.load(SNOW_SCALER_FILE)
 
 clahe = cv.createCLAHE()
 clahe.setTilesGridSize((8, 8))
@@ -814,7 +814,8 @@ def is_snow(gray: np.ndarray, img: np.ndarray, sigma: float = 0.5, threshold: in
     bl = cv.GaussianBlur(ground, (5, 5), sigmaX=sigma)
     diff = ground - bl
     diff_mean = np.array([[np.count_nonzero(diff > threshold) / (ground.shape[0] * ground.shape[1]), np.mean(bgr[:,:,0])]])
-    return snow_svc.predict(snow_scaler.transform(diff_mean))[0] > 0.0
+    #return snow_svc.predict(snow_scaler.transform(diff_mean))[0] > 0.0
+    return True
 
 snow_rect = cv.getStructuringElement(cv.MORPH_RECT, (15, 15))
 
