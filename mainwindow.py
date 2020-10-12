@@ -77,6 +77,7 @@ class MainWindow(QMainWindow):
 
         if len(self.recent_datasets) == 0:
             self.startup_page_ui.verticalLayout_recentDatasets.addWidget(self.startup_page_ui.label_noRecentDatasets)
+            self.startup_page_ui.label_noRecentDatasets.setAlignment(Qt.AlignHCenter)
             self.startup_page_ui.label_noRecentDatasets.show()
 
         self.recent_datasets_menu.triggered.connect(lambda action: self.open_dataset(Path(action.toolTip())))
@@ -96,6 +97,7 @@ class MainWindow(QMainWindow):
 
         if len(self.recent_cameras) == 0:
             self.startup_page_ui.verticalLayout_recentCameras.addWidget(self.startup_page_ui.label_noRecentCameras)
+            self.startup_page_ui.label_noRecentCameras.setAlignment(Qt.AlignHCenter)
             self.startup_page_ui.label_noRecentCameras.show()
 
         self.recent_cameras_menu.triggered.connect(self.handle_add_recent_camera_triggered)
