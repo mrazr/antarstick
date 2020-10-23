@@ -98,6 +98,9 @@ class Ui_StartupPage(object):
         font.setPointSize(12)
         self.label_noRecentDatasets.setFont(font)
         self.label_noRecentDatasets.setLayoutDirection(QtCore.Qt.LeftToRight)
+        self.label_noRecentDatasets.setStyleSheet("QLabel {\n"
+"    color: gray;\n"
+"}")
         self.label_noRecentDatasets.setObjectName("label_noRecentDatasets")
         self.verticalLayout_recentDatasets.addWidget(self.label_noRecentDatasets, 0, QtCore.Qt.AlignHCenter)
         self.verticalLayout_2.addLayout(self.verticalLayout_recentDatasets)
@@ -133,6 +136,9 @@ class Ui_StartupPage(object):
         font = QtGui.QFont()
         font.setPointSize(12)
         self.label_noRecentCameras.setFont(font)
+        self.label_noRecentCameras.setStyleSheet("QLabel {\n"
+"    color: gray;\n"
+"}")
         self.label_noRecentCameras.setObjectName("label_noRecentCameras")
         self.verticalLayout_recentCameras.addWidget(self.label_noRecentCameras, 0, QtCore.Qt.AlignHCenter)
         self.verticalLayout_2.addLayout(self.verticalLayout_recentCameras)

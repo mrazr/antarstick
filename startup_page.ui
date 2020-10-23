@@ -190,6 +190,11 @@
          <property name="layoutDirection">
           <enum>Qt::LeftToRight</enum>
          </property>
+         <property name="styleSheet">
+          <string notr="true">QLabel {
+	color: gray;
+}</string>
+         </property>
          <property name="text">
           <string>no recently opened datasets</string>
          </property>
@@ -266,6 +271,11 @@
           <font>
            <pointsize>12</pointsize>
           </font>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">QLabel {
+	color: gray;
+}</string>
          </property>
          <property name="text">
           <string>no recently opened cameras</string>

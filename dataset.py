@@ -103,6 +103,8 @@ class Dataset(QObject):
         self.available_link_groups = list(range(12))
 
     def add_camera(self, folder: Path, camera_id: int = -1, first_time_add: bool = True) -> bool:
+        if not folder.exists():
+            return False
         if not folder.is_absolute():
             camera = Camera.load_from_path(self.path.parent / folder)
         else:

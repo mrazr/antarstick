@@ -1,7 +1,7 @@
 import os
 from os import listdir, mkdir
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 import pandas as pd
 import numpy as np
@@ -256,7 +256,7 @@ class Camera(QObject):
     def get_stick_by_id(self, stick_id: int) -> Stick:
         return next(filter(lambda s: s.local_id == stick_id, self.sticks))
 
-    def create_new_sticks(self, lines: List[np.ndarray], image: str = '') -> List[Stick]:
+    def create_new_sticks(self, lines: List[Tuple[np.ndarray, int]], image: str = '') -> List[Stick]:
         """Creates Stick instance for given line coordinates and assigns them Camera-unique IDs."""
         count = len(lines)
         sticks = []
@@ -266,8 +266,8 @@ class Camera(QObject):
             else:
                 id_to_assign = self.next_stick_id
                 self.next_stick_id += 1
-            line = lines[i]
-            stick = Stick(local_id=id_to_assign, view=image)
+            line = lines[i][0]
+            stick = Stick(local_id=id_to_assign, view=image, width=lines[i][1])
             stick.set_endpoints(line[0][0], line[0][1], line[1][0], line[1][1])
             sticks.append(stick)
         self.sticks.extend(sticks)

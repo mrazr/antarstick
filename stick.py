@@ -49,6 +49,7 @@ class Stick:
     snow_height_px: int = 0
     label: str = "stick"
     scale_: float = 1.0
+    width: int = 3
 
     def __post_init__(self):
         self.length_px = np.linalg.norm(self.top - self.bottom)
@@ -88,8 +89,18 @@ class Stick:
             'length_cm': self.length_cm,
             'label': self.label,
             'scale_': self.scale_,
-            'view': self.view
+            'view': self.view,
+            'width': self.width
         }
+
+    def line(self) -> np.ndarray:
+        return np.array([self.top, self.bottom])
+
+    def __eq__(self, other: 'Stick') -> bool:
+        return self.camera_id == other.camera_id and self.local_id == other.local_id
+
+    def __hash__(self) -> int:
+        return (str(self.camera_id) + str(self.local_id)).__hash__()
 
     @staticmethod
     def build_from_state(state: Dict[str, Any]) -> 'Stick':
@@ -104,5 +115,6 @@ class Stick:
         stick.label = state['label']
         stick.scale_ = state['scale_']
         stick.view = state['view']
+        stick.width = state['width']
 
         return stick

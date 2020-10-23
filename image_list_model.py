@@ -118,6 +118,7 @@ class ImageListModel(QAbstractTableModel):
         #    if index.column() == 1 or index.column() == 2:
         #        return self.emoji_font
 
+
         if role == Qt.ForegroundRole and index.row() < self.processed_images_count:
             return QBrush(QColor(0, 150, 0))
         return None

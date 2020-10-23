@@ -300,15 +300,15 @@ class CustomPixmap(QGraphicsObject):
         self.click_handler = None
 
     def disable_link_button(self, btn_position: str):
-        if btn_position == "left":
+        if btn_position == 'left':
             self.left_add_button.setVisible(False)
-        elif btn_position == "right":
+        elif btn_position == 'right':
             self.right_add_button.setVisible(False)
     
     def enable_link_button(self, btn_position: str):
-        if btn_position == "left":
+        if btn_position == 'left':
             self.left_add_button.setVisible(True)
-        elif btn_position == "right":
+        elif btn_position == 'right':
             self.right_add_button.setVisible(True)
 
     def _remove_stick_widgets(self):

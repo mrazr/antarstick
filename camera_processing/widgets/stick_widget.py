@@ -40,6 +40,10 @@ class StickWidget(QGraphicsObject):
     handle_press_pen = QPen(QColor(200, 200, 0, 255))
     handle_size = 20
 
+    normal_color = QColor(0, 200, 120)
+    negative_color = QColor(200, 0, 0)
+    positive_color = QColor(0, 200, 0)
+
     def __init__(self, stick: Stick, parent: Optional[QGraphicsItem] = None):
         QGraphicsObject.__init__(self, parent)
         self.stick = stick
@@ -111,6 +115,7 @@ class StickWidget(QGraphicsObject):
         self.selected = False
 
         self.measured_height: int = -1
+        self.current_color = self.normal_color
 
     @pyqtSlot()
     def handle_btn_delete_clicked(self):
@@ -123,7 +128,7 @@ class StickWidget(QGraphicsObject):
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem,
               widget: Optional[PyQt5.QtWidgets.QWidget] = ...):
-        painter.setPen(QPen(QColor(0, 200, 120), 1.0))
+        painter.setPen(QPen(self.current_color, 1.0))
         painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)))
 
         if self.highlight_color is not None:
@@ -363,4 +368,16 @@ class StickWidget(QGraphicsObject):
 
     def set_snow_height(self, height: int):
         self.measured_height = height
+        self.update()
+
+    def border_normal(self):
+        self.current_color = self.normal_color
+        self.update()
+
+    def border_positive(self):
+        self.current_color = self.positive_color
+        self.update()
+
+    def border_negative(self):
+        self.current_color = self.negative_color
         self.update()

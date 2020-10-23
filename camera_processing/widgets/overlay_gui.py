@@ -60,9 +60,10 @@ class OverlayGui(QGraphicsObject):
         self.mouse_pan_pic = QPixmap(str(path / "mouse_pan.png"))
         self.mouse_pan_pic = self.mouse_pan_pic.scaledToWidth(80, Qt.SmoothTransformation)
 
-        self.top_menu.add_button("find_sticks", "Find sticks",
-                                 call_back=lambda: self.find_sticks_menu.setVisible(not self.find_sticks_menu.isVisible()),
-                                 is_checkable=True)
+        self.top_menu.add_button('find_sticks', 'Find sticks', call_back=self.find_sticks_clicked)
+        # self.top_menu.add_button("find_sticks", "Find sticks",
+        #                          call_back=lambda: self.find_sticks_menu.setVisible(not self.find_sticks_menu.isVisible()),
+        #                          is_checkable=True)
         self.top_menu.add_button('confirm_sticks', 'Confirm sticks', call_back=self.handle_confirm_sticks_clicked,
                                  is_checkable=True)
         self.top_menu.add_button("detect_sticks", "Re-detect sticks", call_back=self.redetect_sticks_clicked.emit)
@@ -83,7 +84,7 @@ class OverlayGui(QGraphicsObject):
         self.top_menu.hide_button("delete_sticks")
         process_btn = self.top_menu.add_button("process_photos", "Process photos", is_checkable=False,
                                                call_back=self.process_photos_clicked.emit)
-        process_btn.set_disabled(True)
+        #process_btn.set_disabled(True)
         #process_btn.clicked.connect(lambda _: self.handle_process_photos_clicked())
         self.top_menu.set_height(12)
         self.top_menu.center_buttons()

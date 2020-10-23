@@ -277,7 +277,6 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
     def handle_current_tab_changed(self, idx: int):
         cam_widget: CameraViewWidget = self.widget(idx)
-        print(f'this is current now: {cam_widget}')
         if cam_widget is not None and isinstance(cam_widget, CameraViewWidget):
             self.active_camera = cam_widget.camera
 
