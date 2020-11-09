@@ -99,14 +99,10 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self.tabCloseRequested.connect(self.handle_tab_close_requested)
         self.currentChanged.connect(self.handle_current_tab_changed)
         self.dataset: Optional[Dataset] = None
-        #self.dataset: Dataset = dataset
-        #self.dataset.camera_added.connect(self.handle_camera_added)
-        #self.dataset.camera_removed.connect(self.handle_camera_removed)
-        #self.dataset.loading_finished.connect(self.handle_dataset_loading_finished)
-        #self.dataset.cameras_linked.connect(self.handle_cameras_linked)
-        #self.dataset.cameras_unlinked.connect(self.handle_cameras_unlinked)
         self._camera_tab_map: Dict[int, int] = dict({})
 
+        self.assigned_markers: Dict[Camera, Dict[Camera, int]] = {}
+        self.marker_ids: List[int] = [len(LINK_MARKERS) - i - 1 for i in range(len(LINK_MARKERS))]
         #self.process: Optional[Process] = None
         self.active_camera: Queue = Queue(maxsize=10)
         self.active_camera.value = None
@@ -293,42 +289,48 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
             self.fetch_next_batch()
             self.timer.start(1000)
 
-    def handle_cameras_linked(self, cam1: Camera, cam2: Camera, camera_group: int):
-        #self.tab_style.add_new_tab_group([cam1.get_folder_name(), cam2.get_folder_name()])
-        #self.tab_style.set_tab_groups(list(map(lambda group: list(map(lambda cam: cam.get_folder_name(), group)),
-        #                                       self.dataset.get_camera_groups())))
+    def handle_cameras_linked(self, cam1: Camera, cam2: Camera):
         separator = '|'
         cam1_tab = self._camera_tab_map[cam1.id]
         cam1_tab_text = self.tabText(cam1_tab)
         if separator not in cam1_tab_text:
             cam1_tab_text += separator
-        cam1_tab_text += LINK_MARKERS[camera_group]
+        marker_id = self.marker_ids.pop()
+        cam1_tab_text += LINK_MARKERS[marker_id]
         self.setTabText(cam1_tab, cam1_tab_text)
         cam2_tab = self._camera_tab_map[cam2.id]
         cam2_tab_text = self.tabText(cam2_tab)
         if separator not in cam2_tab_text:
             cam2_tab_text += separator
-        cam2_tab_text += LINK_MARKERS[camera_group]
+        cam2_tab_text += LINK_MARKERS[marker_id]
         self.setTabText(cam2_tab, cam2_tab_text)
 
+        cam_markers = self.assigned_markers.setdefault(cam1, {})
+        cam_markers[cam2] = marker_id
         self.tabBar().update()
 
-    def handle_cameras_unlinked(self, cam1: Camera, cam2: Camera, camera_group: int):
+    def handle_cameras_unlinked(self, cam1: Camera, cam2: Camera):
         separator = '|'
         cam1_tab = self._camera_tab_map[cam1.id]
         cam1_tab_text = self.tabText(cam1_tab)
-        cam1_tab_text = cam1_tab_text.replace(LINK_MARKERS[camera_group], '')
-        if cam1_tab_text.index(separator) == len(cam1_tab_text) - 1:
+
+        cam_marker_id = self.assigned_markers.get(cam1, {}).get(cam2, -1)
+        if cam_marker_id < 0:
+            cam_marker_id = self.assigned_markers[cam2][cam1]
+
+        cam1_tab_text = cam1_tab_text.replace(LINK_MARKERS[cam_marker_id], '')
+        if cam1_tab_text.find(separator) == len(cam1_tab_text) - 1:
             cam1_tab_text = cam1_tab_text[:-1]
         self.setTabText(cam1_tab, cam1_tab_text)
         cam2_tab = self._camera_tab_map[cam2.id]
         cam2_tab_text = self.tabText(cam2_tab)
-        cam2_tab_text = cam2_tab_text.replace(LINK_MARKERS[camera_group], '')
+        cam2_tab_text = cam2_tab_text.replace(LINK_MARKERS[cam_marker_id], '')
         try:
             if cam2_tab_text.index(separator) == len(cam2_tab_text) - 1:
                 cam2_tab_text = cam2_tab_text[:-1]
         except ValueError:
             pass
+        self.marker_ids.append(cam_marker_id)
         self.setTabText(cam2_tab, cam2_tab_text)
 
         self.tabBar().update()
