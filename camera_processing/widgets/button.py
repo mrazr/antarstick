@@ -170,6 +170,7 @@ class Button(QGraphicsObject):
     font: QFont = QFont("monospace", 16)
 
     clicked = pyqtSignal('PyQt_PyObject')
+    hovered_ = pyqtSignal('PyQt_PyObject')
 
     def __init__(self, btn_id: str, label: str, tooltip: str = "", parent: QGraphicsItem = None):
         QGraphicsObject.__init__(self, parent)
@@ -180,7 +181,8 @@ class Button(QGraphicsObject):
         #self.label.setDefaultTextColor(QColor(255, 255, 255, 255))
         #self.label.setTextInteractionFlags(Qt.TextEditable)
         self.text_color_enabled = QColor(255, 255, 255, 255)
-        self.text_color_disabled = QColor(125, 125, 125, 255)
+        self.text_color_disabled = QColor(200, 200, 200, 255)
+        self.fill_color_disabled = QColor(125, 125, 125, 200)
         self.label.setBrush(QBrush(self.text_color_enabled))
         self.btn_id = btn_id
         self.rect = QRectF(0, 0, 0, 0)
@@ -236,6 +238,10 @@ class Button(QGraphicsObject):
             self.label.setFont(font)
         self._reposition_text()
 
+    def set_button_height(self, h: int):
+        self.rect.setHeight(h)
+        self._reposition_text()
+
     def scale_button(self, factor: float):
         #self.scaling = factor
         factor = 1.0
@@ -279,6 +285,7 @@ class Button(QGraphicsObject):
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent):
         if self.disabled:
             return
+        self.hovered_.emit({'btn_id': self.btn_id, 'button': self, 'hovered': True})
         self.hovered = True
 
         if len(self.tooltip.text()) > 0:
@@ -306,6 +313,7 @@ class Button(QGraphicsObject):
         if self.disabled:
             return
 
+        self.hovered_.emit({'btn_id': self.btn_id, 'button': self, 'hovered': False})
         self.hovered = False
         self.tooltip_shown = False
         self.tooltip.setVisible(False)
@@ -381,9 +389,12 @@ class Button(QGraphicsObject):
                           height - self.label.boundingRect().height() * self.label.scale() - self.ver_margin * self.scaling)
         self.update()
 
-    def set_label(self, text: str):
+    def set_label(self, text: str, direction: str = 'horizontal'):
+        if direction == 'vertical':
+            text = '\n'.join(list(text))
         self.label.setText(text)
-        self.fit_to_contents()
+        self._reposition_text()
+        #self.fit_to_contents()
 
     def click_button(self, artificial_emit: bool = False):
         if self.disabled:
@@ -411,8 +422,10 @@ class Button(QGraphicsObject):
         self.disabled = disabled
         if disabled:
             self.label.setBrush(QBrush(self.text_color_disabled))
+            self.fill_color_current = self.fill_color_disabled
         else:
             self.label.setBrush(QBrush(self.text_color_enabled))
+            self.fill_color_current = self.logic.idle_color()
         self.update()
 
     def set_tooltip(self, tooltip: str):

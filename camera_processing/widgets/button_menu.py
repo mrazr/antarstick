@@ -178,6 +178,7 @@ class ButtonMenu(QGraphicsObject):
         if btn_id not in self.buttons:
             return
         button = self.buttons[btn_id]
+        button.set_default_state()
         del self.buttons[btn_id]
         self.hidden_buttons[btn_id] = button
         button.setVisible(False)
@@ -205,3 +206,6 @@ class ButtonMenu(QGraphicsObject):
         for btn in self.buttons.values():
             btn.scale_button(self.scaling)
         self.center_buttons()
+
+    def visible_buttons_count(self) -> int:
+        return len(self.buttons)

@@ -19,7 +19,7 @@ import camera_processing.antarstick_processing as antar
 from camera import Camera
 from camera_processing.antarstick_processing import process_batch
 from camera_processing.widgets import ui_camera_view
-from camera_processing.widgets.button import Button
+from camera_processing.widgets.button import Button, ButtonColor
 from camera_processing.widgets.button_menu import ButtonMenu
 from camera_processing.widgets.cam_graphics_view import CamGraphicsView
 from camera_processing.widgets.custom_pixmap import CustomPixmap
@@ -38,10 +38,23 @@ class LinkMenuPosition(IntEnum):
     RIGHT = 2,
 
 
+class SideCameraState(IntEnum):
+    Vacant = 0,
+    Adding = 1,
+    Shown = 2,
+    Hidden = 3,
+    Unavailable = 4,  # no other camera available for linking
+
+
 class CameraViewWidget(QtWidgets.QWidget):
 
     sticks_changed = pyqtSignal()
     initialization_done = pyqtSignal(Camera)
+
+    BTN_LEFT_ADD = 'btn_left_add'
+    BTN_LEFT_SHOW = 'btn_left_show'
+    BTN_RIGHT_ADD = 'btn_right_add'
+    BTN_RIGHT_SHOW = 'btn_right_show'
 
     def __init__(self, dataset: Dataset):
         QtWidgets.QWidget.__init__(self)
@@ -84,8 +97,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.gpixmap.setAcceptHoverEvents(False)
         self.gpixmap.setZValue(1)
 
-        self.gpixmap.right_add_button.clicked.connect(self.handle_link_camera_button_right_clicked)
-        self.gpixmap.left_add_button.clicked.connect(self.handle_link_camera_button_left_clicked)
+        #self.gpixmap.right_add_button.clicked.connect(self.handle_link_camera_button_right_clicked)
+        #self.gpixmap.left_add_button.clicked.connect(self.handle_link_camera_button_left_clicked)
 
         self.graphics_scene.addItem(self.gpixmap)
 
@@ -120,6 +133,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.link_menu.close_requested.connect(self.handle_link_menu_close_requested)
         self.link_menu.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
 
+        self.links_available = False
+
         self.return_queue = Queue()
         self.worker_pool = Pool(processes=2)
         self.image_loading_time: float = -1.0
@@ -138,6 +153,56 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.stick_detection_dialog.spinSensitivity.valueChanged.connect(self.detect_sticks)
         self.overlay_gui.redetect_sticks_clicked.connect(self.handle_redetect_sticks_clicked_)
         self.stick_detection_dialog.btnApply.clicked.connect(self.update_detection_params)
+
+        self.left_add_button = Button(self.BTN_LEFT_ADD, '+', parent=self.gpixmap)
+        self.left_side_camera_state = SideCameraState.Unavailable
+
+        self.right_add_button = Button(self.BTN_RIGHT_ADD, '+', parent=self.gpixmap)
+        self.right_side_camera_state = SideCameraState.Unavailable
+
+        self.left_show_button = Button(self.BTN_LEFT_SHOW, 'Show', parent=self.gpixmap)
+        self.right_show_button = Button(self.BTN_RIGHT_SHOW, 'Show', parent=self.gpixmap)
+
+        self._setup_buttons()
+        self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.LEFT)
+        self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.RIGHT)
+
+    def _setup_buttons(self):
+        self.left_add_button.set_label('Link camera', direction='vertical')
+        self.left_add_button.set_is_check_button(True)  # , ['green', 'red'])
+        self.left_add_button.set_base_color([ButtonColor.GREEN, ButtonColor.RED])
+        self.left_add_button.setZValue(3)
+        self.left_add_button.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+        self.left_add_button.set_height(18)
+        self.left_add_button.clicked.connect(self.handle_link_camera_button_left_clicked)
+        self.left_add_button.hovered_.connect(self.handle_side_button_hovered)
+
+        self.left_show_button.set_label('Hide', direction='vertical')
+        self.left_show_button.set_is_check_button(True)
+        self.left_show_button.set_base_color([ButtonColor.RED, ButtonColor.GREEN])
+        self.left_show_button.setZValue(3)
+        self.left_show_button.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+        self.left_show_button.set_height(18)
+        self.left_show_button.clicked.connect(self.handle_side_show_button_clicked)
+        self.left_show_button.hovered_.connect(self.handle_side_button_hovered)
+
+        self.right_add_button.set_label('Link camera', direction='vertical')
+        self.right_add_button.set_is_check_button(True)  # , ['green', 'red'])
+        self.right_add_button.set_base_color([ButtonColor.GREEN, ButtonColor.RED])
+        self.right_add_button.setZValue(3)
+        self.right_add_button.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+        self.right_add_button.set_height(18)
+        self.right_add_button.clicked.connect(self.handle_link_camera_button_right_clicked)
+        self.right_add_button.hovered_.connect(self.handle_side_button_hovered)
+
+        self.right_show_button.set_label('Hide', direction='vertical')
+        self.right_show_button.set_is_check_button(True)
+        self.right_show_button.set_base_color([ButtonColor.RED, ButtonColor.GREEN])
+        self.right_show_button.setZValue(3)
+        self.right_show_button.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+        self.right_show_button.set_height(18)
+        self.right_show_button.clicked.connect(self.handle_side_show_button_clicked)
+        self.right_show_button.hovered_.connect(self.handle_side_button_hovered)
 
     def handle_redetect_sticks_clicked_(self):
         param_json = json.dumps(antar.params)
@@ -179,6 +244,20 @@ class CameraViewWidget(QtWidgets.QWidget):
                                                viewport_rect.height() * 0.5 - rect.height() * 0.5)
 
         self.gpixmap.set_show_title(False)
+        self.left_add_button.set_button_height(self.gpixmap.boundingRect().height())
+        self.left_add_button.setPos(self.gpixmap.get_top_left() -
+                                    QPointF(self.left_add_button.boundingRect().width(), 0))
+
+        self.right_add_button.set_button_height(self.gpixmap.boundingRect().height())
+        self.right_add_button.setPos(self.gpixmap.get_top_right())
+
+        self.left_show_button.set_button_height(int(0.5 * self.gpixmap.boundingRect().height()))
+        self.left_show_button.setPos(self.left_add_button.pos() +
+                                     QPointF(0, 0.5 * self.gpixmap.boundingRect().height()))
+
+        self.right_show_button.set_button_height(int(0.5 * self.gpixmap.boundingRect().height()))
+        self.right_show_button.setPos(self.right_add_button.pos() +
+                                      QPointF(0, 0.5 * self.gpixmap.boundingRect().height()))
 
         self.stick_link_manager.primary_camera = self.gpixmap
 
@@ -192,15 +271,24 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.cam_view.view_changed.emit()
 
     @Slot(bool)
-    def link_cameras_enabled(self, value: bool):
-        self.gpixmap.set_link_cameras_enabled(value)
+    def link_cameras_enabled(self, enabled: bool):
+        if enabled:
+            if self.left_side_camera_state == SideCameraState.Unavailable:
+                self.set_side_camera_state(SideCameraState.Vacant, LinkMenuPosition.LEFT)
+            if self.right_side_camera_state == SideCameraState.Unavailable:
+                self.set_side_camera_state(SideCameraState.Vacant, LinkMenuPosition.RIGHT)
+        else:
+            self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.LEFT)
+            self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.RIGHT)
+        self.links_available = enabled
 
     def _recenter_view(self):
-        rect_to_view = self.gpixmap.sceneBoundingRect()
+        rect_to_view = self.gpixmap.sceneBoundingRect().united(self.left_add_button.sceneBoundingRect())
+        rect_to_view = rect_to_view.united(self.right_add_button.sceneBoundingRect())
 
-        if self.left_link is not None:
+        if self.left_link is not None and self.left_side_camera_state == SideCameraState.Shown:
             rect_to_view = rect_to_view.united(self.left_link.sceneBoundingRect())
-        if self.right_link is not None:
+        if self.right_link is not None and self.right_side_camera_state == SideCameraState.Shown:
             rect_to_view = rect_to_view.united(self.right_link.sceneBoundingRect())
 
         self.graphics_scene.setSceneRect(rect_to_view.marginsAdded(QMarginsF(50, 50, 50, 50)))
@@ -216,7 +304,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.gpixmap.set_image(self.current_viewed_image)
         sticks = self.camera.get_sticks_in_image(image_path.name)
 
-        measurements = self.camera.get_measurement_for(image_path.name)
+        #measurements = self.camera.get_measurement_for(image_path.name)
+        measurements = self.camera.get_sticks_in_image(image_path.name)
 
         # The selected photo is not processed yet, therefore set "missing measurement" value for each StickWidget
         if measurements is None:
@@ -225,8 +314,11 @@ class CameraViewWidget(QtWidgets.QWidget):
             return
 
         for sw in self.gpixmap.stick_widgets:
-            m_ = measurements[sw.stick.label]
-            sw.set_snow_height(m_['snow_height'])
+            #m_ = measurements[sw.stick.label]
+            #sw.set_snow_height(m_['snow_height'])
+            for st in measurements:
+                if st.label == sw.stick.label:
+                    sw.set_snow_height(st.snow_height_px)
 
     @Slot()
     def handle_edit_sticks_clicked(self):
@@ -267,8 +359,8 @@ class CameraViewWidget(QtWidgets.QWidget):
             sw.set_mode(mode)
     
     def handle_link_sticks_clicked(self):
-        self.gpixmap.left_add_button.setVisible(not self.overlay_gui.link_sticks_button_pushed())
-        self.gpixmap.right_add_button.setVisible(not self.overlay_gui.link_sticks_button_pushed())
+        self.left_add_button.setVisible(not self.overlay_gui.link_sticks_button_pushed())
+        self.right_add_button.setVisible(not self.overlay_gui.link_sticks_button_pushed())
         if self.overlay_gui.link_sticks_button_pushed():
             self.stick_link_manager.start()
         else:
@@ -295,7 +387,6 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         c_pixmap.set_display_mode()
         c_pixmap.set_show_stick_widgets(True)
-        cam: Optional[Camera] = None
         cam_position = 'right'
 
         if self.camera.id == cam1.id:  # self.camera is on the left
@@ -304,26 +395,26 @@ class CameraViewWidget(QtWidgets.QWidget):
             cam = cam1
             cam_position = 'left'
 
+        self.link_menu.hide_button(str(cam.folder))
+        if self.link_menu.visible_buttons_count() == 0:
+            if self.left_side_camera_state == SideCameraState.Vacant:
+                self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.LEFT)
+            if self.right_side_camera_state == SideCameraState.Vacant:
+                self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.RIGHT)
         c_pixmap.initialise_with(cam)
 
         pos: QPointF = self.gpixmap.pos()
         if cam_position == 'left':
-            pos.setX(pos.x() - self.gpixmap.boundingRect().width())
+            pos = self.left_add_button.scenePos() - QPointF(self.gpixmap.boundingRect().width(), 0)
             if self.left_link is not None:
                 self.dataset.unlink_cameras(self.camera, self.left_link.camera)
-            self.gpixmap.left_add_button.set_label('x')
-            self.gpixmap.left_add_button.setVisible(True)
-            self.gpixmap.left_add_button.set_on(True)
-            self.gpixmap.left_add_button.set_tooltip('Unlink')
+            self.set_side_camera_state(SideCameraState.Shown, LinkMenuPosition.LEFT)
             self.left_link = c_pixmap
         else:
-            pos.setX(pos.x() + self.gpixmap.boundingRect().width())
+            pos = self.right_add_button.scenePos() + QPointF(self.right_add_button.boundingRect().width(), 0)
             if self.right_link is not None:
                 self.dataset.unlink_cameras(self.camera, self.right_link.camera)
-            self.gpixmap.right_add_button.set_label('x')
-            self.gpixmap.right_add_button.setVisible(True)
-            self.gpixmap.right_add_button.set_on(True)
-            self.gpixmap.right_add_button.set_tooltip('Unlink')
+            self.set_side_camera_state(SideCameraState.Shown, LinkMenuPosition.RIGHT)
             self.right_link = c_pixmap
 
         c_pixmap.setPos(pos)
@@ -338,25 +429,32 @@ class CameraViewWidget(QtWidgets.QWidget):
         if cam1.id != self.camera.id and cam2.id != self.camera.id:
             return
         to_remove = cam1 if cam2.id == self.camera.id else cam2
+        self.link_menu.show_button(str(to_remove.folder))
 
         if self.left_link is not None and self.left_link.camera.id == to_remove.id:
             self.left_link.stick_link_requested.disconnect(self.stick_link_manager.handle_stick_widget_link_requested)
             self.left_link.setParentItem(None)
             self.graphics_scene.removeItem(self.left_link)
             self.left_link = None
-            self.gpixmap.left_add_button.set_default_state()
-            self.gpixmap.left_add_button.set_label('+')
-            self.gpixmap.left_add_button.set_tooltip('Link camera')
+            self.set_side_camera_state(SideCameraState.Vacant, LinkMenuPosition.LEFT)
+            #self.left_add_button.set_default_state()
+            #self.left_add_button.set_label('Link camera', direction='vertical')
+            #self.left_add_button.set_tooltip('Link camera')
         elif self.right_link is not None and self.right_link.camera.id == to_remove.id:
             self.right_link.stick_link_requested.disconnect(self.stick_link_manager.handle_stick_widget_link_requested)
             self.right_link.setParentItem(None)
             self.graphics_scene.removeItem(self.right_link)
             self.right_link = None
-            self.gpixmap.right_add_button.set_default_state()
-            self.gpixmap.right_add_button.set_label('+')
-            self.gpixmap.right_add_button.set_tooltip('Link camera')
+            self.set_side_camera_state(SideCameraState.Vacant, LinkMenuPosition.RIGHT)
         if self.left_link is None and self.right_link is None:
             self.overlay_gui.enable_link_sticks_button(False)
+
+        if self.link_menu.visible_buttons_count() > 0:
+            if self.left_side_camera_state == SideCameraState.Unavailable:
+                self.set_side_camera_state(SideCameraState.Vacant, LinkMenuPosition.LEFT)
+            if self.right_side_camera_state == SideCameraState.Unavailable:
+                self.set_side_camera_state(SideCameraState.Vacant, LinkMenuPosition.RIGHT)
+
         self._recenter_view()
 
     def handle_link_camera_button_left_clicked(self, data: Dict[str, Any]):
@@ -372,33 +470,42 @@ class CameraViewWidget(QtWidgets.QWidget):
                                         else self.right_link.camera)
             return
         self.link_menu.center_buttons()
-        if self.link_menu_position == LinkMenuPosition.RIGHT:
-            self.gpixmap.right_add_button.set_default_state()
-        elif self.link_menu_position == LinkMenuPosition.LEFT:
-            self.gpixmap.left_add_button.set_default_state()
+        #if self.link_menu_position == LinkMenuPosition.RIGHT:
+        #    self.right_add_button.set_default_state()
+        #elif self.link_menu_position == LinkMenuPosition.LEFT:
+        #    self.left_add_button.set_default_state()
+        if self.link_menu_position != LinkMenuPosition.HIDDEN:
+            self.set_side_camera_state(SideCameraState.Vacant, self.link_menu_position)
 
         self.link_menu_position = button_position
+        self.set_side_camera_state(SideCameraState.Adding, self.link_menu_position)
         self.adjust_link_menu_position()
         self.link_menu.setVisible(True)
 
     def adjust_link_menu_position(self):
         #pos = self.gpixmap.left_add_button.sceneBoundingRect().center()
         if self.link_menu_position == LinkMenuPosition.RIGHT:
+            pass
             #self.gpixmap.left_add_button.link_cam_text.setVisible(False)
             #if self.link_menu_position != LinkMenuPosition.HIDDEN:
-            self.gpixmap.left_add_button.setVisible(True)
+            #self.left_add_button.setVisible(True)
             #pos = self.gpixmap.right_add_button.sceneBoundingRect().center()
             #pos = pos - QPointF(self.link_menu.boundingRect().width(), self.link_menu.boundingRect().height() * 0.5)
             #self.gpixmap.right_add_button.hide_tooltip()
         elif self.link_menu_position == LinkMenuPosition.LEFT:
+            pass
             #self.gpixmap.right_add_button.link_cam_text.setVisible(False)
             #if self.link_menu_position != LinkMenuPosition.HIDDEN:
-            self.gpixmap.right_add_button.setVisible(True)
+            #self.right_add_button.setVisible(True)
             #pos = pos - QPointF(0.0 * self.link_menu.sceneBoundingRect().width() * 0.5,
             #                    self.link_menu.boundingRect().height() * 0.5)
             #self.gpixmap.left_add_button.hide_tooltip()
-        if self.link_menu_position != LinkMenuPosition.HIDDEN:
-            self.gpixmap.disable_link_button('left' if self.link_menu_position == LinkMenuPosition.LEFT else 'right')
+        #if self.link_menu_position != LinkMenuPosition.HIDDEN:
+        #    #self.gpixmap.disable_link_button('left' if self.link_menu_position == LinkMenuPosition.LEFT else 'right')
+        #    if self.link_menu_position == LinkMenuPosition.LEFT:
+        #        self.left_add_button.set_disabled(True)
+        #    else:
+        #        self.right_add_button.set_disabled(True)
         self.link_menu.setPos(self.cam_view.size().width() * 0.5 - self.link_menu.boundingRect().width() * 0.5,
                               self.cam_view.size().height() * 0.5 - self.link_menu.boundingRect().height() * 0.5)
 
@@ -544,12 +651,15 @@ class CameraViewWidget(QtWidgets.QWidget):
     def handle_link_menu_close_requested(self):
         self.link_menu.reset_button_states()
         self.link_menu.setVisible(False)
-        if self.link_menu_position == LinkMenuPosition.LEFT:
-            self.gpixmap.left_add_button.set_default_state()
-            self.gpixmap.left_add_button.setVisible(True)
-        else:
-            self.gpixmap.right_add_button.set_default_state()
-            self.gpixmap.right_add_button.setVisible(True)
+        #if self.link_menu_position == LinkMenuPosition.LEFT:
+        #    #self.left_add_button.set_disabled(False)
+        #    #self.left_add_button.set_default_state()
+        #    #self.left_add_button.setVisible(True)
+        #else:
+        #    self.right_add_button.set_disabled(False)
+        #    self.right_add_button.set_default_state()
+        #    #self.right_add_button.setVisible(True)
+        self.set_side_camera_state(SideCameraState.Vacant, self.link_menu_position)
 
     def detect_sticks(self, _: int):
         if self.current_viewed_image is None:
@@ -573,6 +683,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.image_list.dataChanged.emit(idx_from, idx_to)
 
     def handle_find_sticks_clicked(self):
+        #start = time.time()
         self.camera.remove_sticks()
         gray = cv.cvtColor(self.current_viewed_image, cv.COLOR_BGR2GRAY)
         bgr = self.current_viewed_image
@@ -583,7 +694,9 @@ class CameraViewWidget(QtWidgets.QWidget):
         sticks: List[Stick] = self.camera.create_new_sticks(valid_lines,
                                                             self.image_list.data(self.ui.image_list.selectionModel().
                                                                                  selectedRows(0)[0], Qt.DisplayRole))
+        camera_start = time.time()
         self.camera.save()
+        #print(f'handle took {time.time() - start} secs')
 
     def handle_stick_length_entered(self):
         self.camera.default_stick_length_cm = self.overlay_gui.stick_length_input.get_length()
@@ -593,22 +706,37 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.stick_length_input.set_length(self.camera.default_stick_length_cm)
 
     def handle_confirm_sticks_clicked(self):
-        self.camera.initialize_measurements(True)
+        self.camera.initialize_measurements(False)
 
     def handle_process_photos_clicked2(self):
-        photos = self.camera.get_batch(100)
         image = self.image_list.data(self.ui.image_list.selectionModel().selectedRows(0)[0])
-        results = antar.process_photos_([image], self.camera.folder, self.camera.sticks)
-        result = results[image]
-        for sw in self.gpixmap.stick_widgets:
-            if result[sw.stick]:
-                sw.border_positive()
-                self.camera.stick_changed.emit(sw.stick)
-            else:
-                sw.border_negative()
-        return
+        photos = [image]#self.camera.get_batch(100)
+        if False:
+            results = antar.process_photos_([image], self.camera.folder, self.camera.sticks)
+            result = results[image]
+            for sw in self.gpixmap.stick_widgets:
+                if result[sw.stick]:
+                    sw.border_positive()
+                    self.camera.stick_changed.emit(sw.stick)
+                else:
+                    sw.border_negative()
+            return
         image_sticks = antar.process_photos(photos, self.camera.folder, self.camera.sticks)
         self.camera.insert_measurements2(image_sticks)
+        measurements = self.camera.get_sticks_in_image(image)
+
+        # The selected photo is not processed yet, therefore set "missing measurement" value for each StickWidget
+        if measurements is None:
+            for sw in self.gpixmap.stick_widgets:
+                sw.set_snow_height(-1)
+            return
+
+        for sw in self.gpixmap.stick_widgets:
+            #m_ = measurements[sw.stick.label]
+            #sw.set_snow_height(m_['snow_height'])
+            for st in measurements:
+                if st.label == sw.stick.label:
+                    sw.set_snow_height(st.snow_height_px)
 
     def handle_stick_removed(self):
         if self.camera.stick_count() == 0:
@@ -618,3 +746,74 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.graphics_scene.clear()
         self.graphics_scene.deleteLater()
 
+    def set_side_camera_state(self, state: SideCameraState, side: LinkMenuPosition):
+        if side == LinkMenuPosition.LEFT:
+            add_button = self.left_add_button
+            show_button = self.left_show_button
+            self.left_side_camera_state = state
+        else:
+            add_button = self.right_add_button
+            show_button = self.right_show_button
+            self.right_side_camera_state = state
+        if state == SideCameraState.Vacant:
+            add_button.set_disabled(False)
+            add_button.set_default_state()
+            add_button.set_label('Link camera', direction='vertical')
+            add_button.setVisible(True)
+            add_button.set_button_height(self.gpixmap.boundingRect().height())
+            show_button.setVisible(False)
+        elif state == SideCameraState.Shown:
+            add_button.set_disabled(False)
+            add_button.setVisible(True)
+            add_button.set_button_height(int(0.5 * self.gpixmap.boundingRect().height()))
+            add_button.set_label('Remove', direction='vertical')
+            add_button.set_on(True)
+            show_button.setVisible(True)
+            show_button.set_label('Hide', direction='vertical')
+        elif state == SideCameraState.Hidden:
+            add_button.setVisible(True)
+            add_button.set_button_height(int(0.5 * self.gpixmap.boundingRect().height()))
+            show_button.setVisible(True)
+            show_button.set_label('Show', direction='vertical')
+        elif state == SideCameraState.Adding:
+            add_button.set_disabled(True)
+        else:
+            add_button.setVisible(False)
+            show_button.setVisible(False)
+        self.update()
+
+    def handle_side_show_button_clicked(self, btn_state: Dict[str, Any]):
+        if btn_state['btn_id'] == 'btn_left_show':
+            state = self.left_side_camera_state
+            side = LinkMenuPosition.LEFT
+        else:
+            state = self.right_side_camera_state
+            side = LinkMenuPosition.RIGHT
+        state = SideCameraState.Hidden if state == SideCameraState.Shown else SideCameraState.Shown
+        self.set_side_camera_state(state, side)
+        self.show_hide_side_camera(side, state)
+
+    def show_hide_side_camera(self, side: LinkMenuPosition, state: SideCameraState):
+        link = self.left_link if side == LinkMenuPosition.LEFT else self.right_link
+        link.setVisible(state == SideCameraState.Shown)
+        self._recenter_view()
+
+    def handle_side_button_hovered(self, btn: Dict[str, Any]):
+        button = btn['button']
+        if button.label.text()[0] == 'S':
+            return
+        if btn['btn_id'] in [self.BTN_LEFT_ADD, self.BTN_LEFT_SHOW]:
+            link = self.left_link
+        else:
+            link = self.right_link
+        if link is None:
+            return
+        if btn['hovered']:
+            if btn['btn_id'] in [self.BTN_LEFT_ADD, self.BTN_RIGHT_ADD]:
+                color = QColor(250, 50, 0, 100)
+            else:
+                color = self.palette().base().color()
+                color.setAlpha(128)
+            link.highlight(color)
+        else:
+            link.highlight(None)
