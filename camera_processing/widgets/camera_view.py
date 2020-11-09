@@ -30,7 +30,7 @@ class Timer(QRunnable):
         self.func()
 
 
-class CustomPixmap(QGraphicsObject):
+class CameraView(QGraphicsObject):
 
     font: QFont = QFont("monospace", 16)
     stick_link_requested = pyqtSignal(StickWidget)
@@ -48,7 +48,7 @@ class CustomPixmap(QGraphicsObject):
         self.link_cam_text = QGraphicsSimpleTextItem("Link camera...", self)
         self.link_cam_text.setZValue(40)
         self.link_cam_text.setVisible(False)
-        self.link_cam_text.setFont(CustomPixmap.font)
+        self.link_cam_text.setFont(CameraView.font)
         self.link_cam_text.setPos(0, 0)
         self.link_cam_text.setPen(QPen(QColor(255, 255, 255, 255)))
         self.link_cam_text.setBrush(QBrush(QColor(255, 255, 255, 255)))
@@ -63,7 +63,7 @@ class CustomPixmap(QGraphicsObject):
         self.progress_tracker_rect.setBrush(QBrush(QColor(0, 200, 0, 200)))
 
         self.title = QGraphicsSimpleTextItem("Nothing", self.title_rect)
-        self.title.setFont(CustomPixmap.font)
+        self.title.setFont(CameraView.font)
         self.title.setBrush(QBrush(QColor(255, 255, 255, 255)))
         self.title.setPen(QPen(QColor(255, 255, 255, 255)))
         #self.title.setScale(self.scale)
@@ -156,12 +156,12 @@ class CustomPixmap(QGraphicsObject):
         self.prepareGeometryChange()
         self.title.setText(str(self.camera.folder.name))
         #self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
-        self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), 3 * self.stick_length_btn.boundingRect().height())
-        self.title_rect.setPos(0, self.gpixmap.boundingRect().height())
+        self.title_rect.setRect(0, 0, self.camera_view.pixmap().width(), 3 * self.stick_length_btn.boundingRect().height())
+        self.title_rect.setPos(0, self.camera_view.boundingRect().height())
         self.title_rect.setZValue(120)
         self.title_rect.setVisible(True)
 
-        self.progress_tracker_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.stick_length_btn.boundingRect().height())
+        self.progress_tracker_rect.setRect(0, 0, self.camera_view.pixmap().width(), self.stick_length_btn.boundingRect().height())
         self.progress_tracker_rect.setPos(0, 0)  #self.gpixmap.boundingRect().height())
         self.progress_tracker_rect.setVisible(False)
 
