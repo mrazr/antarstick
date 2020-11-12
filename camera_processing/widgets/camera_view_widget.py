@@ -95,7 +95,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.scaling = 2.0
         self.camera_view = CameraView(self.dataset, self.scaling)
         self.camera_view.setAcceptHoverEvents(False)
-        self.camera_view.setZValue(1)
+        self.camera_view.setZValue(3)
 
 
         self.graphics_scene.addItem(self.camera_view)
@@ -164,6 +164,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self._setup_buttons()
         self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.LEFT)
         self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.RIGHT)
+
+        self.rect_to_view = QRectF()
 
     def _setup_buttons(self):
         self.left_add_button.set_label('Link camera', direction='vertical')
@@ -281,18 +283,18 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.links_available = enabled
 
     def _recenter_view(self):
-        rect_to_view = self.camera_view.sceneBoundingRect().united(self.left_add_button.sceneBoundingRect())
-        rect_to_view = rect_to_view.united(self.right_add_button.sceneBoundingRect())
+        self.rect_to_view = self.camera_view.sceneBoundingRect().united(self.left_add_button.sceneBoundingRect())
+        self.rect_to_view = self.rect_to_view.united(self.right_add_button.sceneBoundingRect())
 
         if self.left_link is not None and self.left_side_camera_state == SideCameraState.Shown:
-            rect_to_view = rect_to_view.united(self.left_link.sceneBoundingRect())
+            self.rect_to_view = self.rect_to_view.united(self.left_link.sceneBoundingRect())
         if self.right_link is not None and self.right_side_camera_state == SideCameraState.Shown:
-            rect_to_view = rect_to_view.united(self.right_link.sceneBoundingRect())
+            self.rect_to_view = self.rect_to_view.united(self.right_link.sceneBoundingRect())
 
-        self.graphics_scene.setSceneRect(rect_to_view.marginsAdded(QMarginsF(50, 50, 50, 50)))
+        self.graphics_scene.setSceneRect(self.rect_to_view.marginsAdded(QMarginsF(50, 50, 50, 50)))
 
-        self.graphics_view.fitInView(rect_to_view, Qt.KeepAspectRatio)
-        self.graphics_scene.update(rect_to_view)
+        self.graphics_view.fitInView(self.rect_to_view, Qt.KeepAspectRatio)
+        self.graphics_scene.update(self.rect_to_view)
         self.link_menu.set_layout_direction('vertical')
 
     @Slot(QModelIndex, QModelIndex)
@@ -357,9 +359,14 @@ class CameraViewWidget(QtWidgets.QWidget):
             sw.set_mode(mode)
     
     def handle_link_sticks_clicked(self):
-        self.left_add_button.setVisible(not self.overlay_gui.link_sticks_button_pushed())
-        self.right_add_button.setVisible(not self.overlay_gui.link_sticks_button_pushed())
+        self.left_add_button.set_disabled(self.overlay_gui.link_sticks_button_pushed())
+        self.right_add_button.set_disabled(self.overlay_gui.link_sticks_button_pushed())
+        self.left_show_button.set_disabled(self.overlay_gui.link_sticks_button_pushed())
+        self.right_show_button.set_disabled(self.overlay_gui.link_sticks_button_pushed())
         if self.overlay_gui.link_sticks_button_pushed():
+            self.stick_link_manager.set_rect(self.rect_to_view)
+            #self.stick_link_manager.setPos(self.graphics_scene.sceneRect().topLeft())
+            self.stick_link_manager.setZValue(1)
             self.stick_link_manager.start()
         else:
             self.stick_link_manager.stop()
@@ -408,12 +415,14 @@ class CameraViewWidget(QtWidgets.QWidget):
                 self.dataset.unlink_cameras(self.camera, self.left_link.camera)
             self.set_side_camera_state(SideCameraState.Shown, LinkMenuPosition.LEFT)
             self.left_link = other_camera_view
+            self.left_link.setZValue(3)
         else:
             pos = self.right_add_button.scenePos() + QPointF(self.right_add_button.boundingRect().width(), 0)
             if self.right_link is not None:
                 self.dataset.unlink_cameras(self.camera, self.right_link.camera)
             self.set_side_camera_state(SideCameraState.Shown, LinkMenuPosition.RIGHT)
             self.right_link = other_camera_view
+            self.right_link.setZValue(3)
 
         other_camera_view.setPos(pos)
         other_camera_view.stick_link_requested.connect(self.stick_link_manager.handle_stick_widget_link_requested)
@@ -718,6 +727,8 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.overlay_gui.enable_confirm_sticks_button(False)
 
     def dispose(self):
+        for sw in self.camera_view.stick_widgets:
+            sw.prepare_for_deleting()
         self.graphics_scene.clear()
         self.graphics_scene.deleteLater()
 

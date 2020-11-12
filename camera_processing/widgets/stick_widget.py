@@ -1,16 +1,16 @@
 from enum import Enum
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 
 import PyQt5
 import numpy as np
 from PyQt5.Qt import (QPointF)
-from PyQt5.QtCore import QLine, QLineF, Qt, pyqtSignal, pyqtSlot, QMarginsF
-from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen
+from PyQt5.QtCore import QLine, QLineF, Qt, pyqtSignal, pyqtSlot, QMarginsF, QPropertyAnimation, pyqtProperty
+from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen, QStaticText
 from PyQt5.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem,
                              QGraphicsLineItem, QGraphicsObject,
                              QGraphicsRectItem, QGraphicsSceneHoverEvent,
                              QGraphicsSceneMouseEvent, QGraphicsTextItem,
-                             QStyleOptionGraphicsItem)
+                             QStyleOptionGraphicsItem, QGraphicsSimpleTextItem)
 
 from camera_processing.widgets.button import Button, ButtonColor
 from stick import Stick
@@ -24,7 +24,7 @@ class StickMode(Enum):
 
 class StickWidget(QGraphicsObject):
 
-    font: QFont = QFont("monospace", 16)
+    font: QFont = QFont("monospace", 32)
 
     delete_clicked = pyqtSignal(Stick)
     link_initiated = pyqtSignal('PyQt_PyObject') # Actually StickWidget
@@ -50,11 +50,14 @@ class StickWidget(QGraphicsObject):
         self.line = QLineF()
         self.gline = QGraphicsLineItem(self.line)
 
-        self.stick_label_text = QGraphicsTextItem(stick.label, self)
+        self.stick_label_text = QGraphicsSimpleTextItem(stick.label, self)
         self.stick_label_text.setFont(StickWidget.font)
-        self.stick_label_text.setPos(-QPointF(0, self.stick_label_text.boundingRect().height()))
+        #self.stick_label_text.setPos(-QPointF(0, self.stick_label_text.boundingRect().height()))
+        self.stick_label_text.setPos(self.line.p2())
+        self.stick_label_text.setBrush(QBrush(QColor(0, 255, 0)))
         self.stick_label_text.hide()
-        self.setZValue(3)
+        #self.stick_label_text = QStaticText(self.stick.label)
+        self.setZValue(10)
 
         self.mode = StickMode.DISPLAY
 
@@ -92,8 +95,12 @@ class StickWidget(QGraphicsObject):
         self.handles = [self.top_handle, self.mid_handle, self.bottom_handle]
 
         self.link_button = Button("link", "Link to...", parent=self)
+        self.link_button.set_base_color([ButtonColor.GREEN])
+        self.link_button.set_height(12)
+        self.link_button.set_label("Link", direction="vertical")
+        self.link_button.fit_to_contents()
         self.link_button.clicked.connect(lambda: self.link_initiated.emit(self))
-        self.link_button.set_height(15)
+        self.link_button.setFlag(QGraphicsObject.ItemIgnoresTransformations, False)
 
         self.adjust_line()
 
@@ -108,7 +115,10 @@ class StickWidget(QGraphicsObject):
 
         self.handle_mouse_offset = QPointF(0, 0)
         self.available_for_linking = False
-        self.highlight_color: QColor = None
+        self.link_source = False
+        self.current_highlight_color: QColor = StickWidget.normal_color
+        self.highlighted = False
+        self.frame_color: Optional[None] = self.normal_color
         self.is_linked = False
 
         self.is_master = True
@@ -117,11 +127,19 @@ class StickWidget(QGraphicsObject):
         self.measured_height: int = -1
         self.current_color = self.normal_color
 
+        self.show_label = False
+        self.highlight_animation = QPropertyAnimation(self, b"highlight_color")
+        self.highlight_animation.valueChanged.connect(self.handle_highlight_animation_value_changed)
+        self.deleting = False
+        #self.stick_label_text
+
     @pyqtSlot()
     def handle_btn_delete_clicked(self):
         self.delete_clicked.emit(self.stick)
 
     def prepare_for_deleting(self):
+        self.deleting = True
+        self.highlight_animation.stop()
         self.btn_delete.setParentItem(None)
         self.scene().removeItem(self.btn_delete)
         self.btn_delete.deleteLater()
@@ -129,13 +147,20 @@ class StickWidget(QGraphicsObject):
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem,
               widget: Optional[PyQt5.QtWidgets.QWidget] = ...):
         painter.setPen(QPen(self.current_color, 1.0))
-        painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)))
 
-        if self.highlight_color is not None:
-            brush = QBrush(self.highlight_color)
-            pen = QPen(brush, 4)
-            painter.setPen(pen)
-            painter.drawLine(self.line.p1(), self.line.p2())
+        #if self.current_highlight_color is not None:
+        brush = QBrush(self.current_highlight_color)
+        pen = QPen(brush, 4)
+        painter.setPen(pen)
+        #painter.drawLine(self.line.p1(), self.line.p2())
+        if self.highlighted:
+            painter.fillRect(self.boundingRect(), QBrush(self.current_highlight_color))
+
+        if self.frame_color is not None:
+            painter.setPen(QPen(self.frame_color, 4))
+            painter.drawRect(self.boundingRect())
+
+        #painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)))
 
         pen = QPen(QColor(0, 255, 0, 255))
 
@@ -165,8 +190,7 @@ class StickWidget(QGraphicsObject):
             painter.drawEllipse(self.line.p2(), 10, 10)
             painter.setBrush(br)
 
-
-
+            #self.measured_height = self.stick.snow_height_px
             if self.measured_height >= 0:
                 vec = (self.stick.top - self.stick.bottom) / np.linalg.norm(self.stick.top - self.stick.bottom)
                 dist_along_stick = self.measured_height / np.dot(np.array([0.0, -1.0]), vec)
@@ -176,12 +200,17 @@ class StickWidget(QGraphicsObject):
         else:
             painter.drawLine(self.line.p1(), self.line.p2())
 
-
         if self.selected:
             pen.setColor(QColor(255, 125, 0, 255))
             pen.setStyle(Qt.DashLine)
             painter.setPen(pen)
             painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)))
+
+        if self.show_label:
+            #painter.setFont(StickWidget.font)
+            #painter.drawStaticText(self.line.p2(), self.stick_label_text)
+            painter.fillRect(self.stick_label_text.boundingRect().translated(self.stick_label_text.pos()),
+                             QBrush(QColor(0, 0, 0, 120)))
 
     def boundingRect(self) -> PyQt5.QtCore.QRectF:
         return self.gline.boundingRect().united(self.top_handle.boundingRect()).united(self.mid_handle.boundingRect()).united(self.bottom_handle.boundingRect())
@@ -208,7 +237,7 @@ class StickWidget(QGraphicsObject):
             self.bottom_handle.setVisible(True)
         else:
             self.set_mode(StickMode.DISPLAY)
-            self.link_button.setVisible(True)
+            #self.link_button.setVisible(True)
         self.mode = mode
         self.update()
 
@@ -251,6 +280,7 @@ class StickWidget(QGraphicsObject):
                 self.top_handle.setPen(self.handle_idle_pen)
                 self.top_handle.setOpacity(1.0)
             self.stick_changed.emit(self)
+        self.hovered_handle = None
         self.btn_delete.setVisible(True)
     
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent):
@@ -270,12 +300,22 @@ class StickWidget(QGraphicsObject):
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent):
         if self.available_for_linking:
             self.hovered.emit(True, self)
+        elif self.link_source:
+            self.link_button.setVisible(True)
+        self.show_label = True
+        self.stick_label_text.show()
+        self.scene().update()
 
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent):
         for h in self.handles:
             h.setBrush(self.handle_idle_brush)
+        self.hovered_handle = None
         if self.available_for_linking:
             self.hovered.emit(False, self)
+        elif self.link_source:
+            self.link_button.setVisible(False)
+        self.show_label = False
+        self.stick_label_text.hide()
         self.scene().update()
     
     def hoverMoveEvent(self, event: QGraphicsSceneHoverEvent):
@@ -328,27 +368,40 @@ class StickWidget(QGraphicsObject):
         #self.btn_delete.setPos(self.line.p1() - QPointF(0.5 * self.btn_delete.boundingRect().width(), 1.1 * self.btn_delete.boundingRect().height()))
         self.btn_delete.setPos(self.top_handle.rect().center() - QPointF(self.btn_delete.boundingRect().width() / 2,
                                                                self.btn_delete.boundingRect().height() + self.top_handle.boundingRect().height() / 2))
-        self.link_button.setPos(self.bottom_handle.rect().bottomRight() - QPointF(self.link_button.boundingRect().width() / 2, 0))
+        #self.link_button.setPos(self.bottom_handle.rect().bottomRight() - QPointF(self.link_button.boundingRect().width() / 2, 0))
     
-    def set_available_for_linking(self, value: bool):
-        self.available_for_linking = value
-        if not self.is_linked:
-            if self.available_for_linking:
-                self.set_highlight_color(QColor(0, 255, 0, 100))
-            else:
-                self.set_highlight_color(None)
+    def set_available_for_linking(self, available: bool):
+        self.available_for_linking = available
+        #if not self.is_linked:
+        #    #if self.available_for_linking:
+        #    #    #self.set_highlight_color(QColor(0, 255, 0, 100))
+        #    #    #self.highlight(QColor(255, 125, 0, 200), animated=True)
+        #    #else:
+        #    #    #self.set_highlight_color(None)
+        #    #    #self.highlight(None)
+
+    def set_is_link_source(self, is_source: bool):
+        #if is_source:
+        #    self.highlight(QColor(255, 125, 0, 100), animated=True)
+        #else:
+        #    self.highlight(None)
+        self.link_source = is_source
+        self.link_button.setPos(self.boundingRect().topLeft())
+        self.link_button.set_width(int(self.boundingRect().width()))
+        self.link_button.set_button_height(int(self.boundingRect().height()))
+        self.link_button.adjust_text_to_button()
     
-    def set_highlight_color(self, color: Optional[QColor]):
-        self.highlight_color = color
+    def set_frame_color(self, color: Optional[QColor]):
+        self.frame_color = color if color is not None else self.normal_color
         self.update()
 
     def set_is_linked(self, value: bool):
         self.is_linked = value
         if not self.is_linked:
             if self.available_for_linking:
-                self.set_highlight_color(QColor(0, 255, 0, 100))
+                self.highlight(QColor(0, 255, 0, 100))
             else:
-                self.set_highlight_color(None)
+                self.highlight(None)
 
     def adjust_line(self):
         self.setPos(QPointF(0.5 * (self.stick.top[0] + self.stick.bottom[0]), 0.5 * (self.stick.top[1] + self.stick.bottom[1])))
@@ -357,6 +410,7 @@ class StickWidget(QGraphicsObject):
         self.line.setP2(-self.line.p1())
         self.gline.setLine(self.line)
         self.adjust_handles()
+        self.stick_label_text.setPos(self.line.p2())
         self.update()
 
     def set_selected(self, selected: bool):
@@ -381,3 +435,32 @@ class StickWidget(QGraphicsObject):
     def border_negative(self):
         self.current_color = self.negative_color
         self.update()
+
+    @pyqtProperty(QColor)
+    def highlight_color(self) -> QColor:
+        return self.current_highlight_color
+
+    @highlight_color.setter
+    def highlight_color(self, color: QColor):
+        self.current_highlight_color = color
+
+    def highlight(self, color: Optional[QColor], animated: bool = False):
+        self.highlighted = color is not None
+        if not animated or color is None:
+            self.highlight_animation.stop()
+            self.current_highlight_color = self.normal_color if color is None else color
+            self.update()
+            return
+        self.highlight_animation.setStartValue(color)
+        self.highlight_animation.setEndValue(color)
+        self.highlight_animation.setKeyValueAt(0.5, color.darker())
+        self.highlight_animation.setDuration(2000)
+        self.highlight_animation.setLoopCount(-1)
+        self.highlight_animation.start()
+
+    def handle_link_button_hovered(self, btn: Dict[str, Any]):
+        self.link_button.setVisible(btn['hovered'])
+
+    def handle_highlight_animation_value_changed(self, new: QColor):
+        if not self.deleting:
+            self.update(self.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)))

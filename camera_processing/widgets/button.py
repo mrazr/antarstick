@@ -26,7 +26,7 @@ class ButtonColor(IntEnum):
 
 
 IDLE_COLORS = [
-    QColor(50, 50, 50, 100),
+    QColor(50, 50, 50, 200),
     QColor(255, 0, 0, 200),
     QColor(0, 255, 0, 200),
 ]
@@ -388,6 +388,15 @@ class Button(QGraphicsObject):
         self.label.setPos(0.5 * width - 0.5 * self.label.boundingRect().width() * self.label.scale() + 0.0 * self.hor_margin,
                           height - self.label.boundingRect().height() * self.label.scale() - self.ver_margin * self.scaling)
         self.update()
+
+    def adjust_text_to_button(self):
+        height_diff = 0.75 * self.rect.height() - self.label.boundingRect().height()
+        fac = height_diff / (0.75 * self.rect.height())
+        self.label.setTransformOriginPoint(self.label.boundingRect().center())
+        self.label.setScale(1.0 + fac)
+        self._reposition_text()
+        #self.fit_to_contents()
+
 
     def set_label(self, text: str, direction: str = 'horizontal'):
         if direction == 'vertical':

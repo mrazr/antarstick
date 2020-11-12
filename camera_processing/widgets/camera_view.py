@@ -42,7 +42,7 @@ class CameraView(QGraphicsObject):
         self.current_highlight_color = QColor(0, 0, 0, 0)
         self.current_timer = -1
         self.scaling = scale
-        self.gpixmap = QGraphicsPixmapItem(self)
+        self.pixmap = QGraphicsPixmapItem(self)
         self.stick_widgets: List[StickWidget] = []
         self.reference_line = QLine()
         self.link_cam_text = QGraphicsSimpleTextItem("Link camera...", self)
@@ -66,14 +66,14 @@ class CameraView(QGraphicsObject):
         self.title.setFont(CameraView.font)
         self.title.setBrush(QBrush(QColor(255, 255, 255, 255)))
         self.title.setPen(QPen(QColor(255, 255, 255, 255)))
-        #self.title.setScale(self.scale)
+        self.title.setScale(self.scaling)
 
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
         self.show_stick_widgets = False
         self.setAcceptHoverEvents(True)
         self.stick_edit_mode = False
 
-        self.original_pixmap = self.gpixmap.pixmap()
+        self.original_pixmap = self.pixmap.pixmap()
 
         self.hovered = False
 
@@ -88,9 +88,9 @@ class CameraView(QGraphicsObject):
         self.stick_length_lbl.setFont(Button.font)
         self.stick_length_lbl.setBrush(QBrush(Qt.white))
         self.stick_length_lbl.setVisible(False)
-        self.stick_length_btn = Button("btn_stick_length", "60 cm", parent=self.title_rect)
+        #self.stick_length_btn = Button("btn_stick_length", "60 cm", parent=self.title_rect)
 
-        self.stick_length_input = StickLengthInput(self.gpixmap)
+        self.stick_length_input = StickLengthInput(self.pixmap)
         self.stick_length_input.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
         self.stick_length_input.input_entered.connect(self.handle_stick_length_input_entered)
         self.stick_length_input.input_cancelled.connect(self.handle_stick_length_input_cancelled)
@@ -102,9 +102,12 @@ class CameraView(QGraphicsObject):
         self.highlight_animation.valueChanged.connect(self.handle_highlight_color_changed)
         self.highlight_rect = QGraphicsRectItem(self)
         self.highlight_rect.setZValue(4)
+        self.title_btn = Button('btn_title', '', parent=self)
+        self.title_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+        self.title_btn.setZValue(5)
 
     def paint(self, painter: QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
-        if self.gpixmap.pixmap().isNull():
+        if self.pixmap.pixmap().isNull():
             return
         painter.setRenderHint(QPainter.Antialiasing, True)
 
@@ -118,9 +121,8 @@ class CameraView(QGraphicsObject):
             painter.setPen(pen)
             painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(4, 4, 4, 4)))
 
-
     def boundingRect(self) -> PyQt5.QtCore.QRectF:
-        return self.gpixmap.boundingRect().united(self.title_rect.boundingRect().translated(self.title_rect.pos()))
+        return self.pixmap.boundingRect().united(self.title_btn.boundingRect().translated(self.title_btn.pos()))
 
     def initialise_with(self, camera: Camera):
         if self.camera is not None:
@@ -130,9 +132,14 @@ class CameraView(QGraphicsObject):
             self.camera.sticks_removed.disconnect(self.handle_sticks_removed)
             self.camera.stick_changed.disconnect(self.handle_stick_changed)
         self.camera = camera
-        self.stick_length_btn.btn_id = str(self.camera.folder)
+        #self.stick_length_btn.btn_id = str(self.camera.folder)
         self.prepareGeometryChange()
         self.set_image(camera.rep_image)
+        self.title_btn.set_label(self.camera.folder.name)
+        self.title_btn.set_height(46)
+        self.title_btn.fit_to_contents()
+        self.title_btn.set_width(int(self.boundingRect().width()))
+        self.title_btn.setPos(0, self.boundingRect().height())
         #self.stick_length_btn.setVisible(True)
         #self.stick_length_lbl.setVisible(True)
         self.camera.stick_added.connect(self.handle_stick_created)
@@ -147,37 +154,35 @@ class CameraView(QGraphicsObject):
         barray = QByteArray(img.tobytes())
         image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
         self.original_pixmap = QPixmap.fromImage(image)
-        self.gpixmap.setPixmap(self.original_pixmap)
+        self.pixmap.setPixmap(self.original_pixmap)
         self.highlight_rect.setRect(self.boundingRect())
         self.layout_title_area()
 
     def layout_title_area(self):
-        return
         self.prepareGeometryChange()
         self.title.setText(str(self.camera.folder.name))
-        #self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
-        self.title_rect.setRect(0, 0, self.camera_view.pixmap().width(), 3 * self.stick_length_btn.boundingRect().height())
-        self.title_rect.setPos(0, self.camera_view.boundingRect().height())
+        #self.title_rect.setRect(0, 0, self.pixmap.pixmap().width(), 3 * self.stick_length_btn.boundingRect().height())
+        self.title_rect.setPos(0, self.pixmap.boundingRect().height())
         self.title_rect.setZValue(120)
         self.title_rect.setVisible(True)
 
-        self.progress_tracker_rect.setRect(0, 0, self.camera_view.pixmap().width(), self.stick_length_btn.boundingRect().height())
-        self.progress_tracker_rect.setPos(0, 0)  #self.gpixmap.boundingRect().height())
+        #self.progress_tracker_rect.setRect(0, 0, self.pixmap.pixmap().width(), self.stick_length_btn.boundingRect().height())
+        self.progress_tracker_rect.setPos(0, 0)
         self.progress_tracker_rect.setVisible(False)
 
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2,
                           0)
-        self.title.setVisible(True)
+        self.title.setVisible(False)
         #self.stick_length_btn.set_height(self.title_rect.boundingRect().height() - 4)
-        self.stick_length_btn.setPos(self.title_rect.boundingRect().width() - 5 - self.stick_length_btn.boundingRect().width(),
-                                     2)
-        self.stick_length_lbl.setPos(self.stick_length_btn.pos().x() - self.stick_length_lbl.boundingRect().width(), 0)
+        #self.stick_length_btn.setPos(self.title_rect.boundingRect().width() - 5 - self.stick_length_btn.boundingRect().width(),
+        #                             2)
+        #self.stick_length_lbl.setPos(self.stick_length_btn.pos().x() - self.stick_length_lbl.boundingRect().width(), 0)
 
         self.stick_length_input.adjust_layout()
         view = self.scene().views()[0]
         self.stick_length_input.setPos(QPointF(0.5 * self.boundingRect().width(),
                                                0.5 * self.boundingRect().height()))
-        self.stick_length_input.setVisible(self.stick_length_btn.is_on())
+        #self.stick_length_input.setVisible(self.stick_length_btn.is_on())
         #self.setPos(0.5 * view.size().width(), 0.5 * view.size().height())
         #self.stick_length_input.setVisible(self.stick_length_btn.is_on())
         self.update()
@@ -194,8 +199,8 @@ class CameraView(QGraphicsObject):
             self.connect_stick_widget_signals(sw)
             self.stick_widgets.append(sw)
             stick_length = stick.length_cm
-        self.stick_length_btn.set_label(str(stick_length) + " cm")
-        self.stick_length_btn.fit_to_contents()
+        #self.stick_length_btn.set_label(str(stick_length) + " cm")
+        #self.stick_length_btn.fit_to_contents()
         self.stick_length_input.set_length(stick_length)
         self.layout_title_area()
         self.scene().update()
@@ -203,15 +208,14 @@ class CameraView(QGraphicsObject):
     def scale_item(self, factor: float):
         self.prepareGeometryChange()
         pixmap = self.original_pixmap.scaledToHeight(int(self.original_pixmap.height() * factor))
-        self.gpixmap.setPixmap(pixmap)
+        self.pixmap.setPixmap(pixmap)
         self.__update_title()
 
     def __update_title(self):
-        #self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.title.boundingRect().height())
-        self.title_rect.setRect(0, 0, self.gpixmap.pixmap().width(), self.stick_length_btn.boundingRect().height())
+        #self.title_rect.setRect(0, 0, self.pixmap.pixmap().width(), self.stick_length_btn.boundingRect().height())
         self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
         self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2, 0)
-        self.stick_length_btn.setPos(self.title.pos() + QPointF(self.title.boundingRect().width(), 0))
+        #self.stick_length_btn.setPos(self.title.pos() + QPointF(self.title.boundingRect().width(), 0))
 
     def set_show_stick_widgets(self, value: bool):
         for sw in self.stick_widgets:
@@ -334,15 +338,15 @@ class CameraView(QGraphicsObject):
             return
         sw = next(filter(lambda _sw: _sw.stick.id == stick.id, self.stick_widgets))
         sw.adjust_line()
-        self.stick_length_btn.set_label(str(stick.length_cm) + " cm")
-        self.stick_length_btn.fit_to_contents()
+        #self.stick_length_btn.set_label(str(stick.length_cm) + " cm")
+        #self.stick_length_btn.fit_to_contents()
         self.layout_title_area()
 
     def handle_stick_link_initiated(self, stick_widget: StickWidget):
         self.stick_link_requested.emit(stick_widget)
 
     def handle_stick_length_clicked(self):
-        self.stick_length_input.setVisible(self.stick_length_btn.is_on())
+        #self.stick_length_input.setVisible(self.stick_length_btn.is_on())
         rect = self.scene().views()[0].size()
         self.stick_length_input.setPos(rect.width() * 0.5 - self.stick_length_input.boundingRect().width() * 0.0,
                                                rect.height() * 0.5 - self.stick_length_input.boundingRect().height() * 0.0)
@@ -351,19 +355,19 @@ class CameraView(QGraphicsObject):
 
     def handle_stick_length_input_entered(self):
         length = self.stick_length_input.get_length()
-        self.stick_length_btn.set_label(str(length) + " cm")
-        self.stick_length_btn.fit_to_contents()
+        #self.stick_length_btn.set_label(str(length) + " cm")
+        #self.stick_length_btn.fit_to_contents()
         self.layout_title_area()
-        self.stick_length_btn.click_button(artificial_emit=True)
+        #self.stick_length_btn.click_button(artificial_emit=True)
         for stick in self.camera.sticks:
             stick.length_cm = length
         self.camera.stick_changed.emit(self.camera.sticks[0]) #TODO handle empty stick list
 
     def handle_stick_length_input_cancelled(self):
-        old_length = int(self.stick_length_btn.label.text()[:-3])
-        self.stick_length_input.set_length(old_length)
+        #old_length = int(self.stick_length_btn.label.text()[:-3])
+        #self.stick_length_input.set_length(old_length)
         self.layout_title_area()
-        self.stick_length_btn.click_button(artificial_emit=True)
+        #self.stick_length_btn.click_button(artificial_emit=True)
 
     def set_progress_bar_progress(self, count: int, out_of: int):
         if count > out_of:
