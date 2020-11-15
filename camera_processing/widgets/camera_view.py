@@ -1,4 +1,4 @@
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Dict
 
 import PyQt5
 from PyQt5.QtCore import QByteArray, QLine, QMarginsF, QPoint, pyqtSignal, QPointF, Qt, QTimer, QTimerEvent, QThread, \
@@ -11,9 +11,9 @@ from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsPixmapItem,
 import numpy as np
 
 from camera import Camera
-from camera_processing.widgets.stick_length_input import StickLengthInput
+from camera_processing.widgets.stick_length_input import TextInputWidget
 from camera_processing.widgets.stick_widget import StickWidget, StickMode
-from camera_processing.widgets.button import Button, ButtonColor
+from camera_processing.widgets.button import Button
 from dataset import Dataset
 from stick import Stick
 
@@ -34,6 +34,7 @@ class CameraView(QGraphicsObject):
 
     font: QFont = QFont("monospace", 16)
     stick_link_requested = pyqtSignal(StickWidget)
+    stick_context_menu = pyqtSignal('PyQt_PyObject', 'PyQt_PyObject')
     stick_widgets_out_of_sync = pyqtSignal('PyQt_PyObject')
     visibility_toggled = pyqtSignal()
 
@@ -90,10 +91,10 @@ class CameraView(QGraphicsObject):
         self.stick_length_lbl.setVisible(False)
         #self.stick_length_btn = Button("btn_stick_length", "60 cm", parent=self.title_rect)
 
-        self.stick_length_input = StickLengthInput(self.pixmap)
-        self.stick_length_input.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
-        self.stick_length_input.input_entered.connect(self.handle_stick_length_input_entered)
-        self.stick_length_input.input_cancelled.connect(self.handle_stick_length_input_cancelled)
+        #self.stick_length_input = TextInputWidget(mode='number', label='Sticks length(cm):', parent=self.pixmap)
+        #self.stick_length_input.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+        #self.stick_length_input.input_entered.connect(self.handle_stick_length_input_entered)
+        #self.stick_length_input.input_cancelled.connect(self.handle_stick_length_input_cancelled)
         #self.stick_length_input.setZValue(10)
         self.thread_pool = QThreadPool()
 
@@ -178,10 +179,10 @@ class CameraView(QGraphicsObject):
         #                             2)
         #self.stick_length_lbl.setPos(self.stick_length_btn.pos().x() - self.stick_length_lbl.boundingRect().width(), 0)
 
-        self.stick_length_input.adjust_layout()
+        #self.stick_length_input.adjust_layout()
         view = self.scene().views()[0]
-        self.stick_length_input.setPos(QPointF(0.5 * self.boundingRect().width(),
-                                               0.5 * self.boundingRect().height()))
+        #self.stick_length_input.setPos(QPointF(0.5 * self.boundingRect().width(),
+        #                                       0.5 * self.boundingRect().height()))
         #self.stick_length_input.setVisible(self.stick_length_btn.is_on())
         #self.setPos(0.5 * view.size().width(), 0.5 * view.size().height())
         #self.stick_length_input.setVisible(self.stick_length_btn.is_on())
@@ -201,7 +202,7 @@ class CameraView(QGraphicsObject):
             stick_length = stick.length_cm
         #self.stick_length_btn.set_label(str(stick_length) + " cm")
         #self.stick_length_btn.fit_to_contents()
-        self.stick_length_input.set_length(stick_length)
+        #self.stick_length_input.set_value(str(stick_length))
         self.layout_title_area()
         self.scene().update()
 
@@ -316,11 +317,13 @@ class CameraView(QGraphicsObject):
         stick_widget.delete_clicked.connect(self.handle_stick_widget_delete_clicked)
         stick_widget.stick_changed.connect(self.handle_stick_widget_changed)
         stick_widget.link_initiated.connect(self.handle_stick_link_initiated)
+        stick_widget.right_clicked.connect(self.handle_stick_widget_context_menu)
 
     def disconnect_stick_widget_signals(self, stick_widget: StickWidget):
         stick_widget.delete_clicked.disconnect(self.handle_stick_widget_delete_clicked)
         stick_widget.stick_changed.disconnect(self.handle_stick_widget_changed)
         stick_widget.link_initiated.disconnect(self.handle_stick_link_initiated)
+        stick_widget.right_clicked.disconnect(self.handle_stick_widget_context_menu)
 
     def handle_stick_widget_delete_clicked(self, stick: Stick):
         self.camera.remove_stick(stick)
@@ -348,20 +351,20 @@ class CameraView(QGraphicsObject):
     def handle_stick_length_clicked(self):
         #self.stick_length_input.setVisible(self.stick_length_btn.is_on())
         rect = self.scene().views()[0].size()
-        self.stick_length_input.setPos(rect.width() * 0.5 - self.stick_length_input.boundingRect().width() * 0.0,
-                                               rect.height() * 0.5 - self.stick_length_input.boundingRect().height() * 0.0)
-        self.stick_length_input.set_focus()
+        #self.stick_length_input.setPos(rect.width() * 0.5 - self.stick_length_input.boundingRect().width() * 0.0,
+        #                                       rect.height() * 0.5 - self.stick_length_input.boundingRect().height() * 0.0)
+        #self.stick_length_input.set_focus()
         self.startTimer(1000)
 
-    def handle_stick_length_input_entered(self):
-        length = self.stick_length_input.get_length()
-        #self.stick_length_btn.set_label(str(length) + " cm")
-        #self.stick_length_btn.fit_to_contents()
-        self.layout_title_area()
-        #self.stick_length_btn.click_button(artificial_emit=True)
-        for stick in self.camera.sticks:
-            stick.length_cm = length
-        self.camera.stick_changed.emit(self.camera.sticks[0]) #TODO handle empty stick list
+    #def handle_stick_length_input_entered(self):
+    #    length = int(self.stick_length_input.get_value())
+    #    #self.stick_length_btn.set_label(str(length) + " cm")
+    #    #self.stick_length_btn.fit_to_contents()
+    #    self.layout_title_area()
+    #    #self.stick_length_btn.click_button(artificial_emit=True)
+    #    for stick in self.camera.sticks:
+    #        stick.length_cm = length
+    #    self.camera.stick_changed.emit(self.camera.sticks[0]) #TODO handle empty stick list
 
     def handle_stick_length_input_cancelled(self):
         #old_length = int(self.stick_length_btn.label.text()[:-3])
@@ -430,3 +433,5 @@ class CameraView(QGraphicsObject):
         self.highlight_rect.setBrush(QBrush(color))
         self.update()
 
+    def handle_stick_widget_context_menu(self, sender: Dict[str, StickWidget]):
+        self.stick_context_menu.emit(sender['stick_widget'], self)

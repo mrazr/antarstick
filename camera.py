@@ -26,6 +26,7 @@ ENDPOINT_COLUMN_CONVERTER = lambda cell: np.array(list(map(int, cell.strip('[] '
 MEASUREMENTS_FILE = 'results.csv'
 IMAGE_STATS_FILE = 'img_stats.csv'
 
+
 class Camera(QObject):
     """Class for representing a particular photo folder
     comprised of photos from one camera.
@@ -104,6 +105,8 @@ class Camera(QObject):
         self.next_photo_id: int = 0
         self.next_photo: str = self.image_list[self.next_photo_id]
         self.default_stick_length_cm: int = 60
+        self.needs_to_save: bool = False
+        self.stick_to_stick_vectors: Dict[Stick, Dict[Stick, np.ndarray]] = {}
 
     def __load_measurements(self) -> None:
         try:
@@ -141,6 +144,7 @@ class Camera(QObject):
             self.measurements.to_csv(output, index=False)
         with open(str(path / IMAGE_STATS_FILE), 'w') as output:
             self.photo_daytime_snow.to_csv(output, index=False)
+        self.needs_to_save = False
 
     def get_state(self):
         state = self.__dict__.copy()
@@ -212,21 +216,22 @@ class Camera(QObject):
             'default_stick_length_cm': self.default_stick_length_cm,
         }
 
-        if len(self.measurements.columns) == 0: #or (len(self.measurements.columns) - 1) / 4 != len(self.sticks):
-            data = {
-                'image_name': [],
-                'processed': [],
-            }
+        #if len(self.measurements.columns) == 0: #or (len(self.measurements.columns) - 1) / 4 != len(self.sticks):
+        #    data = {
+        #        'image_name': [],
+        #        'processed': [],
+        #    }
 
-            for stick in self.sticks:
-                data[stick.label + '_top'] = []
-                data[stick.label + '_bottom'] = []
-                data[stick.label + '_height_px'] = []
-                data[stick.label + '_snow_height'] = []
+        #    for stick in self.sticks:
+        #        data[stick.label + '_top'] = []
+        #        data[stick.label + '_bottom'] = []
+        #        data[stick.label + '_height_px'] = []
+        #        data[stick.label + '_snow_height'] = []
 
-            self.measurements = pd.DataFrame(data=data)
+        #    self.measurements = pd.DataFrame(data=data)
 
-        self.save_measurements()
+        if self.needs_to_save:
+            self.save_measurements()
         with open(self.folder / 'camera.json', 'w') as f:
             json.dump(state, f, indent=1)
 
@@ -363,7 +368,9 @@ class Camera(QObject):
         stick.top = data[0]
         stick.bottom = data[1]
         stick.length_px = data[2]
-        stick.snow_height_cm = data[3]
+        #stick.snow_height_cm = data[3]
+        stick.set_snow_height_cm(int(data[3]))
+        return stick
 
     def get_sticks_in_image(self, image: str) -> List[Stick]:
         image_id = self.image_names_ids[image]
@@ -376,11 +383,21 @@ class Camera(QObject):
             stick.top = self.measurements.iat[image_id, stick_id + PD_STICK_TOP]
             stick.bottom = self.measurements.iat[image_id, stick_id + PD_STICK_BOTTOM]
             stick.length_px = float(self.measurements.iat[image_id, stick_id + PD_STICK_LENGTH_PX])
-            stick.snow_height_cm = int(self.measurements.iat[image_id, stick_id + PD_STICK_SNOW_HEIGHT])
+            stick.set_snow_height_cm(int(self.measurements.iat[image_id, stick_id + PD_STICK_SNOW_HEIGHT]))
             self.stick_changed.emit(stick)
         return self.sticks
 
     def initialize_measurements(self, save_immediately: bool = False):
+        self._update_stick_labels_id()
+        self.stick_to_stick_vectors.clear()
+        for i, stick_i in enumerate(self.sticks):
+            stick_i_vecs = self.stick_to_stick_vectors.setdefault(stick_i, {})
+            for stick_j in self.sticks[i+1:]:
+                vec = stick_j.bottom - stick_i.bottom
+                stick_i_vecs[stick_j] = vec
+                stick_j_vecs = self.stick_to_stick_vectors.setdefault(stick_j, {})
+                stick_j_vecs[stick_i] = -1.0 * vec
+
         data = {
             'image_name': self.image_list,
             'processed': [False] * len(self.image_list)
@@ -406,6 +423,7 @@ class Camera(QObject):
 
         if save_immediately:
             self.save_measurements()
+        self.needs_to_save = not save_immediately
 
     def insert_measurements2(self, measurements: Dict[str, List[Stick]]):
         for img_name, sticks in measurements.items():
@@ -419,3 +437,24 @@ class Camera(QObject):
                 self.measurements.iat[image_id, stick_id + PD_STICK_LENGTH_PX] = stick.length_px
                 self.measurements.iat[image_id, stick_id + PD_STICK_SNOW_HEIGHT] = stick.snow_height_cm
 
+    def get_default_stick_length(self) -> int:
+        return self.default_stick_length_cm
+
+    def set_default_stick_length(self, length: int):
+        self.default_stick_length_cm = length
+
+    def is_label_available(self, stick: Stick, label: str) -> bool:
+        if label == '':
+            return False
+        if stick.label == label:
+            return True
+        if len(list(filter(lambda s: s != stick and s.label == label, self.sticks))) > 0:
+            return False
+        stick.label = label
+        return True
+
+    def __hash__(self):
+        return self.folder.__hash__()
+
+    def __eq__(self, other):
+        return self.__hash__() == other.__hash__()

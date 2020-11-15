@@ -7,10 +7,10 @@ from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QPainter, QPixmap, QFontMetrics
 from PyQt5.QtWidgets import QGraphicsItem, QGraphicsObject
 
-from camera_processing.widgets.button import ButtonColor, Button
+from camera_processing.widgets.button import ButtonColor
 from camera_processing.widgets.button_menu import ButtonMenu
 from camera_processing.widgets.cam_graphics_view import CamGraphicsView
-from camera_processing.widgets.stick_length_input import StickLengthInput
+from camera_processing.widgets.stick_length_input import TextInputWidget
 
 
 class OverlayGui(QGraphicsObject):
@@ -25,8 +25,10 @@ class OverlayGui(QGraphicsObject):
     clicked = pyqtSignal()
     find_sticks_clicked = pyqtSignal()
     detect_thin_sticks_set = pyqtSignal('PyQt_PyObject')
-    sticks_length_clicked = pyqtSignal()
+    sticks_length_clicked = pyqtSignal('PyQt_PyObject')
     confirm_sticks_clicked = pyqtSignal()
+    set_stick_label_clicked = pyqtSignal('PyQt_PyObject')
+    set_stick_length_clicked = pyqtSignal('PyQt_PyObject')
 
     def __init__(self, view: CamGraphicsView, parent: QGraphicsItem = None):
         QGraphicsObject.__init__(self, parent)
@@ -46,10 +48,28 @@ class OverlayGui(QGraphicsObject):
         #self.top_menu.setVisible(False)
         self.loading_screen_shown = True
         self.process_photo_popup = ButtonMenu(1.0, self)
-        self.stick_length_input = StickLengthInput(self)
+        self.sticks_length_input = TextInputWidget(mode='number', label='Sticks length(cm):', parent=self)
+        self.sticks_length_input.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+        self.sticks_length_input.setVisible(False)
+        self.sticks_length_input.adjust_layout()
+        self.sticks_length_input.setZValue(2)
+
+        self.stick_length_input = TextInputWidget(mode='number', label='Sticks length(cmi):', parent=self)
         self.stick_length_input.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
         self.stick_length_input.setVisible(False)
         self.stick_length_input.adjust_layout()
+        self.stick_length_input.setZValue(2)
+
+        self.stick_label_input = TextInputWidget(mode='text', label='Label:', parent=self)
+        self.stick_label_input.setVisible(False)
+        self.stick_label_input.adjust_layout()
+        self.stick_label_input.setZValue(2)
+        #self.stick_label_input.input_entered.connect(self.set_stick_label.emit)
+        #self.stick_label_input.input_cancelled.connect(self.set_stick_label.emit)
+
+        self.stick_widget_menu = ButtonMenu(1.0, self)
+        self.stick_widget_menu.show_close_button(True)
+        self.stick_widget_menu.setVisible(False)
 
     def initialize(self):
         path = Path(sys.argv[0]).parent / "camera_processing/gui_resources/"
@@ -70,10 +90,10 @@ class OverlayGui(QGraphicsObject):
         self.top_menu.add_button("edit_sticks", "Edit sticks", is_checkable=True,
                                  call_back=self.edit_sticks_clicked.emit)
         button = self.top_menu.add_button('sticks_length', 'Sticks length', is_checkable=True,
-                                 call_back=self.handle_sticks_length_clicked)
-        button.clicked.connect(self.sticks_length_clicked.emit)
-        self.stick_length_input.input_cancelled.connect(lambda: button.click_button(True))
-        self.stick_length_input.input_entered.connect(lambda: button.click_button(True))
+                                 call_back=self.sticks_length_clicked.emit)
+        #button.clicked.connect(self.sticks_length_clicked.emit)
+        self.sticks_length_input.input_cancelled.connect(lambda: button.click_button(True))
+        self.sticks_length_input.input_entered.connect(lambda: button.click_button(True))
         self.top_menu.add_button("link_sticks", "Link sticks", is_checkable=True,
                                  call_back=self.link_sticks_clicked.emit)
         self.enable_link_sticks_button(False)
@@ -101,6 +121,19 @@ class OverlayGui(QGraphicsObject):
         self.find_sticks_menu.setPos(QPoint(0, 40))
         self.find_sticks_menu.set_height(12)
 
+        btn = self.stick_widget_menu.add_button('set_stick_length', 'Set length',
+                                                call_back=self.set_stick_length_clicked.emit, is_checkable=True)
+        self.stick_length_input.input_cancelled.connect(self.hide_stick_length_input)
+        self.stick_length_input.input_entered.connect(self.hide_stick_length_input)
+
+        btn = self.stick_widget_menu.add_button('set_stick_label', 'Change label',
+                                                call_back=self.set_stick_label_clicked.emit, is_checkable=True)
+        self.stick_label_input.input_cancelled.connect(self.hide_stick_label_input)
+        self.stick_label_input.input_entered.connect(self.hide_stick_label_input)
+        #self.top_menu.set_height(12)
+        self.stick_widget_menu.set_layout_direction('vertical')
+        #self.stick_widget_menu.center_buttons()
+
     @pyqtSlot()
     def handle_cam_view_changed(self):
         self.prepareGeometryChange()
@@ -109,7 +142,9 @@ class OverlayGui(QGraphicsObject):
         self.process_photo_popup.setPos(self.boundingRect().width() / 2.0 - self.process_photo_popup.boundingRect().width() / 2.0,
 
                                         self.boundingRect().height() / 2.0 - self.process_photo_popup.boundingRect().height() / 2.0)
+        self.sticks_length_input.setPos(self.view.size().width() * 0.5, self.view.size().height() * 0.5)
         self.stick_length_input.setPos(self.view.size().width() * 0.5, self.view.size().height() * 0.5)
+        self.stick_label_input.setPos(self.view.size().width() * 0.5, self.view.size().height() * 0.5)
 
     def boundingRect(self):
         return QRectF(self.view.viewport().rect())
@@ -122,20 +157,20 @@ class OverlayGui(QGraphicsObject):
         painter.setBrush(QBrush(QColor("#aa555555")))
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.TextAntialiasing, True)
-        painter.drawRoundedRect(QRectF(5, 5, self.mouse_pan_pic.width() * 1.3,
-                                       3 * self.mouse_pan_pic.height()), 20, 20)
+        #painter.drawRoundedRect(QRectF(5, 5, self.mouse_pan_pic.width() * 1.3,
+        #                               3 * self.mouse_pan_pic.height()), 20, 20)
 
         painter.setPen(QPen(QColor("#e5c15f")))
-        painter.drawPixmap(QPointF(15, 5), self.mouse_pan_pic, QRectF(self.mouse_pan_pic.rect()))
-        rect = QRectF(self.mouse_pan_pic.rect())
-        painter.drawPixmap(QPointF(15, 1.5 * rect.height()), self.mouse_zoom_pic,
-                           QRectF(self.mouse_zoom_pic.rect()))
+        #painter.drawPixmap(QPointF(15, 5), self.mouse_pan_pic, QRectF(self.mouse_pan_pic.rect()))
+        #rect = QRectF(self.mouse_pan_pic.rect())
+        #painter.drawPixmap(QPointF(15, 1.5 * rect.height()), self.mouse_zoom_pic,
+        #                   QRectF(self.mouse_zoom_pic.rect()))
         font = painter.font()
         font.setPointSize(10)
-        painter.drawText(QRectF(15, 1.1 * rect.height(), rect.width(), 30),
-                         Qt.AlignHCenter, "Pan view")
-        painter.drawText(QRectF(15, 2.6 * rect.height(), rect.width(), 30),
-                         Qt.AlignHCenter, "Zoom in/out")
+        #painter.drawText(QRectF(15, 1.1 * rect.height(), rect.width(), 30),
+        #                 Qt.AlignHCenter, "Pan view")
+        #painter.drawText(QRectF(15, 2.6 * rect.height(), rect.width(), 30),
+        #                 Qt.AlignHCenter, "Zoom in/out")
 
         if self.loading_screen_shown:
             painter.fillRect(0, 0, self.boundingRect().width(), self.boundingRect().height(), QBrush(QColor(255, 255, 255, 255)))
@@ -205,10 +240,10 @@ class OverlayGui(QGraphicsObject):
     def enable_confirm_sticks_button(self, enable: bool):
         self.top_menu.get_button('confirm_sticks').set_disabled(not enable)
 
-    def handle_sticks_length_clicked(self, btn_state: Dict[str, Any]):
-        self.stick_length_input.setVisible(btn_state['checked'])
-        if btn_state['checked']:
-            self.stick_length_input.set_focus()
+    #def handle_sticks_length_clicked(self, btn_state: Dict[str, Any]):
+    #    self.sticks_length_input.setVisible(btn_state['checked'])
+    #    if btn_state['checked']:
+    #        self.sticks_length_input.set_focus()
 
     #def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
     #    event.ignore()
@@ -221,3 +256,40 @@ class OverlayGui(QGraphicsObject):
         if btn_info['checked']:
             self.confirm_sticks_clicked.emit()
         self.top_menu.get_button('process_photos').set_disabled(not btn_info['checked'])
+
+    def show_stick_context_menu_at(self, pos: QPoint):
+        self.stick_widget_menu.setPos(pos)
+        self.stick_widget_menu.setVisible(True)
+
+    def hide_stick_context_menu(self):
+        self.hide_stick_label_input()
+        self.hide_stick_label_input()
+        self.stick_widget_menu.setVisible(False)
+
+    def show_stick_label_input(self):
+        self.hide_sticks_length_input()
+        self.hide_stick_length_input()
+        self.stick_label_input.set_focus()
+        self.stick_label_input.setVisible(True)
+
+    def hide_stick_label_input(self):
+        self.stick_widget_menu.get_button('set_stick_label').set_default_state()
+        self.stick_label_input.setVisible(False)
+
+    def show_stick_length_input(self):
+        self.hide_stick_label_input()
+        self.hide_sticks_length_input()
+        self.stick_length_input.set_focus()
+        self.stick_length_input.setVisible(True)
+
+    def hide_stick_length_input(self):
+        self.stick_widget_menu.get_button('set_stick_length').set_default_state()
+        self.stick_length_input.setVisible(False)
+
+    def show_sticks_length_input(self):
+        self.hide_stick_context_menu()
+        self.sticks_length_input.set_focus()
+        self.sticks_length_input.setVisible(True)
+
+    def hide_sticks_length_input(self):
+        self.sticks_length_input.setVisible(False)

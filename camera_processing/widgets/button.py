@@ -226,6 +226,8 @@ class Button(QGraphicsObject):
         self._reposition_text()
 
     def set_width(self, w: int):
+        if self.pixmap is not None:
+            return
         self.prepareGeometryChange()
         self.rect.setWidth(w)
         self.hor_margin = self.ver_margin
@@ -395,8 +397,6 @@ class Button(QGraphicsObject):
         self.label.setTransformOriginPoint(self.label.boundingRect().center())
         self.label.setScale(1.0 + fac)
         self._reposition_text()
-        #self.fit_to_contents()
-
 
     def set_label(self, text: str, direction: str = 'horizontal'):
         if direction == 'vertical':
@@ -410,11 +410,12 @@ class Button(QGraphicsObject):
             return
         self.logic.do_click()
         self.fill_color_current = self.logic.release_color() if not artificial_emit else self.logic.idle_color()
+        self.clicked.emit({"btn_id": self.btn_id, "btn_label": self.label, "button": self, 'checked': self.is_on()})
         if artificial_emit:
+            self.hovered_.emit({'btn_id': self.btn_id, 'button': self, 'hovered': False})
             self.update()
         if self.scene() is not None:
             self.scene().update()
-        self.clicked.emit({"btn_id": self.btn_id, "btn_label": self.label, "button": self, 'checked': self.is_on()})
 
     def set_opacity(self, opacity: float):
         self.setOpacity(opacity)

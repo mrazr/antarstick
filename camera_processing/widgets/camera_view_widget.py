@@ -24,6 +24,7 @@ from camera_processing.widgets.button_menu import ButtonMenu
 from camera_processing.widgets.cam_graphics_view import CamGraphicsView
 from camera_processing.widgets.camera_view import CameraView
 from camera_processing.widgets.overlay_gui import OverlayGui
+from camera_processing.widgets.stick_length_input import TextInputWidget
 from camera_processing.widgets.stick_link_manager import StickLinkManager
 from camera_processing.widgets.stick_widget import StickMode, StickWidget
 from dataset import Dataset
@@ -93,10 +94,11 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.current_viewed_image: Optional[np.ndarray] = None
         self.scaling = 2.0
+
         self.camera_view = CameraView(self.dataset, self.scaling)
+        self.camera_view.stick_context_menu.connect(self.handle_stick_widget_context_menu)
         self.camera_view.setAcceptHoverEvents(False)
         self.camera_view.setZValue(3)
-
 
         self.graphics_scene.addItem(self.camera_view)
 
@@ -115,9 +117,12 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.clicked.connect(self.handle_overlay_gui_clicked)
         self.overlay_gui.find_sticks_clicked.connect(self.handle_find_sticks_clicked)
         self.detect_thin_sticks = False
-        self.overlay_gui.stick_length_input.input_entered.connect(self.handle_stick_length_entered)
+        #self.overlay_gui.stick_length_input.input_entered.connect(self.handle_stick_length_entered)
         self.overlay_gui.sticks_length_clicked.connect(self.handle_stick_length_clicked)
         self.overlay_gui.confirm_sticks_clicked.connect(self.handle_confirm_sticks_clicked)
+        self.overlay_gui.set_stick_label_clicked.connect(self.handle_set_stick_label_clicked)
+        self.overlay_gui.set_stick_length_clicked.connect(self.handle_set_stick_length_clicked)
+        #self.overlay_gui.set_stick_label.connect(self.handle_set_stick_label_clicked)
 
         self.graphics_scene.addItem(self.overlay_gui)
         self.overlay_gui.initialize()
@@ -166,6 +171,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.RIGHT)
 
         self.rect_to_view = QRectF()
+        self.stick_widget_in_context: Optional[StickWidget] = None
 
     def _setup_buttons(self):
         self.left_add_button.set_label('Link camera', direction='vertical')
@@ -227,7 +233,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.initialize_rest_of_gui()
         select_index = self.image_list.index(0, 0)
         self.ui.image_list.setCurrentIndex(select_index)
-        self.overlay_gui.stick_length_input.set_length(self.camera.default_stick_length_cm)
+        self.overlay_gui.stick_length_input.set_value(str(self.camera.default_stick_length_cm))
         if len(self.camera.sticks) == 0 and False:
             self.handle_find_sticks_clicked()
 
@@ -238,10 +244,10 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.camera_view.initialise_with(self.camera)
 
-        rect = self.camera_view.stick_length_input.boundingRect()
-        self.camera_view.stick_length_input.setParentItem(self.overlay_gui)
-        self.camera_view.stick_length_input.setPos(viewport_rect.width() * 0.5 - rect.width() * 0.5,
-                                                   viewport_rect.height() * 0.5 - rect.height() * 0.5)
+        #rect = self.camera_view.stick_length_input.boundingRect()
+        #self.camera_view.stick_length_input.setParentItem(self.overlay_gui)
+        #self.camera_view.stick_length_input.setPos(viewport_rect.width() * 0.5 - rect.width() * 0.5,
+        #                                           viewport_rect.height() * 0.5 - rect.height() * 0.5)
 
         self.camera_view.set_show_title(False)
         self.left_add_button.set_button_height(self.camera_view.boundingRect().height())
@@ -361,8 +367,17 @@ class CameraViewWidget(QtWidgets.QWidget):
     def handle_link_sticks_clicked(self):
         self.left_add_button.set_disabled(self.overlay_gui.link_sticks_button_pushed())
         self.right_add_button.set_disabled(self.overlay_gui.link_sticks_button_pushed())
-        self.left_show_button.set_disabled(self.overlay_gui.link_sticks_button_pushed())
-        self.right_show_button.set_disabled(self.overlay_gui.link_sticks_button_pushed())
+        #self.left_show_button.set_disabled(self.overlay_gui.link_sticks_button_pushed())
+        #self.right_show_button.set_disabled(self.overlay_gui.link_sticks_button_pushed())
+
+        if self.left_side_camera_state == SideCameraState.Hidden:
+            #self.set_side_camera_state(SideCameraState.Shown, LinkMenuPosition.LEFT)
+            self.left_show_button.click_button(artificial_emit=True)
+
+        if self.right_side_camera_state == SideCameraState.Hidden:
+            #self.set_side_camera_state(SideCameraState.Shown, LinkMenuPosition.RIGHT)
+            self.right_show_button.click_button(artificial_emit=True)
+
         if self.overlay_gui.link_sticks_button_pushed():
             self.stick_link_manager.set_rect(self.rect_to_view)
             #self.stick_link_manager.setPos(self.graphics_scene.sceneRect().topLeft())
@@ -387,6 +402,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         if cam1.id != self.camera.id and cam2.id != self.camera.id:
             return
         other_camera_view = CameraView(self.dataset, self.scaling)
+        other_camera_view.stick_context_menu.connect(self.handle_stick_widget_context_menu)
         self.graphics_scene.addItem(other_camera_view)
         other_camera_view.setAcceptHoverEvents(False)
 
@@ -413,16 +429,16 @@ class CameraViewWidget(QtWidgets.QWidget):
             pos = self.left_add_button.scenePos() - QPointF(self.camera_view.boundingRect().width(), 0)
             if self.left_link is not None:
                 self.dataset.unlink_cameras(self.camera, self.left_link.camera)
-            self.set_side_camera_state(SideCameraState.Shown, LinkMenuPosition.LEFT)
             self.left_link = other_camera_view
             self.left_link.setZValue(3)
+            self.set_side_camera_state(SideCameraState.Shown, LinkMenuPosition.LEFT)
         else:
             pos = self.right_add_button.scenePos() + QPointF(self.right_add_button.boundingRect().width(), 0)
             if self.right_link is not None:
                 self.dataset.unlink_cameras(self.camera, self.right_link.camera)
-            self.set_side_camera_state(SideCameraState.Shown, LinkMenuPosition.RIGHT)
             self.right_link = other_camera_view
             self.right_link.setZValue(3)
+            self.set_side_camera_state(SideCameraState.Shown, LinkMenuPosition.RIGHT)
 
         other_camera_view.setPos(pos)
         other_camera_view.stick_link_requested.connect(self.stick_link_manager.handle_stick_widget_link_requested)
@@ -440,6 +456,7 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         if self.left_link is not None and self.left_link.camera.id == to_remove.id:
             self.left_link.stick_link_requested.disconnect(self.stick_link_manager.handle_stick_widget_link_requested)
+            self.left_link.stick_context_menu.disconnect(self.handle_stick_widget_context_menu)
             self.left_link.setParentItem(None)
             self.graphics_scene.removeItem(self.left_link)
             self.left_link = None
@@ -449,6 +466,7 @@ class CameraViewWidget(QtWidgets.QWidget):
             #self.left_add_button.set_tooltip('Link camera')
         elif self.right_link is not None and self.right_link.camera.id == to_remove.id:
             self.right_link.stick_link_requested.disconnect(self.stick_link_manager.handle_stick_widget_link_requested)
+            self.right_link.stick_context_menu.disconnect(self.handle_stick_widget_context_menu)
             self.right_link.setParentItem(None)
             self.graphics_scene.removeItem(self.right_link)
             self.right_link = None
@@ -683,11 +701,20 @@ class CameraViewWidget(QtWidgets.QWidget):
         #print(f'handle took {time.time() - start} secs')
 
     def handle_stick_length_entered(self):
-        self.camera.default_stick_length_cm = self.overlay_gui.stick_length_input.get_length()
+        self.camera.default_stick_length_cm = int(self.overlay_gui.stick_length_input.get_value())
         self.camera.save()
 
-    def handle_stick_length_clicked(self):
-        self.overlay_gui.stick_length_input.set_length(self.camera.default_stick_length_cm)
+    def handle_stick_length_clicked(self, btn_info):
+        self.stick_widget_in_context = None
+        if btn_info['checked']:
+            #self.overlay_gui.stick_length_input.set_value(str(self.camera.default_stick_length_cm))
+            self.overlay_gui.sticks_length_input.set_getter_setter_parser_validator(self.camera.get_default_stick_length,
+                                                                                    self.camera.set_default_stick_length,
+                                                                                    int,
+                                                                                    lambda l: l > 0)
+            self.overlay_gui.show_sticks_length_input()
+        else:
+            self.overlay_gui.hide_sticks_length_input()
 
     def handle_confirm_sticks_clicked(self):
         self.camera.initialize_measurements(False)
@@ -705,7 +732,7 @@ class CameraViewWidget(QtWidgets.QWidget):
                 else:
                     sw.border_negative()
             return
-        image_sticks = antar.process_photos(photos, self.camera.folder, self.camera.sticks)
+        image_sticks = antar.process_photos(photos, self.camera.folder, self.camera.sticks, self.camera)
         self.camera.insert_measurements2(image_sticks)
         measurements = self.camera.get_sticks_in_image(image)
 
@@ -736,11 +763,13 @@ class CameraViewWidget(QtWidgets.QWidget):
         if side == LinkMenuPosition.LEFT:
             add_button = self.left_add_button
             show_button = self.left_show_button
+            link = self.left_link
             self.left_side_camera_state = state
         else:
             add_button = self.right_add_button
             show_button = self.right_show_button
             self.right_side_camera_state = state
+            link = self.right_link
         if state == SideCameraState.Vacant:
             add_button.set_disabled(False)
             add_button.set_default_state()
@@ -756,11 +785,17 @@ class CameraViewWidget(QtWidgets.QWidget):
             add_button.set_on(True)
             show_button.setVisible(True)
             show_button.set_label('Hide', direction='vertical')
+            self.stick_link_manager.show_links_from_camera(link.camera)
+            link.setVisible(True)
+            self._recenter_view()
         elif state == SideCameraState.Hidden:
             add_button.setVisible(True)
             add_button.set_button_height(int(0.5 * self.camera_view.boundingRect().height()))
             show_button.setVisible(True)
             show_button.set_label('Show', direction='vertical')
+            self.stick_link_manager.hide_links_from_camera(link.camera)
+            link.setVisible(False)
+            self._recenter_view()
         elif state == SideCameraState.Adding:
             add_button.set_disabled(True)
         else:
@@ -777,7 +812,7 @@ class CameraViewWidget(QtWidgets.QWidget):
             side = LinkMenuPosition.RIGHT
         state = SideCameraState.Hidden if state == SideCameraState.Shown else SideCameraState.Shown
         self.set_side_camera_state(state, side)
-        self.show_hide_side_camera(side, state)
+        #self.show_hide_side_camera(side, state)
 
     def show_hide_side_camera(self, side: LinkMenuPosition, state: SideCameraState):
         link = self.left_link if side == LinkMenuPosition.LEFT else self.right_link
@@ -803,3 +838,38 @@ class CameraViewWidget(QtWidgets.QWidget):
             link.highlight(color)
         else:
             link.highlight(None)
+
+    def handle_stick_widget_context_menu(self, sw: StickWidget, view: CameraView):
+        self.stick_widget_in_context = sw
+        scene_pos = view.mapToScene(sw.pos())
+        screen_pos = self.graphics_view.mapFromScene(scene_pos)
+        self.overlay_gui.stick_widget_menu.center_buttons()
+        self.overlay_gui.show_stick_context_menu_at(screen_pos)
+
+    def handle_set_stick_label_clicked(self, btn_info):
+        if self.stick_widget_in_context is None:  # should not happen
+            return
+        if not btn_info['checked']:
+            self.overlay_gui.hide_stick_label_input()
+            return
+        sw = self.stick_widget_in_context
+        self.overlay_gui.stick_label_input.set_getter_setter_parser_validator(sw.get_stick_label, sw.set_stick_label,
+                                                                              str,
+                                                                              lambda s: self.camera.is_label_available(self.stick_widget_in_context.stick, s))
+        self.overlay_gui.show_stick_label_input()
+
+    def handle_set_stick_length_clicked(self, btn_info):
+        if self.stick_widget_in_context is None:  # should not happen
+            return
+        if not btn_info['checked']:
+            self.overlay_gui.hide_stick_length_input()
+            return
+        sw = self.stick_widget_in_context
+        self.overlay_gui.stick_length_input.set_getter_setter_parser_validator(sw.get_stick_length_cm,
+                                                                               sw.set_stick_length_cm,
+                                                                               int,
+                                                                               lambda l: l > 0)
+        self.overlay_gui.stick_length_input.set_label(f'{sw.get_stick_label()} length:')
+        self.overlay_gui.show_stick_length_input()
+
+

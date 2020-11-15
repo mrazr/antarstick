@@ -21,9 +21,9 @@ class ButtonMenu(QGraphicsObject):
         self.hor_padding = 5
         self.ver_padding = 5
 
-        self.close_button = Button('btn_close', 'cancel', parent=self)
+        self.close_button = Button('btn_close', 'close', parent=self)
         self.close_button.set_base_color([ButtonColor.RED])
-        self.close_button.clicked.connect(lambda _: self.close_requested.emit())
+        self.close_button.clicked.connect(self.handle_close_clicked)
         self.close_button.setVisible(False)
         self.close_button_shown = False
 
@@ -96,13 +96,9 @@ class ButtonMenu(QGraphicsObject):
             view = self.scene().views()[0]
             rows = len(visible_buttons)
             columns = 1
-
             if menu_height > view_size.height():
                 rows = max(int(view_size.height() / visible_buttons[0].boundingRect().height()), 1)
                 columns = int(ceil(len(visible_buttons) / rows))
-
-            # print(f'rows = {rows}, columns = {columns}')
-            # print(f'visible buttons = {len(visible_buttons)}')
 
             button_width = max(map(lambda btn: btn.boundingRect().width(), visible_buttons))
             button_height = max(map(lambda btn: btn.boundingRect().height(), visible_buttons))
@@ -118,6 +114,7 @@ class ButtonMenu(QGraphicsObject):
             offset = 0
             x = 0
             for i, button in enumerate(visible_buttons):
+                button.set_width(button_width)
                 r = i % rows
                 c = int(i / rows)
                 x = c * (button_width + self.scaling * self.hor_padding) + self.scaling * self.hor_padding
@@ -209,3 +206,7 @@ class ButtonMenu(QGraphicsObject):
 
     def visible_buttons_count(self) -> int:
         return len(self.buttons)
+
+    def handle_close_clicked(self):
+        self.close_requested.emit()
+        self.setVisible(False)

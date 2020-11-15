@@ -420,4 +420,12 @@ class StickLinkManager(QGraphicsObject):
         self.rect.moveTo(0.0, 0.0)
         self.update()
 
+    def hide_links_from_camera(self, camera: Camera):
+        for link in self.stick_links_list:
+            if link.stick1.stick.camera_id == camera.id or link.stick2.stick.camera_id == camera.id:
+                link.setVisible(False)
 
+    def show_links_from_camera(self, camera: Camera):
+        for link in self.stick_links_list:
+            if link.stick1.stick.camera_id == camera.id or link.stick2.stick.camera_id == camera.id:
+                link.setVisible(True)

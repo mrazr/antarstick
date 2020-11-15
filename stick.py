@@ -69,7 +69,9 @@ class Stick:
             a scaled version of the original stick
         """
         return Stick(self.local_id, self.view, (factor * self.top).astype(np.int32),
-                     (factor * self.bottom).astype(np.int32), label=self.label, scale_=factor*self.scale_)
+                     (factor * self.bottom).astype(np.int32), label=self.label, scale_=factor*self.scale_,
+                     snow_height_cm=int(factor*self.snow_height_cm), snow_height_px=int(factor*self.snow_height_px),
+                     width=int(factor * self.width), camera_id=self.camera_id, id=self.id)
     
     def set_endpoints(self, x1: int, y1: int, x2: int, y2: int):
         self.top = np.array([x1, y1], np.int32)
@@ -118,3 +120,31 @@ class Stick:
         stick.width = state['width']
 
         return stick
+
+    def set_snow_height_px(self, height: int):
+        self.snow_height_px = height
+        self.snow_height_cm = int(self.snow_height_px * self.length_cm / self.length_px)
+
+    def set_snow_height_cm(self, height: int):
+        self.snow_height_cm = height
+        self.snow_height_px = int(self.snow_height_cm * self.length_px / self.length_cm)
+
+    def original_scale(self) -> 'Stick':
+        if self.scale_ == 1.0:
+            return self
+        return self.scale(1.0 / self.scale_)
+
+    def translate(self, vec: np.ndarray):
+        self.top += vec
+        self.bottom += vec
+
+    def set_top(self, top: np.ndarray):
+        self.top = top
+        self.__post_init__()
+
+    def set_bottom(self, bottom: np.ndarray):
+        self.bottom = bottom
+        self.__post_init__()
+
+    def copy(self) -> 'Stick':
+        return self.scale(1.0)

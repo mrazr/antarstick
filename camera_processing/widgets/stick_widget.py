@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem,
                              QGraphicsLineItem, QGraphicsObject,
                              QGraphicsRectItem, QGraphicsSceneHoverEvent,
                              QGraphicsSceneMouseEvent, QGraphicsTextItem,
-                             QStyleOptionGraphicsItem, QGraphicsSimpleTextItem)
+                             QStyleOptionGraphicsItem, QGraphicsSimpleTextItem, QGraphicsSceneContextMenuEvent)
 
 from camera_processing.widgets.button import Button, ButtonColor
 from stick import Stick
@@ -32,6 +32,7 @@ class StickWidget(QGraphicsObject):
     hovered = pyqtSignal(['PyQt_PyObject', 'PyQt_PyObject'])
     stick_changed = pyqtSignal('PyQt_PyObject')
     sibling_changed = pyqtSignal(bool)
+    right_clicked = pyqtSignal('PyQt_PyObject')
 
     handle_idle_brush = QBrush(QColor(0, 125, 125, 50))
     handle_hover_brush = QBrush(QColor(125, 125, 0, 50))
@@ -131,7 +132,7 @@ class StickWidget(QGraphicsObject):
         self.highlight_animation = QPropertyAnimation(self, b"highlight_color")
         self.highlight_animation.valueChanged.connect(self.handle_highlight_animation_value_changed)
         self.deleting = False
-        #self.stick_label_text
+        self._update_tooltip()
 
     @pyqtSlot()
     def handle_btn_delete_clicked(self):
@@ -206,11 +207,11 @@ class StickWidget(QGraphicsObject):
             painter.setPen(pen)
             painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)))
 
-        if self.show_label:
-            #painter.setFont(StickWidget.font)
-            #painter.drawStaticText(self.line.p2(), self.stick_label_text)
-            painter.fillRect(self.stick_label_text.boundingRect().translated(self.stick_label_text.pos()),
-                             QBrush(QColor(0, 0, 0, 120)))
+        #if self.show_label:
+        #    #painter.setFont(StickWidget.font)
+        #    #painter.drawStaticText(self.line.p2(), self.stick_label_text)
+        #    painter.fillRect(self.stick_label_text.boundingRect().translated(self.stick_label_text.pos()),
+        #                     QBrush(QColor(0, 0, 0, 120)))
 
     def boundingRect(self) -> PyQt5.QtCore.QRectF:
         return self.gline.boundingRect().united(self.top_handle.boundingRect()).united(self.mid_handle.boundingRect()).united(self.bottom_handle.boundingRect())
@@ -303,7 +304,7 @@ class StickWidget(QGraphicsObject):
         elif self.link_source:
             self.link_button.setVisible(True)
         self.show_label = True
-        self.stick_label_text.show()
+        #self.stick_label_text.show()
         self.scene().update()
 
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent):
@@ -464,3 +465,26 @@ class StickWidget(QGraphicsObject):
     def handle_highlight_animation_value_changed(self, new: QColor):
         if not self.deleting:
             self.update(self.boundingRect().marginsAdded(QMarginsF(10, 10, 10, 10)))
+
+    def contextMenuEvent(self, event: QGraphicsSceneContextMenuEvent) -> None:
+        self.right_clicked.emit({'stick_widget': self})
+
+    def set_stick_label(self, label: str):
+        self.stick.label = label
+        self.stick_label_text.setText(label)
+        self._update_tooltip()
+        self.update()
+
+    def get_stick_label(self) -> str:
+        return self.stick.label
+
+    def get_stick_length_cm(self) -> int:
+        return self.stick.length_cm
+
+    def set_stick_length_cm(self, length: int):
+        self.stick.length_cm = length
+        self._update_tooltip()
+        self.update()
+
+    def _update_tooltip(self):
+        self.setToolTip(f'{self.stick.label}\nlength: {self.stick.length_cm} cm')
