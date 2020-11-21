@@ -2,7 +2,7 @@ from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QEvent, QPointF
 from PyQt5.QtGui import QPainter, QWheelEvent, QResizeEvent, QMouseEvent, QKeyEvent
 from PyQt5.QtWidgets import QGraphicsView, QWidget, QSizePolicy
 
-from camera_processing.widgets.stick_link_manager import StickLinkManager
+from camera_processing.widgets.stick_link_manager import StickLinkingStrategy
 
 
 class CamGraphicsView(QGraphicsView):
@@ -10,7 +10,7 @@ class CamGraphicsView(QGraphicsView):
     view_changed = pyqtSignal()
     rubber_band_started = pyqtSignal()
 
-    def __init__(self, link_manager: StickLinkManager, parent: QWidget = None):
+    def __init__(self, link_manager: StickLinkingStrategy, link2: StickLinkingStrategy, parent: QWidget = None):
         QGraphicsView.__init__(self, parent)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -27,6 +27,7 @@ class CamGraphicsView(QGraphicsView):
         self.horizontalScrollBar().valueChanged.connect(lambda _: self.view_changed.emit())
         
         self.stick_link_manager = link_manager
+        self.link2 = link2
         #self.setInteractive(True)
 
     def drawForeground(self, painter: QPainter, rect: QRectF) -> None:
@@ -93,8 +94,10 @@ class CamGraphicsView(QGraphicsView):
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.RightButton:
             self.stick_link_manager.cancel()
+            self.link2.cancel()
         elif event.button() == Qt.LeftButton:
             self.stick_link_manager.accept()
+            self.link2.accept()
         elif event.button() == Qt.MidButton:
             self.viewport().setCursor(Qt.OpenHandCursor)
             handmade_event = QMouseEvent(QEvent.MouseButtonRelease, QPointF(event.pos()), Qt.LeftButton,
@@ -104,8 +107,9 @@ class CamGraphicsView(QGraphicsView):
         super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
-        if not self.stick_link_manager.anchored:
-            self.stick_link_manager.set_target(self.mapToScene(event.pos()))
+        #if not self.stick_link_manager.anchored:
+        self.stick_link_manager.set_target(self.mapToScene(event.pos()))
+        self.link2.set_target(self.mapToScene(event.pos()))
         QGraphicsView.mouseMoveEvent(self, event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:

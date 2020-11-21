@@ -4,7 +4,7 @@ from typing import Optional, Any, Dict
 import PyQt5
 import numpy as np
 from PyQt5.Qt import (QPointF)
-from PyQt5.QtCore import QLine, QLineF, Qt, pyqtSignal, pyqtSlot, QMarginsF, QPropertyAnimation, pyqtProperty
+from PyQt5.QtCore import QLine, QLineF, Qt, pyqtSignal, pyqtSlot, QMarginsF, QPropertyAnimation, pyqtProperty, QPoint
 from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen, QStaticText
 from PyQt5.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem,
                              QGraphicsLineItem, QGraphicsObject,
@@ -17,9 +17,11 @@ from stick import Stick
 
 
 class StickMode(Enum):
-    DISPLAY = 0
-    EDIT = 1
-    LINK = 2
+    Display = 0
+    Edit = 1
+    EditDelete = 2
+    LinkSource = 3
+    LinkTarget = 4
 
 
 class StickWidget(QGraphicsObject):
@@ -60,7 +62,7 @@ class StickWidget(QGraphicsObject):
         #self.stick_label_text = QStaticText(self.stick.label)
         self.setZValue(10)
 
-        self.mode = StickMode.DISPLAY
+        self.mode = StickMode.Display
 
         self.btn_delete = Button("delete", "x", parent=self)
         self.btn_delete.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
@@ -101,6 +103,7 @@ class StickWidget(QGraphicsObject):
         self.link_button.set_label("Link", direction="vertical")
         self.link_button.fit_to_contents()
         self.link_button.clicked.connect(lambda: self.link_initiated.emit(self))
+        self.link_button.setVisible(False)
         self.link_button.setFlag(QGraphicsObject.ItemIgnoresTransformations, False)
 
         self.adjust_line()
@@ -178,7 +181,7 @@ class StickWidget(QGraphicsObject):
         pen.setColor(QColor(0, 255, 0, 255))
         painter.setPen(pen)
 
-        if self.mode != StickMode.EDIT:
+        if self.mode != StickMode.EditDelete:
             #pen.setStyle(Qt.DotLine)
             pen.setWidth(2.0)
             #painter.setPen(pen)
@@ -214,36 +217,53 @@ class StickWidget(QGraphicsObject):
         #                     QBrush(QColor(0, 0, 0, 120)))
 
     def boundingRect(self) -> PyQt5.QtCore.QRectF:
-        return self.gline.boundingRect().united(self.top_handle.boundingRect()).united(self.mid_handle.boundingRect()).united(self.bottom_handle.boundingRect())
+        return self.gline.boundingRect().united(self.top_handle.boundingRect()).\
+            united(self.mid_handle.boundingRect()).united(self.bottom_handle.boundingRect())
     
     def set_edit_mode(self, value: bool):
         if value:
-            self.set_mode(StickMode.EDIT)
+            self.set_mode(StickMode.EditDelete)
         else:
-            self.set_mode(StickMode.DISPLAY)
+            self.set_mode(StickMode.Display)
     
     def set_mode(self, mode: StickMode):
-        if mode == StickMode.DISPLAY:
+        if mode == StickMode.Display:
             self.btn_delete.setVisible(False)
             self.top_handle.setVisible(False)
             self.mid_handle.setVisible(False)
             self.bottom_handle.setVisible(False)
             self.link_button.setVisible(False)
             self.available_for_linking = False
-        elif mode == StickMode.EDIT:
-            self.set_mode(StickMode.DISPLAY)
-            self.btn_delete.setVisible(True)
+            self.link_source = False
+        elif mode == StickMode.EditDelete:
+            self.set_mode(StickMode.Display)
             self.top_handle.setVisible(True)
             self.mid_handle.setVisible(True)
             self.bottom_handle.setVisible(True)
-        else:
-            self.set_mode(StickMode.DISPLAY)
+            self.available_for_linking = False
+            self.link_source = False
+        elif mode == StickMode.LinkSource:
+            #self.set_mode(StickMode.Display)
             #self.link_button.setVisible(True)
+            self.set_mode(StickMode.Display)
+            self.link_source = True
+            self.available_for_linking = False
+            self.link_button.setPos(self.boundingRect().topLeft())
+            self.link_button.set_width(int(self.boundingRect().width()))
+            self.link_button.set_button_height(int(self.boundingRect().height()))
+            self.link_button.adjust_text_to_button()
+        elif mode == StickMode.LinkTarget:
+            self.set_mode(StickMode.Display)
+            self.link_source = False
+            self.available_for_linking = True
+        elif mode == StickMode.Edit:
+            self.set_mode(StickMode.EditDelete)
+            self.btn_delete.setVisible(False)
         self.mode = mode
         self.update()
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent):
-        if self.mode != StickMode.EDIT:
+        if self.mode != StickMode.EditDelete:
             return
         if self.hovered_handle is None:
             return
@@ -266,7 +286,7 @@ class StickWidget(QGraphicsObject):
             self.link_accepted.emit(self)
             return
 
-        if self.mode != StickMode.EDIT:
+        if self.mode != StickMode.EditDelete and self.mode != StickMode.Edit:
             return
 
         if self.hovered_handle is not None:
@@ -282,7 +302,8 @@ class StickWidget(QGraphicsObject):
                 self.top_handle.setOpacity(1.0)
             self.stick_changed.emit(self)
         self.hovered_handle = None
-        self.btn_delete.setVisible(True)
+        if self.mode == StickMode.EditDelete:
+            self.btn_delete.setVisible(True)
     
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent):
         if self.hovered_handle is None:
@@ -294,6 +315,18 @@ class StickWidget(QGraphicsObject):
         else:
             displacement = event.pos() - event.lastPos()
             self.setPos(self.pos() + displacement)
+        self.adjust_handles()
+        self.adjust_stick()
+        self.scene().update()
+
+    def set_top(self, pos: QPoint):
+        self.line.setP1(pos)
+        self.adjust_handles()
+        self.adjust_stick()
+        self.scene().update()
+
+    def set_bottom(self, pos: QPoint):
+        self.line.setP2(pos)
         self.adjust_handles()
         self.adjust_stick()
         self.scene().update()
@@ -313,14 +346,13 @@ class StickWidget(QGraphicsObject):
         self.hovered_handle = None
         if self.available_for_linking:
             self.hovered.emit(False, self)
-        elif self.link_source:
-            self.link_button.setVisible(False)
+        self.link_button.setVisible(False)
         self.show_label = False
         self.stick_label_text.hide()
         self.scene().update()
     
     def hoverMoveEvent(self, event: QGraphicsSceneHoverEvent):
-        if self.mode != StickMode.EDIT:
+        if self.mode != StickMode.EditDelete and self.mode != StickMode.Edit:
             return
         hovered_handle = list(filter(lambda h: h.rect().contains(event.pos()), self.handles))
         if len(hovered_handle) == 0:
@@ -399,6 +431,7 @@ class StickWidget(QGraphicsObject):
     def set_is_linked(self, value: bool):
         self.is_linked = value
         if not self.is_linked:
+            self.set_frame_color(None)
             if self.available_for_linking:
                 self.highlight(QColor(0, 255, 0, 100))
             else:
@@ -488,3 +521,13 @@ class StickWidget(QGraphicsObject):
 
     def _update_tooltip(self):
         self.setToolTip(f'{self.stick.label}\nlength: {self.stick.length_cm} cm')
+
+    def set_stick(self, stick: Stick):
+        self.stick = stick
+        self.adjust_line()
+        self.adjust_handles()
+        self.set_snow_height(stick.snow_height_px)
+        self._update_tooltip()
+        #self.line.setP1(QPoint(*self.stick.top))
+        #self.line.setP2(QPoint(*self.stick.bottom))
+        #self.adjust_line()

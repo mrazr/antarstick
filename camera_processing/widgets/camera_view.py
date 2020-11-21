@@ -38,14 +38,13 @@ class CameraView(QGraphicsObject):
     stick_widgets_out_of_sync = pyqtSignal('PyQt_PyObject')
     visibility_toggled = pyqtSignal()
 
-    def __init__(self, dataset: Dataset, scale: float, parent: Optional[QGraphicsItem] = None):
+    def __init__(self, scale: float, parent: Optional[QGraphicsItem] = None):
         QGraphicsObject.__init__(self, parent)
         self.current_highlight_color = QColor(0, 0, 0, 0)
         self.current_timer = -1
         self.scaling = scale
         self.pixmap = QGraphicsPixmapItem(self)
         self.stick_widgets: List[StickWidget] = []
-        self.reference_line = QLine()
         self.link_cam_text = QGraphicsSimpleTextItem("Link camera...", self)
         self.link_cam_text.setZValue(40)
         self.link_cam_text.setVisible(False)
@@ -82,8 +81,7 @@ class CameraView(QGraphicsObject):
         self.click_handler = None
         self.double_click_handler: Callable[[int, int], None] = None
 
-        self.dataset = dataset
-        self.stick_widget_mode = StickMode.DISPLAY
+        self.stick_widget_mode = StickMode.Display
 
         self.stick_length_lbl = QGraphicsSimpleTextItem("sticks length: ", parent=self.title_rect)
         self.stick_length_lbl.setFont(Button.font)
@@ -239,7 +237,7 @@ class CameraView(QGraphicsObject):
             self.click_handler(self.camera)
 
     def mouseDoubleClickEvent(self, event: QGraphicsSceneMouseEvent):
-        if self.stick_widget_mode == StickMode.EDIT:
+        if self.stick_widget_mode == StickMode.EditDelete:
             x = event.pos().toPoint().x()
             y = event.pos().toPoint().y()
             _ = self.camera.create_new_sticks([(np.array([[x, y - 50], [x, y + 50]]), -1)])[0] #self.dataset.create_new_stick(self.camera)
