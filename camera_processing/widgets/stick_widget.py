@@ -53,10 +53,10 @@ class StickWidget(QGraphicsObject):
         self.line = QLineF()
         self.gline = QGraphicsLineItem(self.line)
 
-        self.stick_label_text = QGraphicsSimpleTextItem(stick.label, self)
+        self.stick_label_text = QGraphicsSimpleTextItem("0", self)
         self.stick_label_text.setFont(StickWidget.font)
         #self.stick_label_text.setPos(-QPointF(0, self.stick_label_text.boundingRect().height()))
-        self.stick_label_text.setPos(self.line.p2())
+        self.stick_label_text.setPos(self.line.p1() - QPoint(0, 24))
         self.stick_label_text.setBrush(QBrush(QColor(0, 255, 0)))
         self.stick_label_text.hide()
         #self.stick_label_text = QStaticText(self.stick.label)
@@ -210,11 +210,11 @@ class StickWidget(QGraphicsObject):
             painter.setPen(pen)
             painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)))
 
-        #if self.show_label:
-        #    #painter.setFont(StickWidget.font)
-        #    #painter.drawStaticText(self.line.p2(), self.stick_label_text)
-        #    painter.fillRect(self.stick_label_text.boundingRect().translated(self.stick_label_text.pos()),
-        #                     QBrush(QColor(0, 0, 0, 120)))
+        if self.show_label:
+            #painter.setFont(StickWidget.font)
+            #painter.drawStaticText(self.line.p2(), self.stick_label_text)
+            painter.fillRect(self.stick_label_text.boundingRect().translated(self.stick_label_text.pos()),
+                             QBrush(QColor(0, 0, 0, 120)))
 
     def boundingRect(self) -> PyQt5.QtCore.QRectF:
         return self.gline.boundingRect().united(self.top_handle.boundingRect()).\
@@ -336,7 +336,7 @@ class StickWidget(QGraphicsObject):
             self.hovered.emit(True, self)
         elif self.link_source:
             self.link_button.setVisible(True)
-        self.show_label = True
+        #self.show_label = True
         #self.stick_label_text.show()
         self.scene().update()
 
@@ -347,8 +347,8 @@ class StickWidget(QGraphicsObject):
         if self.available_for_linking:
             self.hovered.emit(False, self)
         self.link_button.setVisible(False)
-        self.show_label = False
-        self.stick_label_text.hide()
+        #self.show_label = False
+        #self.stick_label_text.hide()
         self.scene().update()
     
     def hoverMoveEvent(self, event: QGraphicsSceneHoverEvent):
@@ -444,7 +444,8 @@ class StickWidget(QGraphicsObject):
         self.line.setP2(-self.line.p1())
         self.gline.setLine(self.line)
         self.adjust_handles()
-        self.stick_label_text.setPos(self.line.p2())
+        self.stick_label_text.setPos(self.line.p1() - QPointF(0.5 * self.stick_label_text.boundingRect().width(),
+                                                             1.3 * self.stick_label_text.boundingRect().height()))
         self.update()
 
     def set_selected(self, selected: bool):
@@ -520,7 +521,17 @@ class StickWidget(QGraphicsObject):
         self.update()
 
     def _update_tooltip(self):
-        self.setToolTip(f'{self.stick.label}\nlength: {self.stick.length_cm} cm')
+        snow_txt = "Snow height: "
+        if self.stick.snow_height_px >= 0:
+            snow_txt += str(self.stick.snow_height_cm) + " cm"
+            self.stick_label_text.setText(str(self.stick.snow_height_cm))
+            self.stick_label_text.setVisible(True)
+            self.show_label = True
+        else:
+            snow_txt = "not measured"
+            self.stick_label_text.setVisible(False)
+            self.show_label = False
+        self.setToolTip(f'{self.stick.label}\nLength: {self.stick.length_cm} cm\n{snow_txt}')
 
     def set_stick(self, stick: Stick):
         self.stick = stick
