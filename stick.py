@@ -47,13 +47,15 @@ class Stick:
     length_cm: int = 60
     snow_height_cm: int = 0
     snow_height_px: int = 0
-    label: str = "stick"
+    label: str = ''
     scale_: float = 1.0
     width: int = 3
+    is_visible: bool = True
 
     def __post_init__(self):
         self.length_px = np.linalg.norm(self.top - self.bottom)
-        self.label = "s" + str(self.local_id)
+        if self.label == '':
+            self.label = "s" + str(self.local_id)
         self.stick_views = []
 
     def scale(self, factor: float):
@@ -99,6 +101,8 @@ class Stick:
         return np.array([self.top, self.bottom])
 
     def __eq__(self, other: 'Stick') -> bool:
+        if other is None:
+            return False
         return self.camera_id == other.camera_id and self.local_id == other.local_id
 
     def __hash__(self) -> int:
