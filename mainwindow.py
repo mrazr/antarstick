@@ -119,9 +119,9 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.ui.stackedWidget)
         self.ui.toolBar.hide()
 
-        status_bar = self.statusBar()
 
         self.progress_bar = QProgressBar()
+        self.progress_bar.hide()
 
         bad_q_indicator = QPixmap(24, 24)
         bad_q_indicator.fill(QColor(200, 0, 0))
@@ -150,13 +150,12 @@ class MainWindow(QMainWindow):
         status_box.addItem(indicator_box)
         status_box.addWidget(self.progress_bar)
         status_box.setAlignment(indicator_box, Qt.AlignLeft)
-        status_box.setAlignment(self.progress_bar, Qt.AlignRight)
+        status_box.setSpacing(100)
         status_widget = QWidget()
         status_widget.setLayout(status_box)
         self.statusBar().addPermanentWidget(status_widget, 1)
 
         self.progress_bar.setFormat("%v / %m")
-        self.progress_bar.hide()
         self.sys_tray = QSystemTrayIcon(QIcon(':icons/snowflake.svg'))
         self.sys_tray.show()
 
