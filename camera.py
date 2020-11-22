@@ -1,7 +1,7 @@
 import os
 from os import listdir, mkdir
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Union
 
 import pandas as pd
 import numpy as np
@@ -102,11 +102,17 @@ class Camera(QObject):
         self.next_photo_daytime_snow = self.next_photo_daytime_snow[0] if len(self.next_photo_daytime_snow) > 0 else len(self.image_list)
 
         self.image_names_ids: Dict[str, int] = {image_name: image_id for image_id, image_name in enumerate(self.image_list)}
+        self.photos_state: Dict[str, bool] = {image_name: False for image_name in self.image_list}
         self.next_photo_id: int = 0
         self.next_photo: str = self.image_list[self.next_photo_id]
         self.default_stick_length_cm: int = 60
         self.needs_to_save: bool = False
         self.stick_to_stick_vectors: Dict[Stick, Dict[Stick, np.ndarray]] = {}
+        self.processed_photos_count = 0
+        self.to_process: List[str] = []
+        self.batches: List[List[str]] = []
+        self.batches_prepared = False
+        self.average_stick_length = 0.0
 
     def __load_measurements(self) -> None:
         try:
@@ -116,13 +122,11 @@ class Camera(QObject):
                     last_photo = measurements.iloc[-1][0]
                     self.next_photo_id = self.image_list.index(last_photo) + 1
                     self.next_photo = self.image_list[self.next_photo_id] if self.next_photo_id < len(self.image_list) else None
-                for i in range(2, len(measurements.columns.values), 4):
+                for i in range(3, len(measurements.columns.values), 4):
                     column: str = measurements.columns.values[i]
                     self.stick_labels_column_ids[column[:column.index('_')]] = i
                 self.measurements = measurements.apply(lambda x: x.apply(ENDPOINT_COLUMN_CONVERTER) if x.name.endswith(('bottom', 'top')) else x)
-                #for col in self.stick_labels_column_ids.values():
-                #    self.measurements.iloc[:, col + PD_STICK_TOP] = self.measurements.iloc[:, col + PD_STICK_TOP].apply(ENDPOINT_COLUMN_CONVERTER)
-                #    self.measurements.iloc[:, col + PD_STICK_BOTTOM] = self.measurements.iloc[:, col + PD_STICK_BOTTOM].apply(ENDPOINT_COLUMN_CONVERTER)
+                self.photos_state = { img_name: processed for img_name, processed in zip(self.measurements['image_name'], self.measurements['processed']) }
         except FileNotFoundError:
             self.measurements = pd.DataFrame()
             self._update_stick_labels_id()
@@ -254,6 +258,9 @@ class Camera(QObject):
             camera.default_stick_length_cm = state.get('default_stick_length_cm', 60)
             sticks = list(map(lambda stick_state: Stick.build_from_state(stick_state), state['sticks']))
             camera.sticks = sticks
+            for s in camera.sticks:
+                camera.average_stick_length += s.length_cm
+            camera.average_stick_length /= (len(camera.sticks) + 0.000001)
             camera.__load_measurements()
 
         return camera
@@ -284,47 +291,20 @@ class Camera(QObject):
         self.stick_labels_column_ids.clear()
         self.sticks.sort(key=lambda stick: stick.local_id)
         for i, stick in enumerate(self.sticks):
-            self.stick_labels_column_ids[stick.label] = PD_STICK_COLS * i + 2
+            self.stick_labels_column_ids[stick.label] = PD_STICK_COLS * i + 3
 
-    def get_batch(self, count: int = 50) -> List[str]:
-        """Return count image names that are to be processed next."""
-        real_count = min(count, len(self.image_list) - self.next_photo_id + 1)
-        return self.image_list[self.next_photo_id:self.next_photo_id + real_count]
-
-    def get_measurement_for(self, image_name: str) -> Dict[str, Dict[str, Any]]:
-        """For a give image name of this Camera, returns info about all sticks in that image."""
-        if self.measurements.shape[0] == 0:
-            return None
-        measurement_dict = dict({})
-        image_id = self.image_names_ids.get(image_name, None)
-        if image_id is None or image_id >= self.next_photo_id:
-            return None
-        measurement = self.measurements.iloc[image_id]
-        for stick in self.sticks:
-            stick_column_id = self.stick_labels_column_ids[stick.label]
-            measurement_dict[stick.label] = {
-                'top': measurement[stick_column_id + PD_STICK_TOP],
-                'bottom': measurement[stick_column_id + PD_STICK_BOTTOM],
-                'length_px': measurement[stick_column_id + PD_STICK_LENGTH_PX],
-                'snow_height': measurement[stick_column_id + PD_STICK_SNOW_HEIGHT],
-            }
-
-        return measurement_dict
-
-    def get_measurements_for_stick(self, stick: Stick) -> pd.DataFrame:
-        """For a given `stick` returns a DataFrame containing image names, coordinates, length and snow height."""
-        if self.measurements.shape[0] == 0:
-            return None
-        stick_column_id = self.stick_labels_column_ids[stick.label]
-        return self.measurements.iloc[:, [0] + list(range(stick_column_id, stick_column_id + PD_STICK_SNOW_HEIGHT + 1))]
-
-    def insert_measurements(self, df: pd.DataFrame):
-        self.measurements = self.measurements.append(df)
-        self.next_photo_id += df.shape[0]
-        self.save_measurements(self.measurements_path)
+    def get_batch(self, batch_count: int = 2, batch_size: int = 50) -> List[List[str]]:
+        non_processed = self.measurements[~self.measurements['processed']]['image_name']
+        if batch_size == 0:
+            batch_size = min(int(np.ceil(non_processed.shape[0] / batch_count)), non_processed.shape[0])
+        batches = []
+        for i in range(batch_count):
+            batch = non_processed[i * batch_size: i * batch_size + batch_size].tolist()
+            batches.append(batch)
+        return batches
 
     def get_processed_count(self) -> int:
-        return self.next_photo_id
+        return self.processed_photos_count
 
     def get_photo_count(self) -> int:
         return len(self.image_list)
@@ -355,29 +335,13 @@ class Camera(QObject):
         until = min(self.next_photo_daytime_snow + count, len(self.image_list))
         return list(map(lambda img: self.folder / img, self.image_list[self.next_photo_daytime_snow:until]))
 
-    def get_stick_in_image(self, stick: Stick, image: str) -> Optional[Stick]:
-        image_id = self.image_names_ids.get(image, -1)
-        if image_id < 0:
-            return None
-        stick_id = self.stick_labels_column_ids[stick.label]
-        data = self.measurements.iloc[image_id, [stick_id + PD_STICK_TOP,
-                                                 stick_id + PD_STICK_BOTTOM,
-                                                 stick_id + PD_STICK_LENGTH_PX,
-                                                 stick_id + PD_STICK_SNOW_HEIGHT,
-                                                 ]]
-        stick.top = data[0]
-        stick.bottom = data[1]
-        stick.length_px = data[2]
-        #stick.snow_height_cm = data[3]
-        stick.set_snow_height_cm(int(data[3]))
-        return stick
-
     def get_sticks_in_image(self, image: str) -> List[Stick]:
         image_id = self.image_names_ids[image]
 
-        if self.measurements.shape[0] == 0 or self.measurements.iat[image_id, 2][0] < 0:
+        if self.measurements.shape[0] == 0 or self.measurements.iat[image_id, 3][0] < 0:
             return self.sticks
-        for stick in self.sticks:
+        sticks = list(map(lambda s: s.copy(), self.sticks))
+        for stick in sticks:
             stick_id = self.stick_labels_column_ids[stick.label]
             stick.view = image
             stick.top = self.measurements.iat[image_id, stick_id + PD_STICK_TOP]
@@ -385,13 +349,14 @@ class Camera(QObject):
             stick.length_px = float(self.measurements.iat[image_id, stick_id + PD_STICK_LENGTH_PX])
             stick.set_snow_height_cm(int(self.measurements.iat[image_id, stick_id + PD_STICK_SNOW_HEIGHT]))
             self.stick_changed.emit(stick)
-        return self.sticks
+        return sticks
 
     def initialize_measurements(self, save_immediately: bool = False):
         self._update_stick_labels_id()
         self.stick_to_stick_vectors.clear()
         for i, stick_i in enumerate(self.sticks):
             stick_i_vecs = self.stick_to_stick_vectors.setdefault(stick_i, {})
+            self.average_stick_length += stick_i.length_cm
             for stick_j in self.sticks[i+1:]:
                 vec = stick_j.bottom - stick_i.bottom
                 stick_i_vecs[stick_j] = vec
@@ -400,7 +365,8 @@ class Camera(QObject):
 
         data = {
             'image_name': self.image_list,
-            'processed': [False] * len(self.image_list)
+            'processed': [False] * len(self.image_list),
+            'image_quality': [-1.0] * len(self.image_list),
         }
 
         for stick in self.sticks:
@@ -425,10 +391,14 @@ class Camera(QObject):
             self.save_measurements()
         self.needs_to_save = not save_immediately
 
-    def insert_measurements2(self, measurements: Dict[str, List[Stick]]):
-        for img_name, sticks in measurements.items():
+    def insert_measurements2(self, measurements: Dict[str, Dict[str, Union[List[Stick], float]]]):
+        for img_name, sticks_quality in measurements.items():
+            self.processed_photos_count += 1
+            sticks = sticks_quality['sticks']
             image_id = self.image_names_ids[img_name]
             self.measurements.iat[image_id, 1] = True
+            self.measurements.iat[image_id, 2] = sticks_quality['image_quality']
+            self.photos_state[img_name] = True
             for stick in sticks:
                 stick = stick.scale(1.0/stick.scale_)
                 stick_id = self.stick_labels_column_ids[stick.label]
@@ -452,6 +422,20 @@ class Camera(QObject):
             return False
         stick.label = label
         return True
+
+    def image_quality(self, image: str) -> float:
+        return self.measurements.iat[self.image_names_ids[image], 2]
+
+    def average_snow_height(self, image: str) -> float:
+        image_id = self.image_names_ids[image]
+
+        if self.measurements.shape[0] == 0 or self.measurements.iat[image_id, 3][0] < 0:
+            return -1.0
+        snow_height = []
+        for stick in self.sticks:
+            stick_id = self.stick_labels_column_ids[stick.label]
+            snow_height.append(self.measurements.iat[image_id, stick_id + PD_STICK_SNOW_HEIGHT])
+        return np.median(snow_height)
 
     def __hash__(self):
         return self.folder.__hash__()

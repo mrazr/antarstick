@@ -69,8 +69,8 @@ class Dataset(QObject):
     camera_added = Signal(Camera)
     camera_removed = Signal(Camera)
     camera_sticks_detected = Signal(Camera)
-    cameras_linked = Signal([Camera, Camera, int])
-    cameras_unlinked = Signal([Camera, Camera, int])
+    cameras_linked = Signal([Camera, Camera])
+    cameras_unlinked = Signal([Camera, Camera])
     stick_removed = Signal([Stick])
     stick_created = Signal([Stick])
     all_sticks_removed = Signal([Camera])
@@ -97,10 +97,11 @@ class Dataset(QObject):
         self.cameras: List[Camera] = []
         self.next_camera_id = 0
         self.next_stick_id = 0
-        self.linked_cameras: Set[Tuple[int, int, int]] = set()
+        self.linked_cameras: Set[Tuple[int, int]] = set() #, int]] = set()
         self.unused_stick_ids: List[int] = []
-        self.camera_groups: Dict[int, List[Camera]] = {}
-        self.available_link_groups = list(range(12))
+        self.required_state_fields = set(self.get_state().keys())
+        #self.camera_groups: Dict[int, List[Camera]] = {}
+        #self.available_link_groups = list(range(12))
 
     def add_camera(self, folder: Path, camera_id: int = -1, first_time_add: bool = True) -> bool:
         if not folder.exists():
@@ -168,7 +169,7 @@ class Dataset(QObject):
             self.unlink_cameras(camera, camera2)
 
         self.disconnect_camera_signals(camera)
-        self.cameras = list(filter(lambda camera: camera.id != camera_id, self.cameras))
+        self.cameras = list(filter(lambda camera_: camera_.id != camera_id, self.cameras))
         if old_camera_count > len(self.cameras):
             self.camera_removed.emit(camera)
 
@@ -202,7 +203,12 @@ class Dataset(QObject):
         try:
             with open(path, "r") as dataset_file:
                 state = json.load(dataset_file)
-
+                if set(state) != self.required_state_fields:
+                    msg_box = QMessageBox(QMessageBox.Critical, 'Invalid file',
+                                          f'The file {str(path)} is not a valid dataset file.',
+                                          QMessageBox.Close)
+                    msg_box.exec_()
+                    return False
                 self.path = Path(state['path'])
                 stick_views_map = state['stick_views_map']
                 self.next_camera_id = state['next_camera_id']
@@ -230,7 +236,7 @@ class Dataset(QObject):
                     return False
 
             self.loading_finished.emit()
-            for left_cam_id, right_cam_id, _ in linked_cameras:
+            for left_cam_id, right_cam_id in linked_cameras:
                 left_cam = self.get_camera(left_cam_id)
                 right_cam = self.get_camera(right_cam_id)
                 self.link_cameras(left_cam, right_cam)
@@ -270,20 +276,20 @@ class Dataset(QObject):
         #    self.camera_groups[camera_group].append(cam1)
         #if cam2 not in self.camera_groups[camera_group]:
         #    self.camera_groups[camera_group].append(cam2)
-        camera_group = -1 if len(self.available_link_groups) == 0 else self.available_link_groups[0]
-        if camera_group >= 0:
-            self.available_link_groups.remove(camera_group)
-        else:
-            print(f'Reached maximum number of linked cameras')
-        self.linked_cameras.add((cam1.id, cam2.id, camera_group))
-        self.cameras_linked.emit(cam1, cam2, camera_group)
+        #camera_group = -1 if len(self.available_link_groups) == 0 else self.available_link_groups[0]
+        #if camera_group >= 0:
+        #    self.available_link_groups.remove(camera_group)
+        #else:
+        #    print(f'Reached maximum number of linked cameras')
+        self.linked_cameras.add((cam1.id, cam2.id)) #, camera_group))
+        self.cameras_linked.emit(cam1, cam2) #, camera_group)
     
     def unlink_cameras(self, cam1: Camera, cam2: Camera):
         link1 = (cam1.id, cam2.id)
         link2 = (cam2.id, cam1.id)
-        link = list(filter(lambda _link: _link[:-1] == link1 or _link[:-1] == link2, self.linked_cameras))[0]
-        self.available_link_groups.append(link[2])
-        self.available_link_groups.sort()
+        #link = list(filter(lambda _link: _link == link1 or _link == link2, self.linked_cameras))[0]
+        #self.available_link_groups.append(link[2])
+        #self.available_link_groups.sort()
         self.linked_cameras = set(filter(lambda _link: _link != link1 and _link != link2, self.linked_cameras))
         for stick in cam1.sticks:
             links = self.stick_views_map.get(stick.id, [])
@@ -296,7 +302,7 @@ class Dataset(QObject):
             #    #link = self.stick_views_map[stick.id]
             #    #if link[1] == cam2.id:
             #    #    self.unlink_stick(stick)
-        self.cameras_unlinked.emit(cam1, cam2, link[2])
+        self.cameras_unlinked.emit(cam1, cam2) #, link[2])
     
     #def link_sticks(self, stick1: Stick, stick2: Stick):
     #    #camera1: Camera = next(filter(lambda cam: cam.id == stick1.camera_id, self.cameras))
@@ -373,7 +379,7 @@ class Dataset(QObject):
             self.unlink_sticks(stick, stick_view)
 
     def get_cameras_stick_links(self, camera: Camera) -> List[Tuple[int, int, int]]:
-        camera_links = filter(lambda k_v: k_v[1][0] == camera.id, self.stick_views_map.items())
+        camera_links = filter(lambda k_v: k_v[1][0].camera_id == camera.id, self.stick_views_map.items())
         return list(map(lambda t: (t[0], t[1][1], t[1][2]), camera_links))
     
     #def remove_stick(self, stick: Stick):

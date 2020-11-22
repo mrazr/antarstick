@@ -91,6 +91,12 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         mapping between Camera.id and QTab id
     """
     camera_loaded = pyqtSignal()
+    processing_started = pyqtSignal([str, int])
+    processing_updated = pyqtSignal([int])
+    processing_stopped = pyqtSignal([int])
+    stick_verification_needed = pyqtSignal(str)
+    no_cameras_open = pyqtSignal()
+
     def __init__(self):
         QtWidgets.QTabWidget.__init__(self)
         self.tab_style = TabProxyStyle('')
@@ -140,6 +146,10 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
         self.camera_loaded.emit()
         camera_widget.initialization_done.connect(self.handle_camera_widget_initialization_done)
+        camera_widget.processing_started.connect(self.handle_camera_processing_started)
+        camera_widget.processing_updated.connect(self.handle_camera_processing_updated)
+        camera_widget.processing_stopped.connect(self.handle_camera_processing_stopped)
+        camera_widget.stick_verification_needed.connect(self.handle_stick_verification_needed)
 
         camera_widget.initialise_with(camera)
 
@@ -158,13 +168,14 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
     @Slot(Camera)
     def handle_camera_removed(self, camera: Camera):
         #TODO handle camera removed while the same camera is analyzed in self.process
-        camera_widget: CameraViewWidget = None
         if self._camera_tab_map[camera.id] is not None:
             camera_widget = self.widget(self._camera_tab_map[camera.id])
             self.removeTab(self._camera_tab_map[camera.id])
             camera_widget.deleteLater()
         if len(self.dataset.cameras) < 2:
             self.camera_link_available.emit(False)
+        if self.count() == 0:
+            self.no_cameras_open.emit()
 
     @Slot(int)
     def handle_tab_close_requested(self, tab_id: int):
@@ -334,6 +345,21 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self.setTabText(cam2_tab, cam2_tab_text)
 
         self.tabBar().update()
+
+    def handle_camera_processing_started(self, widget: CameraViewWidget):
+        cam = widget.camera
+        self.processing_started.emit(str(cam.folder.name), cam.get_photo_count())
+
+    def handle_camera_processing_updated(self, processed: int, total: int, job_count: int, processing_stopped: bool):
+        self.processing_updated.emit(processed)
+
+    def handle_camera_processing_stopped(self, widget: CameraViewWidget):
+        cam = widget.camera
+        self.processing_stopped.emit(cam.get_processed_count())
+
+    def handle_stick_verification_needed(self, widget: CameraViewWidget):
+        cam = widget.camera
+        self.stick_verification_needed.emit(str(cam.folder.name))
 
 
 def analyze_daytime_snow(to_process: Queue, result_queue: Queue, channel: Connection, logging_start: int):

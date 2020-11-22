@@ -6,7 +6,7 @@ import random
 from os import scandir
 import sys
 
-from PyQt5.QtGui import QBrush, QColor, QFontDatabase, QFont, QIcon
+from PyQt5.QtGui import QBrush, QColor, QFontDatabase, QFont, QIcon, QImage, QPixmap, QPainter
 
 from camera import Camera
 import resources_rc
@@ -25,12 +25,35 @@ class ImageListModel(QAbstractTableModel):
         #self.emoji_font = QFont(fam)
         #self.emoji_font.setPointSize(16)
         #self.snow = "❄"
-        self.snow = QIcon(':/icons/snowflake.svg')
+        self.snow_level1 = QPixmap(':/icons/snowflake.svg')
+        self.snow_level1 = self.snow_level1.scaledToWidth(24)
+        self.snow_level2 = QPixmap()
+        self.snow_level3 = QPixmap()
         self.sun = QIcon(':/icons/sun.svg')
         self.moon = QIcon(':/icons/moon.svg')
+        self.quality_colors = {
+            'BAD': QColor(200, 0, 0),
+            'OK': QColor(200, 100, 0),
+            'GOOD': QColor(100, 200, 0),
+        }
         #self.sun = "☀"
         #self.moon = "🌙"
         #self.hourglass = "⏳"
+        self._generate_snow_level_icons()
+
+    def _generate_snow_level_icons(self):
+        self.snow_level2 = QPixmap(2 * self.snow_level1.width(), self.snow_level1.height())
+        self.snow_level2.fill(QColor(0, 0, 0, 0))
+        painter1 = QPainter(self.snow_level2)
+        painter1.drawPixmap(0, 0, self.snow_level1.width(), self.snow_level1.height(), self.snow_level1)
+        painter1.drawPixmap(self.snow_level1.width(), 0, self.snow_level1)
+
+        self.snow_level3 = QPixmap(3 * self.snow_level1.width(), self.snow_level1.height())
+        self.snow_level3.fill(QColor(0, 0, 0, 0))
+        painter2 = QPainter(self.snow_level3)
+        painter2.drawPixmap(0, 0, self.snow_level1)
+        painter2.drawPixmap(self.snow_level1.width(), 0, self.snow_level1)
+        painter2.drawPixmap(2 * self.snow_level1.width(), 0, self.snow_level1)
 
     def initialize(self, camera: Camera, processed_count: int) -> bool:
         self.camera = camera
@@ -67,7 +90,7 @@ class ImageListModel(QAbstractTableModel):
                 else:
                     text += self.sun if daytime else self.moon
                     snow = self.camera.photo_is_snow(self.image_names[index.row()].name)
-                    text += " " + self.snow if snow else ""
+                    text += " " + self.snow_level1 if snow else ""
 
                 #if daytime is None:
                 #    text += self.hourglass
@@ -92,24 +115,47 @@ class ImageListModel(QAbstractTableModel):
         #        return QSize(64, 64)
 
         if role == Qt.DecorationRole and index.column() == 1:
-            r = random.random()
-            if r < .5:
-                return self.sun
-            return self.moon
-        if role == Qt.DecorationRole and index.column() == 2:
-            if random.random() > .75:
-                return self.snow
+            #r = random.random()
+            #if r < .5:
+            #    return self.sun
+            #return self.moon
+            avg_stick_length = self.camera.average_stick_length
+            average_snow_height = self.camera.average_snow_height(self.image_names[index.row()].name)
+            average_snow_height = average_snow_height / avg_stick_length
+            if average_snow_height > 0.05:
+                if average_snow_height < 0.33:
+                    return self.snow_level1
+                elif average_snow_height < 0.66:
+                    return self.snow_level2
+                elif average_snow_height < 1.0:
+                    return self.snow_level3
             return None
+
+
+        #if role == Qt.DecorationRole and index.column() == 2:
+        #    if random.random() > .75:
+        #        return self.snow_level1
+        #    return None
 
         if role == Qt.SizeHintRole:
             if index.column() == 1 or index.column() == 2:
                 return QSize(32, 32)
 
-        if role == Qt.ForegroundRole:
-            if index.column() == 1:
-                return QBrush(QColor(180, 200, 0))
-            elif index.column() == 2:
-                return QBrush(QColor(0, 100, 200))
+        if role == Qt.BackgroundRole:
+            #if index.column() == 1:
+            #    return QBrush(QColor(180, 200, 0))
+            #elif index.column() == 2:
+            #    return QBrush(QColor(0, 100, 200))
+            if self.camera.photos_state[self.image_names[index.row()].name]:
+                quality = self.camera.image_quality(self.image_names[index.row()].name)
+                if quality < 0.33:
+                    color = self.quality_colors['BAD']
+                elif quality < 0.66:
+                    color = self.quality_colors['OK']
+                else:
+                    color = self.quality_colors['GOOD']
+                return QBrush(color)
+            return None
 
         if role == Qt.UserRole:
             return self.image_names[index.row()]
