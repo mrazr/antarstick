@@ -126,7 +126,7 @@ class Reason(IntEnum):
 class Measurement:
     camera: Optional[Camera] = None
     reason: Reason = Reason.FinishedQueue
-    measurements: Dict[str, List[Stick]] = field(default_factory=dict)
+    measurements: Dict[str, Dict[str, List[Stick]]] = field(default_factory=dict)
     last_valid_sticks: List[Stick] = field(default_factory=list)
     last_img: str = ''
     current_img: str = ''
@@ -1195,6 +1195,7 @@ def handle_big_camera_movement_deb(img: np.ndarray, half: np.ndarray, quart: np.
 def analyze_photos(images: List[str], folder: Path, sticks: List[Stick]) -> Measurement:
     measurement = Measurement()
     measurement.reason = Reason.Update
+    #print(f'process started with {images[0]}')
 
     sticks_ = sticks
     detections: List[StickDetection] = [StickDetection() for _ in range(len(sticks))]
@@ -1291,13 +1292,13 @@ def analyze_photos(images: List[str], folder: Path, sticks: List[Stick]) -> Meas
         detected_sticks = list(filter(lambda d: d.valid, detected_sticks))
 
         if len(detected_sticks) < int(0.3 * len(sticks)) or big_movements > no_movements:
-            print(f'{img_name}')
-            print(f'no = {no_movements}, big = {big_movements}, found = {len(detected_sticks)} / {len(sticks)}')
+            #print(f'{img_name}')
+            #print(f'no = {no_movements}, big = {big_movements}, found = {len(detected_sticks)} / {len(sticks)}')
             if not is_night(bgr):
                 measured_sticks.clear()
                 sd = handle_big_camera_movement(orig, None, None, detections)
             else:
-                print('is night - skipping')
+                #print('is night - skipping')
                 sd = None
             if sd is None:
                 copied_sticks = list(map(lambda s: s.copy(), sticks_))
@@ -1324,11 +1325,11 @@ def analyze_photos(images: List[str], folder: Path, sticks: List[Stick]) -> Meas
                 new_stick = n_det.old_stick.copy()
                 new_stick.translate(offset_vec)
                 new_stick.is_visible = False
-                estimate_snow_height(new_stick, orig, np.array([-1, -1]))
+                estimate_snow_height(new_stick, orig)
                 measured_sticks.append(new_stick)
         for d in detected_sticks:
             if d.needs_to_measure:
-                estimate_snow_height(d.stick_to_use, orig, d.likely_snow_point)
+                estimate_snow_height(d.stick_to_use, orig)
             measured_sticks.append(d.stick_to_use)
         assert len(measured_sticks) == len(sticks)
         if measurement.reason == Reason.SticksMoved:
@@ -1433,14 +1434,18 @@ def line_to_line_distance(line1: np.ndarray, line2: np.ndarray) -> float:
 def estimate_snow_height(stick: Stick, img: np.ndarray):
     sample = skimage.measure.profile_line(img, stick.top[::-1], stick.bottom[::-1], linewidth=5 * stick.width,
                                           reduce_func=None, mode='constant')
+    sample = cv.medianBlur(sample.astype(np.uint8), 3)
     sample_hmt = apply_multi_hmt(sample.astype(np.uint8), 1)
     sample_hmt = np.maximum(sample_hmt[0], sample_hmt[1])
     _, th = cv.threshold(sample_hmt.astype(np.uint8), 9, 1, cv.THRESH_BINARY)
-    cl = cv.filter2D(th, cv.CV_8U, cv.getStructuringElement(cv.MORPH_RECT, (3, 5)), anchor=(-1, 4))
-    ko = np.argwhere(cl[::-1] > 7)
+    cl = cv.filter2D(th[:, 1 * stick.width:-1 * stick.width], cv.CV_8U, cv.getStructuringElement(cv.MORPH_RECT, (3, 5)), anchor=(-1, 4))
+    ko = np.argwhere(cl[::-1] > 10)
     if ko.shape[0] > 0:
         y = ko[0, 0]
     else:
         y = -1
+    #cv.imshow('th', 255 * (cl > 10).astype(np.uint8))
+    #cv.waitKey(0)
+    #cv.destroyWindow('th')
     stick.set_snow_height_px(y)
 
