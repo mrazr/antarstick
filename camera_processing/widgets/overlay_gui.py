@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any
+import os
 
 from PyQt5.Qt import QBrush, QColor, QPen
 from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal, pyqtSlot
@@ -20,8 +21,8 @@ class OverlayGui(QGraphicsObject):
     link_sticks_clicked = pyqtSignal()
     delete_sticks_clicked = pyqtSignal()
     redetect_sticks_clicked = pyqtSignal()
-    process_photos_clicked = pyqtSignal()
-    process_photos_count_clicked = pyqtSignal(int)
+    process_photos_clicked = pyqtSignal('PyQt_PyObject')
+    process_photos_with_jobs_clicked = pyqtSignal(int)
     clicked = pyqtSignal()
     find_sticks_clicked = pyqtSignal()
     detect_thin_sticks_set = pyqtSignal('PyQt_PyObject')
@@ -29,6 +30,9 @@ class OverlayGui(QGraphicsObject):
     confirm_sticks_clicked = pyqtSignal()
     set_stick_label_clicked = pyqtSignal('PyQt_PyObject')
     set_stick_length_clicked = pyqtSignal('PyQt_PyObject')
+    process_stop_clicked = pyqtSignal()
+    mes = pyqtSignal()
+    save_measurements = pyqtSignal()
 
     def __init__(self, view: CamGraphicsView, parent: QGraphicsItem = None):
         QGraphicsObject.__init__(self, parent)
@@ -48,6 +52,7 @@ class OverlayGui(QGraphicsObject):
         #self.top_menu.setVisible(False)
         self.loading_screen_shown = True
         self.process_photo_popup = ButtonMenu(1.0, self)
+        self.process_photo_popup.set_layout_direction('vertical')
         self.sticks_length_input = TextInputWidget(mode='number', label='Sticks length(cm):', parent=self)
         self.sticks_length_input.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
         self.sticks_length_input.setVisible(False)
@@ -86,26 +91,26 @@ class OverlayGui(QGraphicsObject):
         #                          is_checkable=True)
         self.top_menu.add_button('confirm_sticks', 'Confirm sticks', call_back=self.handle_confirm_sticks_clicked,
                                  is_checkable=True)
-        self.top_menu.add_button("detect_sticks", "Re-detect sticks", call_back=self.redetect_sticks_clicked.emit)
         self.top_menu.add_button("edit_sticks", "Edit sticks", is_checkable=True,
                                  call_back=self.edit_sticks_clicked.emit)
         button = self.top_menu.add_button('sticks_length', 'Sticks length', is_checkable=True,
                                  call_back=self.sticks_length_clicked.emit)
-        #button.clicked.connect(self.sticks_length_clicked.emit)
         self.sticks_length_input.input_cancelled.connect(lambda: button.click_button(True))
         self.sticks_length_input.input_entered.connect(lambda: button.click_button(True))
         self.top_menu.add_button("link_sticks", "Link sticks", is_checkable=True,
                                  call_back=self.link_sticks_clicked.emit)
         self.enable_link_sticks_button(False)
-        #self.top_menu.add_button("show_overlay", "Show overlay")
-        #self.top_menu.add_button("show_linked_cameras", "Show linked cameras")
         self.top_menu.add_button("reset_view", "Reset view", call_back=self.reset_view_requested.emit)
         self.top_menu.add_button("delete_sticks", "Delete selected sticks", call_back=self.delete_sticks_clicked.emit, base_color=ButtonColor.RED)
         self.top_menu.hide_button("delete_sticks")
-        process_btn = self.top_menu.add_button("process_photos", "Process photos", is_checkable=False,
-                                               call_back=self.process_photos_clicked.emit)
-        #process_btn.set_disabled(True)
-        #process_btn.clicked.connect(lambda _: self.handle_process_photos_clicked())
+        process_btn = self.top_menu.add_button("process_photos", "Process photos", is_checkable=True,
+                                               call_back=self.handle_process_photos_clicked)
+        process_btn.set_disabled(True)
+        self.top_menu.add_button("process_stop", "Stop processing", ButtonColor.RED,
+                                 call_back=self.process_stop_clicked.emit)
+        self.top_menu.hide_button("process_stop")
+        #self.top_menu.add_button("measure_snow", "Measure", call_back=self.mes.emit)
+        self.top_menu.add_button("save_measurements", "Save measurements", call_back=self.save_measurements.emit)
         self.top_menu.set_height(12)
         self.top_menu.center_buttons()
 
@@ -133,6 +138,7 @@ class OverlayGui(QGraphicsObject):
         #self.top_menu.set_height(12)
         self.stick_widget_menu.set_layout_direction('vertical')
         #self.stick_widget_menu.center_buttons()
+        self.initialize_process_photos_popup()
 
     @pyqtSlot()
     def handle_cam_view_changed(self):
@@ -157,20 +163,10 @@ class OverlayGui(QGraphicsObject):
         painter.setBrush(QBrush(QColor("#aa555555")))
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.TextAntialiasing, True)
-        #painter.drawRoundedRect(QRectF(5, 5, self.mouse_pan_pic.width() * 1.3,
-        #                               3 * self.mouse_pan_pic.height()), 20, 20)
 
         painter.setPen(QPen(QColor("#e5c15f")))
-        #painter.drawPixmap(QPointF(15, 5), self.mouse_pan_pic, QRectF(self.mouse_pan_pic.rect()))
-        #rect = QRectF(self.mouse_pan_pic.rect())
-        #painter.drawPixmap(QPointF(15, 1.5 * rect.height()), self.mouse_zoom_pic,
-        #                   QRectF(self.mouse_zoom_pic.rect()))
         font = painter.font()
         font.setPointSize(10)
-        #painter.drawText(QRectF(15, 1.1 * rect.height(), rect.width(), 30),
-        #                 Qt.AlignHCenter, "Pan view")
-        #painter.drawText(QRectF(15, 2.6 * rect.height(), rect.width(), 30),
-        #                 Qt.AlignHCenter, "Zoom in/out")
 
         if self.loading_screen_shown:
             painter.fillRect(0, 0, self.boundingRect().width(), self.boundingRect().height(), QBrush(QColor(255, 255, 255, 255)))
@@ -196,39 +192,32 @@ class OverlayGui(QGraphicsObject):
         self.top_menu.show_button("delete_sticks") if val else self.top_menu.hide_button("delete_sticks")
         self.handle_cam_view_changed()
 
-    def initialize_process_photos_popup(self, photo_count: int, loading_time: float):
-        loading_time = 0.4 # Bit of a magic number here for now. For my PC it was 0.15s per image.
-        self.process_photo_popup.set_height(12)
-        step = photo_count // 5
-        self.process_photo_popup.add_button('100', f'100: {int(round(100 * loading_time))} s', call_back=self.handle_process_photos_count_clicked)
+    def initialize_process_photos_popup(self):
+        for i in range(os.cpu_count()):
+            self.process_photo_popup.add_button(str(i+1), f'Assign {i+1} cores',
+                                                call_back=self.handle_process_jobs_count_clicked)
 
-        count = step
-        for i in range(1, 5):
-            self.process_photo_popup.add_button(str(count), f'{count}: {int(round(i * count * loading_time))} s', call_back=self.handle_process_photos_count_clicked)
-
-        self.process_photo_popup.add_button(photo_count, f'All: {int(round(photo_count * loading_time))} s', call_back=self.handle_process_photos_count_clicked)
         self.process_photo_popup.show_close_button(True)
         self.process_photo_popup.center_buttons()
-        #cancel_btn = self.process_photo_popup.add_button('btn_cancel', 'Cancel', base_color=ButtonColor.RED)
-        #cancel_btn.clicked.connect(self.handle_process_photos_count_cancel_clicked)
         self.process_photo_popup.close_button.clicked.connect(self.handle_process_photos_count_cancel_clicked)
         self.process_photo_popup.setVisible(False)
+        self.process_photo_popup.set_layout_direction('vertical')
 
     def handle_process_photos_count_cancel_clicked(self):
         self.process_photo_popup.setVisible(False)
         self.top_menu.get_button('process_photos').click_button(True)
         self.process_photo_popup.reset_button_states()
 
-    def handle_process_photos_count_clicked(self, btn_data: Dict[str, Any]):
+    def handle_process_jobs_count_clicked(self, btn_data: Dict[str, Any]):
         self.process_photo_popup.setVisible(False)
         self.process_photo_popup.reset_button_states()
         btn = self.top_menu.get_button('process_photos')
         btn.click_button(True)
-        btn.set_disabled(True)
-        self.process_photos_count_clicked.emit(int(btn_data['btn_id']))
+        self.process_photos_with_jobs_clicked.emit(int(btn_data['btn_id']))
 
     def handle_process_photos_clicked(self):
         is_down = self.top_menu.get_button('process_photos').is_on()
+        self.process_photo_popup.center_buttons()
         self.process_photo_popup.setVisible(is_down)
 
     def enable_process_photos_button(self, enable: bool):
@@ -293,3 +282,36 @@ class OverlayGui(QGraphicsObject):
 
     def hide_sticks_length_input(self):
         self.sticks_length_input.setVisible(False)
+
+    def hide_process_photos(self):
+        self.top_menu.hide_button("process_photos")
+
+    def show_process_photos(self):
+        self.top_menu.show_button("process_photos")
+
+    def hide_process_stop(self):
+        self.top_menu.hide_button("process_stop")
+
+    def show_process_stop(self):
+        self.top_menu.show_button("process_stop")
+
+    def handle_process_count_changed(self, _: int, _i: int, job_count: int, processing_stopped: bool):
+        btn = self.top_menu.get_button("process_stop")
+        if processing_stopped:
+            if job_count > 0:
+                btn.set_disabled(True)
+                btn.set_label(f'Waiting on {job_count} job(s)')
+                btn.fit_to_contents()
+                self.top_menu.center_buttons()
+            else:
+                self.handle_processing_stopped()
+        self.update()
+
+    def handle_processing_stopped(self):
+        btn = self.top_menu.get_button("process_stop")
+        self.hide_process_stop()
+        btn.set_disabled(False)
+        btn.set_label("Stop processing")
+        self.show_process_photos()
+        self.top_menu.center_buttons()
+        self.update()
