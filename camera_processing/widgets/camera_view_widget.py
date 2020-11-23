@@ -280,8 +280,6 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.camera_view.set_show_title(False)
         self.camera_view.setPos(QPointF(0.5 * self.camera_view.boundingRect().width(), 0))
-        rr = self.camera_view.sceneBoundingRect()
-        print(f'x={rr.x()}, y={rr.y()}, w={rr.width()}, h={rr.height()}')
         self.left_add_button.set_button_height(self.camera_view.boundingRect().height())
         #self.left_add_button.setPos(self.camera_view.get_top_left() -
         #                            QPointF(self.left_add_button.boundingRect().width(), 0))
@@ -341,10 +339,6 @@ class CameraViewWidget(QtWidgets.QWidget):
         else:
             self.rect_to_view = self.split_view.sceneBoundingRect()
 
-        print(f'sr.x = {self.rect_to_view.x()}, y = {self.rect_to_view.y()}, w={self.rect_to_view.width()}, h={self.rect_to_view.height()}')
-        print(f'vr = {self.graphics_view.rect()}, wr = {self.rect()}')
-        print(f'vp = {self.graphics_view.viewport().rect()}, wr = {self.graphics_view.viewport().rect()}')
-        print(f'im = {self.ui.image_list.rect()}, gv = {self.graphics_view.rect()}')
         self.graphics_scene.setSceneRect(self.rect_to_view.marginsAdded(QMarginsF(50, 50, 50, 50)))
 
         self.graphics_view.fitInView(self.rect_to_view, Qt.KeepAspectRatio)
