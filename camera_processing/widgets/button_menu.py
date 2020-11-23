@@ -43,6 +43,7 @@ class ButtonMenu(QGraphicsObject):
         painter.drawRoundedRect(self.rect, 5, 5)
 
     def set_height(self, h: int):
+        self.prepareGeometryChange()
         if self.layout_direction == "vertical":
             return
         height = 0
@@ -53,12 +54,14 @@ class ButtonMenu(QGraphicsObject):
         self.center_buttons()
 
     def set_width(self, w: int):
+        self.prepareGeometryChange()
         if self.layout_direction == "horizontal":
             return
         self.rect.setWidth(w)
         self.center_buttons()
 
     def center_buttons(self):
+        self.prepareGeometryChange()
         if len(self.buttons) == 0:
             return
         visible_buttons = list(self.buttons.values())
@@ -72,7 +75,6 @@ class ButtonMenu(QGraphicsObject):
 
         if len(visible_buttons) == 0:
             return
-
         if self.layout_direction == "horizontal":
             menu_width = 2 * self.hor_padding + sum(map(lambda btn: btn.boundingRect().width(), visible_buttons), 0)
             menu_width += (len(visible_buttons) - 1) * self.hor_padding
@@ -123,7 +125,8 @@ class ButtonMenu(QGraphicsObject):
                 button.setPos(x, offset)
             if self.close_button_shown:
                 self.close_button.setPos(x, offset + visible_buttons[0].boundingRect().height() + self.ver_padding)
-        self.scene().update(self.boundingRect())
+        self.update()
+        self.scene().update(self.sceneBoundingRect())
 
     def set_layout_direction(self, direction: str):
         self.layout_direction = direction
@@ -197,6 +200,7 @@ class ButtonMenu(QGraphicsObject):
     def show_close_button(self, show: bool):
         self.close_button.setVisible(show)
         self.close_button_shown = show
+        self.center_buttons()
 
     def scale_menu(self, factor: float):
         self.scaling = factor

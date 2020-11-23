@@ -147,7 +147,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         #self.overlay_gui.set_stick_label.connect(self.handle_set_stick_label_clicked)
 
         self.graphics_scene.addItem(self.overlay_gui)
-        self.overlay_gui.initialize()
+        #self.overlay_gui.initialize()
 
         self.link_menu = ButtonMenu(self.scaling, self.overlay_gui)
         self.link_menu.show_close_button(True)
@@ -262,14 +262,16 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.ui.image_list.resizeColumnToContents(0)
         self.ui.image_list.resizeColumnToContents(1)
         self.ui.image_list.resizeColumnToContents(2)
-        self.initialize_rest_of_gui()
+        self.ui.image_list.updateGeometry()
         select_index = self.image_list.index(0, 0)
         self.ui.image_list.setCurrentIndex(select_index)
         self.overlay_gui.stick_length_input.set_value(str(self.camera.default_stick_length_cm))
         if len(self.camera.sticks) == 0 and False:
             self.handle_find_sticks_clicked()
+        #self.initialize_rest_of_gui()
 
     def initialize_rest_of_gui(self):
+        self.overlay_gui.initialize()
         viewport_rect = self.graphics_view.viewport().rect()
         _re = self.graphics_view.mapToScene(viewport_rect)
         self.graphics_scene.setSceneRect(QRectF(_re.boundingRect()))
@@ -277,20 +279,29 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.camera_view.initialise_with(self.camera)
 
         self.camera_view.set_show_title(False)
+        self.camera_view.setPos(QPointF(0.5 * self.camera_view.boundingRect().width(), 0))
+        rr = self.camera_view.sceneBoundingRect()
+        print(f'x={rr.x()}, y={rr.y()}, w={rr.width()}, h={rr.height()}')
         self.left_add_button.set_button_height(self.camera_view.boundingRect().height())
-        self.left_add_button.setPos(self.camera_view.get_top_left() -
-                                    QPointF(self.left_add_button.boundingRect().width(), 0))
+        #self.left_add_button.setPos(self.camera_view.get_top_left() -
+        #                            QPointF(self.left_add_button.boundingRect().width(), 0))
+        self.left_add_button.setPos(QPointF(-self.left_add_button.boundingRect().width(), 0.0))
 
         self.right_add_button.set_button_height(self.camera_view.boundingRect().height())
-        self.right_add_button.setPos(self.camera_view.get_top_right())
+        #self.right_add_button.setPos(self.camera_view.get_top_right())
+        self.right_add_button.setPos(QPointF(self.camera_view.boundingRect().width(), 0.0))
 
         self.left_show_button.set_button_height(int(0.5 * self.camera_view.boundingRect().height()))
-        self.left_show_button.setPos(self.left_add_button.pos() +
-                                     QPointF(0, 0.5 * self.camera_view.boundingRect().height()))
+        #self.left_show_button.setPos(self.left_add_button.pos() +
+        #                             QPointF(0, 0.5 * self.camera_view.boundingRect().height()))
+        self.left_show_button.setPos(QPointF(-self.left_add_button.boundingRect().width(),
+                                             0.5 * self.camera_view.boundingRect().height()))
 
         self.right_show_button.set_button_height(int(0.5 * self.camera_view.boundingRect().height()))
-        self.right_show_button.setPos(self.right_add_button.pos() +
-                                      QPointF(0, 0.5 * self.camera_view.boundingRect().height()))
+        #self.right_show_button.setPos(self.right_add_button.pos() +
+        #                              QPointF(0, 0.5 * self.camera_view.boundingRect().height()))
+        self.right_show_button.setPos(QPointF(self.camera_view.boundingRect().width(),
+                                             0.5 * self.camera_view.boundingRect().height()))
 
         self.stick_link_manager_strat.primary_camera = self.camera_view
 
@@ -301,6 +312,10 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.initialization_done.emit(self.camera)
         self._recenter_view()
         self.graphics_view.view_changed.emit()
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(lambda: self._recenter_view())
+        self.timer.setInterval(5)
+        self.timer.start()
 
     @Slot(bool)
     def link_cameras_enabled(self, enabled: bool):
@@ -326,6 +341,10 @@ class CameraViewWidget(QtWidgets.QWidget):
         else:
             self.rect_to_view = self.split_view.sceneBoundingRect()
 
+        print(f'sr.x = {self.rect_to_view.x()}, y = {self.rect_to_view.y()}, w={self.rect_to_view.width()}, h={self.rect_to_view.height()}')
+        print(f'vr = {self.graphics_view.rect()}, wr = {self.rect()}')
+        print(f'vp = {self.graphics_view.viewport().rect()}, wr = {self.graphics_view.viewport().rect()}')
+        print(f'im = {self.ui.image_list.rect()}, gv = {self.graphics_view.rect()}')
         self.graphics_scene.setSceneRect(self.rect_to_view.marginsAdded(QMarginsF(50, 50, 50, 50)))
 
         self.graphics_view.fitInView(self.rect_to_view, Qt.KeepAspectRatio)

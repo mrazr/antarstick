@@ -152,6 +152,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         camera_widget.stick_verification_needed.connect(self.handle_stick_verification_needed)
 
         camera_widget.initialise_with(camera)
+        camera_widget.initialize_rest_of_gui()
 
         #self.active_camera.put_nowait(camera)
         self.active_camera = camera

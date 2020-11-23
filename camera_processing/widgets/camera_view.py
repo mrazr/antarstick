@@ -150,12 +150,13 @@ class CameraView(QGraphicsObject):
         self.update_stick_widgets()
 
     def set_image(self, img: np.ndarray):
+        self.prepareGeometryChange()
         barray = QByteArray(img.tobytes())
         image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
         self.original_pixmap = QPixmap.fromImage(image)
         self.pixmap.setPixmap(self.original_pixmap)
         self.highlight_rect.setRect(self.boundingRect())
-        self.layout_title_area()
+        #self.layout_title_area()
 
     def layout_title_area(self):
         self.prepareGeometryChange()
@@ -201,7 +202,7 @@ class CameraView(QGraphicsObject):
         #self.stick_length_btn.set_label(str(stick_length) + " cm")
         #self.stick_length_btn.fit_to_contents()
         #self.stick_length_input.set_value(str(stick_length))
-        self.layout_title_area()
+        #self.layout_title_area()
         self.scene().update()
 
     def scale_item(self, factor: float):
@@ -341,7 +342,7 @@ class CameraView(QGraphicsObject):
         sw.adjust_line()
         #self.stick_length_btn.set_label(str(stick.length_cm) + " cm")
         #self.stick_length_btn.fit_to_contents()
-        self.layout_title_area()
+        #self.layout_title_area()
 
     def handle_stick_link_initiated(self, stick_widget: StickWidget):
         self.stick_link_requested.emit(stick_widget)
@@ -367,8 +368,9 @@ class CameraView(QGraphicsObject):
     def handle_stick_length_input_cancelled(self):
         #old_length = int(self.stick_length_btn.label.text()[:-3])
         #self.stick_length_input.set_length(old_length)
-        self.layout_title_area()
+        #self.layout_title_area()
         #self.stick_length_btn.click_button(artificial_emit=True)
+        pass
 
     def set_progress_bar_progress(self, count: int, out_of: int):
         if count > out_of:

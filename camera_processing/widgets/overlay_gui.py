@@ -145,9 +145,8 @@ class OverlayGui(QGraphicsObject):
         self.prepareGeometryChange()
         self.setPos(self.view.mapToScene(QPoint(0, 0)))
         self.top_menu.setPos(self.boundingRect().width() / 2.0 - self.top_menu.boundingRect().width() / 2.0, 2)
-        self.process_photo_popup.setPos(self.boundingRect().width() / 2.0 - self.process_photo_popup.boundingRect().width() / 2.0,
-
-                                        self.boundingRect().height() / 2.0 - self.process_photo_popup.boundingRect().height() / 2.0)
+        #self.process_photo_popup.setPos(self.boundingRect().width() / 2.0 - self.process_photo_popup.boundingRect().width() / 2.0,
+        #                                self.boundingRect().height() / 2.0 - self.process_photo_popup.boundingRect().height() / 2.0)
         self.sticks_length_input.setPos(self.view.size().width() * 0.5, self.view.size().height() * 0.5)
         self.stick_length_input.setPos(self.view.size().width() * 0.5, self.view.size().height() * 0.5)
         self.stick_label_input.setPos(self.view.size().width() * 0.5, self.view.size().height() * 0.5)
@@ -193,15 +192,18 @@ class OverlayGui(QGraphicsObject):
         self.handle_cam_view_changed()
 
     def initialize_process_photos_popup(self):
+        self.process_photo_popup.set_width(100)
         for i in range(os.cpu_count()):
             self.process_photo_popup.add_button(str(i+1), f'Assign {i+1} cores',
                                                 call_back=self.handle_process_jobs_count_clicked)
 
         self.process_photo_popup.show_close_button(True)
+        self.process_photo_popup.set_layout_direction('vertical')
         self.process_photo_popup.center_buttons()
         self.process_photo_popup.close_button.clicked.connect(self.handle_process_photos_count_cancel_clicked)
         self.process_photo_popup.setVisible(False)
-        self.process_photo_popup.set_layout_direction('vertical')
+        self.process_photo_popup.update()
+        self.update(self.boundingRect())
 
     def handle_process_photos_count_cancel_clicked(self):
         self.process_photo_popup.setVisible(False)
@@ -216,8 +218,9 @@ class OverlayGui(QGraphicsObject):
         self.process_photos_with_jobs_clicked.emit(int(btn_data['btn_id']))
 
     def handle_process_photos_clicked(self):
+        self.process_photo_popup.setPos(self.boundingRect().width() / 2.0 - self.process_photo_popup.boundingRect().width() / 2.0,
+                                        self.boundingRect().height() / 2.0 - self.process_photo_popup.boundingRect().height() / 2.0)
         is_down = self.top_menu.get_button('process_photos').is_on()
-        self.process_photo_popup.center_buttons()
         self.process_photo_popup.setVisible(is_down)
 
     def enable_process_photos_button(self, enable: bool):
