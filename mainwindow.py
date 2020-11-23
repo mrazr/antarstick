@@ -66,8 +66,8 @@ class MainWindow(QMainWindow):
         self.recent_datasets_menu.setToolTipsVisible(True)
         self.recent_dataset_qactions = []
 
-        self.startup_page_ui.verticalLayout_recentDatasets.removeWidget(self.startup_page_ui.label_noRecentDatasets)
-        self.startup_page_ui.label_noRecentDatasets.hide()
+        #self.startup_page_ui.verticalLayout_recentDatasets.removeWidget(self.startup_page_ui.label_noRecentDatasets)
+        #self.startup_page_ui.label_noRecentDatasets.hide()
 
         for ds in self.state['recent_datasets']:
             self.add_dataset_entry_to_recent(Path(ds))
@@ -86,8 +86,8 @@ class MainWindow(QMainWindow):
         self.recent_cameras_menu.setToolTipsVisible(True)
         self.recent_cameras_qactions: Dict[str, QAction] = {}
 
-        self.startup_page_ui.verticalLayout_recentCameras.removeWidget(self.startup_page_ui.label_noRecentCameras)
-        self.startup_page_ui.label_noRecentCameras.hide()
+        #self.startup_page_ui.verticalLayout_recentCameras.removeWidget(self.startup_page_ui.label_noRecentCameras)
+        #self.startup_page_ui.label_noRecentCameras.hide()
 
         for cam in self.state['recent_cameras']:
             self.add_camera_entry_to_recent(Path(cam))
@@ -217,7 +217,7 @@ class MainWindow(QMainWindow):
             pass
 
     def add_camera_entry_to_recent(self, p: Path):
-        if self.startup_page_ui.label_noRecentCameras.isVisible():
+        if not self.startup_page_ui.label_noRecentCameras.isHidden():
             self.startup_page_ui.label_noRecentCameras.hide()
             self.startup_page_ui.verticalLayout_recentCameras.removeWidget(self.startup_page_ui.label_noRecentCameras)
         if p not in self.recent_cameras:
@@ -252,7 +252,7 @@ class MainWindow(QMainWindow):
             self.remove_camera_entry_from_recent(self.recent_cameras[-1])
 
     def add_dataset_entry_to_recent(self, p: Path):
-        if self.startup_page_ui.label_noRecentDatasets.isVisible():
+        if not self.startup_page_ui.label_noRecentDatasets.isHidden():
             self.startup_page_ui.label_noRecentDatasets.hide()
             self.startup_page_ui.verticalLayout_recentDatasets.removeWidget(self.startup_page_ui.label_noRecentDatasets)
         if p not in self.recent_datasets:

@@ -119,7 +119,7 @@ class ImageListModel(QAbstractTableModel):
             #if r < .5:
             #    return self.sun
             #return self.moon
-            avg_stick_length = self.camera.average_stick_length
+            avg_stick_length = self.camera.average_stick_length + 0.00001
             average_snow_height = self.camera.average_snow_height(self.image_names[index.row()].name)
             average_snow_height = average_snow_height / avg_stick_length
             if average_snow_height > 0.05:
