@@ -160,7 +160,7 @@ class StickWidget(QGraphicsObject):
         if self.highlighted:
             painter.fillRect(self.boundingRect(), QBrush(self.current_highlight_color))
 
-        if self.frame_color is not None:
+        if self.frame_color is not None and self.mode != StickMode.Edit and self.mode != StickMode.EditDelete:
             painter.setPen(QPen(self.frame_color, 4))
             painter.drawRect(self.boundingRect())
 
@@ -242,6 +242,7 @@ class StickWidget(QGraphicsObject):
             self.bottom_handle.setVisible(True)
             self.available_for_linking = False
             self.link_source = False
+            self.btn_delete.setVisible(True)
         elif mode == StickMode.LinkSource:
             #self.set_mode(StickMode.Display)
             #self.link_button.setVisible(True)
