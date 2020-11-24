@@ -169,6 +169,14 @@ class ImageListModel(QAbstractTableModel):
             return QBrush(QColor(0, 150, 0))
         return None
 
+
     def set_processed_count(self, count: int):
         self.processed_images_count = count
         self.dataChanged.emit(self.index(0, 0), self.index(self.processed_images_count - 1, 0), [Qt.BackgroundRole])
+
+    def update_items(self, start_image: str, end_image: str):
+        start_id = self.camera.image_names_ids[start_image]
+        end_id = self.camera.image_names_ids[end_image]
+        top_left = self.index(start_id, 0)
+        bottom_right = self.index(end_id, 2)
+        self.dataChanged.emit(top_left, bottom_right, [Qt.BackgroundRole, Qt.DecorationRole])
