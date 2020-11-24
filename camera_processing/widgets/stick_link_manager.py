@@ -82,8 +82,8 @@ class StickLink(QGraphicsObject):
     def set_target_stick(self, stick_widget: StickWidget):
         self.temporary_target = None
         self.stick2 = stick_widget
-        if self.stick2 is not None:
-            self.stick2.set_frame_color(self.color)
+        #if self.stick2 is not None:
+        #    self.stick2.set_frame_color(self.color)
         self.stick2.stick_changed.connect(self.handle_stick_changed)
         self.update_line()
 
@@ -106,6 +106,10 @@ class StickLink(QGraphicsObject):
     def remove_sticks(self):
         self.stick1.stick_changed.disconnect(self.handle_stick_changed)
         self.stick2.stick_changed.disconnect(self.handle_stick_changed)
+
+    def confirm_link(self):
+        if self.stick2 is not None:
+            self.stick2.set_frame_color(self.color)
 
     def __eq__(self, other):
         if other is None:
@@ -160,6 +164,7 @@ class StickLinkManager(QGraphicsObject):
         if self.current_link_item is not None:
             if self.current_link_item.stick2 is not None:
                 link = self.current_link_item
+                link.confirm_link()
                 self.current_link_item = None
                 return link
         return None

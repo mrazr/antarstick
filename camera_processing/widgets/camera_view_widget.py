@@ -172,6 +172,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.next_batch_start: int = 0
         self.photo_batch: List[str] = []
         self.timer: QTimer = QTimer()
+        self.fix_timer: QTimer = QTimer()
 
         self.stick_detection_dialog = StickDetectionDialog()
         self.stick_detection_dialog.spinLength.valueChanged.connect(self.detect_sticks)
@@ -310,10 +311,10 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.initialization_done.emit(self.camera)
         self._recenter_view()
         self.graphics_view.view_changed.emit()
-        self.timer.setSingleShot(True)
-        self.timer.timeout.connect(lambda: self._recenter_view())
-        self.timer.setInterval(5)
-        self.timer.start()
+        self.fix_timer.setSingleShot(True)
+        self.fix_timer.timeout.connect(lambda: self._recenter_view())
+        self.fix_timer.setInterval(5)
+        self.fix_timer.start()
 
     @Slot(bool)
     def link_cameras_enabled(self, enabled: bool):
@@ -912,8 +913,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.split_view.initialise()
         self.split_view.confirmed.connect(self.handle_moved_sticks_confirmed)
         self.split_view.skipped.connect(self.handle_moved_sticks_skipped)
-        self.moved_sticks_linking.set_split_view(self.split_view)
         self.split_view.setPos(self.camera_view.pos())
+        self.moved_sticks_linking.set_split_view(self.split_view)
         self.link_manager2.set_rect(self.rect_to_view)
         self.moved_sticks_linking.start()
         self._set_view_mode('split')
