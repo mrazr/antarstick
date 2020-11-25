@@ -25,7 +25,6 @@ import skimage.exposure
 import skimage.feature
 import skimage.filters
 import skimage.measure
-import skimage.measure
 import skimage.morphology
 import skimage.segmentation
 import skimage.transform
@@ -80,6 +79,8 @@ class StickDetection:
     old_corrected_matches_old: bool = False
     new_corrected_matches_new: bool = False
     in_frame: bool = False
+    top_out_of_frame: bool = False
+    bottom_out_of_frame: bool = False
     needs_to_measure: bool = False
 
     def reset(self):
@@ -108,6 +109,9 @@ class StickDetection:
         self.old_corrected_matches_old = False
         self.new_corrected_matches_new = False
         self.in_frame = False
+        self.top_out_of_frame: bool = False
+        self.bottom_out_of_frame: bool = False
+        self.needs_to_measure: bool = False
 
     def __hash__(self):
         return self.old_stick.__hash__()
@@ -434,17 +438,17 @@ def detect_sticks(gray: np.ndarray, align_endpoints: bool = False, equalize: boo
     return lines
 
 
-def apply_multi_hmt(img: np.ndarray, height: int = 1) -> Tuple[np.ndarray, np.ndarray]:
+def apply_multi_hmt(img: np.ndarray, height: int = 1, width: int = -1) -> Tuple[np.ndarray, np.ndarray]:
     dbd_hmts = []
     bdb_hmts = []
 
-    for selem in hmt_selems[0]:
+    for selem in hmt_selems[0][1:]:
         s = selem
         if height > 1:
             s = np.tile(selem, (height, 1))
         dbd_hmts.append(uhmt(img, s, anchor=(selem.shape[1] // 2, 0))[0])
 
-    for selem in hmt_selems[1]:
+    for selem in hmt_selems[1][1:]:
         s = selem
         if height > 1:
             s = np.tile(selem, (height, 1))
@@ -732,6 +736,7 @@ def match_detections_to_sticks(sticks: List[StickDetection], new_sticks: List[np
             num_matches = 0
             matches: List[Tuple[StickDetection, np.ndarray]] = []
             matches2: List[List[Tuple[float, StickDetection]]] = [[] for _ in range(len(new_sticks))]
+            match_map: Dict[StickDetection, Tuple[int, float]] = {}
             for k, n_stick_ in enumerate(new_sticks):
                 n_stick_offset = n_stick_ + vec
                 n_bbox = line_upright_bbox(n_stick_offset, 5000, 5000, out_of_bounds=True)
@@ -739,6 +744,16 @@ def match_detections_to_sticks(sticks: List[StickDetection], new_sticks: List[np
                 top = n_stick_offset[0]
                 for stick_d in sticks:
                     stick_ = stick_d.old_stick
+                    dist = np.linalg.norm(stick_.top - top)
+                    #if dist < 20:
+                    #    other_match = match_map.setdefault(stick_d, (-1, 999999))
+                    #    if other_match[1] > dist:
+                    #        if other_match[0] >= 0:
+                    #            other_matches = matches2[other_match[0]]
+                    #            other_matches = list(filter(lambda m: m[1] != stick_d, other_matches))
+                    #            matches2[other_match[0]] = other_matches
+                    #        match_map[stick_d] = (k, dist)
+                    #    matches2[k].append((dist, stick_d, None, None, None))
                     bbox = line_upright_bbox(stick_.line(), 5000, 5000, out_of_bounds=True)
                     intersection = boxes_intersection(n_bbox, bbox)
                     #if intersection is None:
@@ -756,12 +771,16 @@ def match_detections_to_sticks(sticks: List[StickDetection], new_sticks: List[np
                                        np.linalg.norm(stick_.top - n_stick_[0])))
                             matches.append((stick_d, n_stick_))
             for mm in matches2:
+                #if len(mm) > 1:
+                #    avg = np.mean(list(map(lambda ts: ts[3], mm)))
                 if len(mm) > 1:
-                    avg = np.mean(list(map(lambda ts: ts[3], mm)))
-                    mm.sort(key=lambda s: abs(s[3] - avg), reverse=False)
+                    mm.sort(key=lambda s: s[0])
             matches2 = zip(matches2, new_sticks)
             matches2 = list(filter(lambda zipped: len(zipped[0]) > 0, matches2))
+            #matches = list(map(lambda mm: (mm[0][0][1:], mm[1], mm[0][0][0]), matches2))
             matches = list(map(lambda mm: (mm[0][0][1:], mm[1]), matches2))
+            #total_diff_inverse = sum(map(lambda mm: 1.0 / (mm[2] + 0.00001), matches))
+            #matches = list(map(lambda mm: mm[:2], matches))
             if my_debug:
                 dd = imag.copy()
                 for match in matches:
@@ -781,6 +800,7 @@ def match_detections_to_sticks(sticks: List[StickDetection], new_sticks: List[np
                 cv.imshow(f'match{len(matches)}', cv.resize(dd, (0, 0), fx=0.5, fy=0.5))
                 cv.waitKey(0)
                 cv.destroyWindow(f'match{len(matches)}')
+            #possible_matches.append((len(matches) + total_diff_inverse, matches))
             possible_matches.append((len(matches), matches))
     possible_matches.sort(key=lambda e: e[0], reverse=True)
     return list(map(lambda t: t[1], possible_matches))[0]
@@ -858,7 +878,7 @@ def validate_positions(sticks: List[StickDetection], stick_to_stick: Dict[Stick,
     #matches.sort(key=lambda e: e[0])
     it1, it2 = tee(matches)
     n = int(0.25 * len(sticks))
-    return list(map(lambda e: e[1], filter(lambda e: e[0] >= n, it1))), list(map(lambda e: e[1], filter(lambda e: e[0] < n, it2)))
+    return list(map(lambda e: e[1], filter(lambda e: e[0] >= 3, it1))), list(map(lambda e: e[1], filter(lambda e: e[0] < 3, it2)))
 
 
 def deb_draw(img: np.ndarray, dets: Union[List[Stick], List[StickDetection], List[np.ndarray]], color: List[int], im_id: str, which: str='old'):
@@ -1193,6 +1213,7 @@ def handle_big_camera_movement_deb(img: np.ndarray, half: np.ndarray, quart: np.
 
 
 def analyze_photos(images: List[str], folder: Path, sticks: List[Stick]) -> Measurement:
+    writeout = False
     measurement = Measurement()
     measurement.reason = Reason.Update
     #print(f'process started with {images[0]}')
@@ -1205,6 +1226,10 @@ def analyze_photos(images: List[str], folder: Path, sticks: List[Stick]) -> Meas
     update_step = 50
 
     for img_name in images[:update_step]:
+        if img_name == 'IMAG2950.JPG':
+            writeout = True
+        if writeout:
+            print(img_name)
         bgr = cv.pyrDown(cv.imread(str(folder / img_name)))
         orig = cv.cvtColor(bgr, cv.COLOR_BGR2GRAY)
 
@@ -1222,6 +1247,9 @@ def analyze_photos(images: List[str], folder: Path, sticks: List[Stick]) -> Meas
             detection.old_stick.view = img_name
 
             box = line_upright_bbox(detection.old_stick.line(), orig.shape[1], orig.shape[0], width=35)
+            if box[1, 0] < 10 or box[0, 0] > orig.shape[0] - 10:
+                sticks_to_infer.append(detection)
+                continue
             detection.bbox = box
             line_roi = orig[box[0, 1]:box[1, 1], box[0, 0]:box[1, 0]]
             line_roi_half = cv.pyrDown(line_roi)
@@ -1242,6 +1270,9 @@ def analyze_photos(images: List[str], folder: Path, sticks: List[Stick]) -> Meas
 
             lines = list(lines)
             lines = merge_lines_with_same_orientation(lines)
+            if len(lines) > 0:
+                lines.sort(key=lambda l: length_of_line(l), reverse=True)
+                lines = [lines[0]]
             if len(lines) == 1:
                 old_line = detection.old_stick.line()
                 new_line = lines[0] + box[0]
@@ -1271,6 +1302,8 @@ def analyze_photos(images: List[str], folder: Path, sticks: List[Stick]) -> Meas
                 bw = box[1, 0] - box[0, 0] - 5
                 bh = box[1, 1] - box[0, 1] - 5
                 loc_line = lines[0]
+                detection.top_out_of_frame = 5 > loc_line[0, 0] or loc_line[0, 0] > bw or loc_line[0, 1] < 5
+                detection.bottom_out_of_frame = 5 > loc_line[1, 0] or loc_line[1, 0] > bw or loc_line[1, 1] > bh
                 detection.in_frame = 5 < loc_line[0, 0] < bw and 5 < loc_line[1, 0] < bw and 5 < loc_line[0, 1] < bh \
                                      and 5 < loc_line[1, 1] < bh
 
@@ -1314,7 +1347,7 @@ def analyze_photos(images: List[str], folder: Path, sticks: List[Stick]) -> Meas
                 sticks_to_infer = list(filter(lambda d: not d.valid, sd))
                 measurement.reason = Reason.SticksMoved
                 measurement.last_valid_sticks = sticks_
-        if len(sticks_to_infer) > 0:
+        if len(sticks_to_infer) > 0 and len(detected_sticks) > 0:
             offset_vecs = np.zeros((len(detected_sticks), 2), np.int32)
             for i, f_det in enumerate(detected_sticks):
                 vec = f_det.stick_to_use.bottom - f_det.old_stick.bottom
@@ -1383,10 +1416,14 @@ def process_detections2(detections: List[StickDetection], no_movement: int, big_
             else:
                 if det.new_lies_on_old:
                     if not det.in_frame:
-                        if np.linalg.norm(det.old_stick.top - det.new_stick.top) < np.linalg.norm(det.old_stick.bottom - det.new_stick.bottom):
-                            line = fit_into_length(det.new_stick.line(), det.old_stick.length_px)
-                        else:
+                        #if np.linalg.norm(det.old_stick.top - det.new_stick.top) < np.linalg.norm(det.old_stick.bottom - det.new_stick.bottom):
+                        #    line = fit_into_length(det.new_stick.line(), det.old_stick.length_px)
+                        #else:
+                        #    line = fit_into_length_from_bottom(det.new_stick.line(), det.old_stick.length_px)
+                        if det.top_out_of_frame:
                             line = fit_into_length_from_bottom(det.new_stick.line(), det.old_stick.length_px)
+                        else:
+                            line = fit_into_length(det.new_stick.line(), det.old_stick.length_px)
                         det.new_stick.set_top(line[0])
                         det.new_stick.set_bottom(line[1])
                         det.stick_to_use = det.new_stick
@@ -1398,7 +1435,11 @@ def process_detections2(detections: List[StickDetection], no_movement: int, big_
                     # perform snow measurement
                 elif det.in_frame:
                     if det.orientation_is_same:
-                        if np.linalg.norm(det.old_stick.bottom - det.new_stick.bottom) < np.linalg.norm(det.old_stick.top - det.new_stick.top):
+                        #if np.linalg.norm(det.old_stick.bottom - det.new_stick.bottom) < np.linalg.norm(det.old_stick.top - det.new_stick.top):
+                        #    line = fit_into_length_from_bottom(det.new_stick.line(), det.old_stick.length_px)
+                        #else:
+                        #    line = fit_into_length(det.new_stick.line(), det.old_stick.length_px)
+                        if det.top_out_of_frame:
                             line = fit_into_length_from_bottom(det.new_stick.line(), det.old_stick.length_px)
                         else:
                             line = fit_into_length(det.new_stick.line(), det.old_stick.length_px)
@@ -1410,7 +1451,11 @@ def process_detections2(detections: List[StickDetection], no_movement: int, big_
                         det.valid = False
                 else:
                     if det.orientation_is_same:
-                        if np.linalg.norm(det.old_stick.bottom - det.new_stick.bottom) < np.linalg.norm(det.old_stick.top - det.new_stick.top):
+                        #if np.linalg.norm(det.old_stick.bottom - det.new_stick.bottom) < np.linalg.norm(det.old_stick.top - det.new_stick.top):
+                        #    line = fit_into_length_from_bottom(det.new_stick.line(), det.old_stick.length_px)
+                        #else:
+                        #    line = fit_into_length(det.new_stick.line(), det.old_stick.length_px)
+                        if det.top_out_of_frame:
                             line = fit_into_length_from_bottom(det.new_stick.line(), det.old_stick.length_px)
                         else:
                             line = fit_into_length(det.new_stick.line(), det.old_stick.length_px)
@@ -1431,21 +1476,68 @@ def line_to_line_distance(line1: np.ndarray, line2: np.ndarray) -> float:
     return math.sin(alpha) * np.linalg.norm(v)
 
 
-def estimate_snow_height(stick: Stick, img: np.ndarray):
+def estimate_snow_height2(stick: Stick, img: np.ndarray):
     sample = skimage.measure.profile_line(img, stick.top[::-1], stick.bottom[::-1], linewidth=5 * stick.width,
                                           reduce_func=None, mode='constant')
     sample = cv.medianBlur(sample.astype(np.uint8), 3)
-    sample_hmt = apply_multi_hmt(sample.astype(np.uint8), 1)
-    sample_hmt = np.maximum(sample_hmt[0], sample_hmt[1])
-    _, th = cv.threshold(sample_hmt.astype(np.uint8), 9, 1, cv.THRESH_BINARY)
-    cl = cv.filter2D(th[:, 1 * stick.width:-1 * stick.width], cv.CV_8U, cv.getStructuringElement(cv.MORPH_RECT, (3, 5)), anchor=(-1, 4))
-    ko = np.argwhere(cl[::-1] > 10)
+    sample = cv.equalizeHist(sample)
+    sample = cv.morphologyEx(sample, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (stick.width, stick.width)))
+    sample_hmt1, sample_hmt2 = apply_multi_hmt(sample.astype(np.uint8), 3, width=stick.width)
+    #sample_hmt = np.maximum(sample_hmt[0], sample_hmt[1])
+    _, th1 = cv.threshold(sample_hmt1.astype(np.uint8), 9, 1, cv.THRESH_BINARY)
+    _, th2 = cv.threshold(sample_hmt2.astype(np.uint8), 9, 1, cv.THRESH_BINARY)
+    cl1 = cv.filter2D(th1[:, 2 * stick.width:-2 * stick.width], cv.CV_8U, cv.getStructuringElement(cv.MORPH_RECT, (3, 5)), anchor=(1, 4))
+    cl2 = cv.filter2D(th2[:, 2 * stick.width:-2 * stick.width], cv.CV_8U, cv.getStructuringElement(cv.MORPH_RECT, (3, 5)), anchor=(1, 4))
+    ko = np.argwhere(cl1[::-1] > 16)
     if ko.shape[0] > 0:
         y = ko[0, 0]
     else:
         y = -1
-    #cv.imshow('th', 255 * (cl > 10).astype(np.uint8))
-    #cv.waitKey(0)
-    #cv.destroyWindow('th')
+    cv.imshow('th1', 255 * (cl1 > 16).astype(np.uint8))
+    cv.imshow('th2', 255 * (cl2 > 16).astype(np.uint8))
+    cv.imshow('eq', sample)
+    cv.imshow('fil', 10 * cl1)
+    cv.imshow('fil2', 10 * cl2)
+    cv.waitKey(0)
     stick.set_snow_height_px(y)
 
+
+def estimate_snow_height(stick: Stick, img: np.ndarray):
+    l = stick.line()
+    l = extend_line(l, 30, 'bottom')
+    sample = skimage.measure.profile_line(img, l[0, ::-1], l[1, ::-1], linewidth=1 * stick.width,
+                                          reduce_func=None, mode='constant')
+    sample = sample.astype(np.uint8)
+    sample = cv.medianBlur(sample, 3)
+    sample = cv.morphologyEx(sample, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (3, 15)))
+
+    if sample.shape[0] == 0 or sample.shape[1] == 0:
+        print('empty sample')
+
+    #integral = cv.integral(sample)
+    #inte
+    diffs = []
+    for i in range(30, sample.shape[0] - 30):
+        m1 = np.mean(sample[i-30:i, :])
+        m2 = np.mean(sample[i+1:i+31, :])
+        diffs.append(abs(np.round(m1 - m2)))
+    diff_img = np.reshape(diffs, (-1, 1)).astype(np.uint8)
+    #sample = cv.equalizeHist(sample)
+    #sample_hmt = apply_multi_hmt(sample.astype(np.uint8), 3, width=stick.width)
+    #sample_hmt = np.maximum(sample_hmt[0], sample_hmt[1])
+    #_, th = cv.threshold(sample_hmt.astype(np.uint8), 9, 1, cv.THRESH_BINARY)
+    #cl = cv.filter2D(th[:, 1 * stick.width:-1 * stick.width], cv.CV_8U, cv.getStructuringElement(cv.MORPH_RECT, (3, 5)),
+    #                 anchor=(1, 4))
+    #ko = np.argwhere(cl[::-1] > 13)
+    #if ko.shape[0] > 0:
+    #    y = ko[0, 0]
+    #else:
+    #    y = -1
+    #cv.imshow('th', 255 * (cl > 10).astype(np.uint8))
+    #cv.imshow('eq', sample)
+    y = stick.length_px - np.argmax(diff_img) - 30
+    #cv.imshow('fil', 10 * cv.resize(diff_img, (0, 0), fx=100, fy=5, interpolation=cv.INTER_NEAREST))
+    #cv.imshow(stick.label, sample)
+    #cv.waitKey(0)
+    #cv.destroyAllWindows()
+    stick.set_snow_height_px(y)
