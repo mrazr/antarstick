@@ -137,6 +137,7 @@ class Measurement:
     remaining_photos: Optional[List[str]] = None
 
     sticks_to_confirm: Optional[Stick] = None
+    im: Optional[np.ndarray] = None
 
 
 def show_imgs_(images: List[np.ndarray], names: List[str]):
@@ -673,7 +674,7 @@ def merge_lines_with_same_orientation(lines: List[np.ndarray], max_gap: int = 25
             v = line2[0] - line[0]
             dot = np.dot(line_vec, v)
             alpha = math.acos(dot / (np.linalg.norm(v) + 0.0001))
-            if line_to_line_distance(line, line2) > 7:
+            if line_to_line_distance(line, line2) > 15:
                 continue
             if max_gap > 0 and (line[1, 1] - line2[0, 1] < -max_gap or line[0, 1] - line2[1, 1] > max_gap):
                 continue
@@ -839,24 +840,48 @@ def handle_big_camera_movement(img: np.ndarray, half: np.ndarray, quart: np.ndar
     new_sticks = find_sticks(img, img, True)
     new_sticks = list(map(lambda s: s[0], filter(lambda s: s[1], new_sticks)))
     if len(new_sticks) == 0:
-        return None
-    matches = match_detections_to_sticks(stick_detections, new_sticks)
-    if len(matches) <= 0.5 * len(stick_detections):
-        #print(f'too few matches, skipping with old sticks')
-        return None
+        return None, None
+    #matches = match_detections_to_sticks(stick_detections, new_sticks)
+    matches, vector = match_new_sticks_with_old(stick_detections, new_sticks)
+    if matches is None or len(matches) < 0.5 * len(stick_detections):
+        return None, None
+    for d in stick_detections:
+        d.valid = False
+    dd = cv.cvtColor(img, cv.COLOR_GRAY2BGR)
+    for ns in new_sticks:
+        box = line_upright_bbox(ns, 5000, 5000, 35)
+        cv.rectangle(dd, (box[0, 0], box[0, 1]), (box[1, 0], box[1, 1]), [0, 255, 255], 4)
     for match in matches:
-        det: StickDetection = match[0][0]
+        if match[0] is None:
+            continue
+        #det: StickDetection = match[0][0]
+        det: StickDetection = match[0]
+        vec = match[3]
         n_stick = det.old_stick.copy()
         new_line = match[1]
+
+        nbox = line_upright_bbox(new_line, 5000, 5000, 35)
+
+        cv.rectangle(dd, (nbox[0, 0], nbox[0, 1]), (nbox[1, 0], nbox[1, 1]), [0, 255, 0], 3)
+
         new_line = fit_into_length(new_line, det.old_stick.length_px)
         n_stick.set_top(new_line[0])
         n_stick.set_bottom(new_line[1])
+
+        obox = line_upright_bbox(det.old_stick.line(), 5000, 5000, 35)
+        obox_t = obox + vec
+        cv.rectangle(dd, (obox[0, 0], obox[0, 1]), (obox[1, 0], obox[1, 1]), [255, 0, 0], 2)
+        cv.rectangle(dd, (obox_t[0, 0], obox_t[0, 1]), (obox_t[1, 0], obox_t[1, 1]), [255, 0, 255], 2)
 
         det.new_stick = n_stick
         det.stick_to_use = det.new_stick
         det.valid = True
 
-    return stick_detections
+    #cv.imshow('matches', dd)
+    #cv.waitKey(0)
+    #cv.destroyAllWindows()
+
+    return stick_detections, dd
 
 
 def validate_positions(sticks: List[StickDetection], stick_to_stick: Dict[Stick, Dict[Stick, np.ndarray]]) -> Tuple[List[StickDetection], List[StickDetection]]:
@@ -1167,7 +1192,8 @@ def handle_big_camera_movement_deb(img: np.ndarray, half: np.ndarray, quart: np.
     imga = imag.copy()
     deb_draw(imga, new_sticks, [0, 255, 0], "thisjustnow")
     cv.waitKey(0)
-    matches = match_detections_to_sticks(stick_detections, new_sticks)
+    #matches = match_detections_to_sticks(stick_detections, new_sticks)
+    matches = match_new_sticks_with_old(stick_detections, new_sticks)
     dr1 = cv.cvtColor(img, cv.COLOR_GRAY2BGR)
     dr2 = cv.cvtColor(img, cv.COLOR_GRAY2BGR)
     for det in stick_detections:
@@ -1270,10 +1296,11 @@ def analyze_photos(images: List[str], folder: Path, sticks: List[Stick]) -> Meas
 
             lines = list(lines)
             lines = merge_lines_with_same_orientation(lines)
-            if len(lines) > 0:
-                lines.sort(key=lambda l: length_of_line(l), reverse=True)
-                lines = [lines[0]]
-            if len(lines) == 1:
+            #if len(lines) > 0:
+            #    lines.sort(key=lambda l: length_of_line(l), reverse=True)
+            #    lines = [lines[0]]
+            lines = [max(lines, key=lambda l: length_of_line(l), default=None)]
+            if len(lines) == 1 and lines[0] is not None:
                 old_line = detection.old_stick.line()
                 new_line = lines[0] + box[0]
 
@@ -1314,49 +1341,44 @@ def analyze_photos(images: List[str], folder: Path, sticks: List[Stick]) -> Meas
                 detected_sticks.append(detection)
             else:
                 sticks_to_infer.append(detection)
-        #for d in detected_sticks:
-        #    print(f'found {d.old_stick.label}')
-        #print(f'pre no = {no_movements}, big = {big_movements}, found = {len(detected_sticks)} / {len(sticks)}')
         no_movements, big_movements = process_detections2(detected_sticks, no_movements, big_movements)
-        #print(f'post no = {no_movements}, big = {big_movements}, found = {len(detected_sticks)} / {len(sticks)}')
-        #no_movements, big_movements = process_detections2(detected_sticks, no_movements, big_movements)
 
         sticks_to_infer.extend(filter(lambda d: not d.valid, detected_sticks))
         detected_sticks = list(filter(lambda d: d.valid, detected_sticks))
 
         if len(detected_sticks) < int(0.3 * len(sticks)) or big_movements > no_movements:
-            #print(f'{img_name}')
-            #print(f'no = {no_movements}, big = {big_movements}, found = {len(detected_sticks)} / {len(sticks)}')
             if not is_night(bgr):
                 measured_sticks.clear()
-                sd = handle_big_camera_movement(orig, None, None, detections)
+                sd, im = handle_big_camera_movement(orig, None, None, detections)
             else:
                 #print('is night - skipping')
                 sd = None
+                im = None
             if sd is None:
                 copied_sticks = list(map(lambda s: s.copy(), sticks_))
                 for s in copied_sticks:
                     s.is_visible = False
-                #found_sticks_.extend(copied_sticks)
                 detected_sticks.clear()
                 sticks_to_infer.clear()
                 measured_sticks = copied_sticks
-                #print(f'didnt find any sticks in {img_name}')
             else:
                 detected_sticks = list(filter(lambda d: d.valid, sd))
                 sticks_to_infer = list(filter(lambda d: not d.valid, sd))
                 measurement.reason = Reason.SticksMoved
                 measurement.last_valid_sticks = sticks_
+                measurement.im = im
         if len(sticks_to_infer) > 0 and len(detected_sticks) > 0:
-            offset_vecs = np.zeros((len(detected_sticks), 2), np.int32)
-            for i, f_det in enumerate(detected_sticks):
-                vec = f_det.stick_to_use.bottom - f_det.old_stick.bottom
-                offset_vecs[i] = vec
-                #measured_sticks.append(f_det.stick_to_use)
-            offset_vec = np.round(np.mean(offset_vecs, axis=0)).astype(np.int32)
+            # Position sticks that were not found based on the displacement of sticks that were found
+            # We take into account that stick movements are caused by rotations of camera around its axis, so
+            # sticks that are farther away from camera must be moved by a larger amount than closer sticks
+            stick1 = detected_sticks[0]
+            dist_from_camera = np.linalg.norm(stick1.old_stick.bottom - np.array([1000, 1500]))
+            offset_vec = stick1.stick_to_use.bottom - stick1.old_stick.bottom
             for n_det in sticks_to_infer:
+                dist_from_camera_ = np.linalg.norm(n_det.old_stick.bottom - np.array([1000, 1500]))
+                factor = dist_from_camera_ / dist_from_camera  # Account for the actual rotational movement of camera
                 new_stick = n_det.old_stick.copy()
-                new_stick.translate(offset_vec)
+                new_stick.translate(np.round(offset_vec * factor).astype(np.int32))
                 new_stick.is_visible = False
                 estimate_snow_height(new_stick, orig)
                 measured_sticks.append(new_stick)
@@ -1541,3 +1563,52 @@ def estimate_snow_height(stick: Stick, img: np.ndarray):
     #cv.waitKey(0)
     #cv.destroyAllWindows()
     stick.set_snow_height_px(y)
+
+
+def match_new_sticks_with_old(old_sticks: List[StickDetection], new_sticks: List[np.ndarray]) -> List[Tuple[StickDetection, np.ndarray]]:
+    N = len(new_sticks)
+    possible_matches = []
+    for old in old_sticks:
+        # We're going to be matching `old` stick with every new stick from `new_sticks`
+        old_stick = old.old_stick
+        # Because, mostly, big stick misalignments are caused by camera rotation around the stake the camera is fixed on,
+        # we have to work with the model that each stick lies on a circle with the center being at the camera position.
+        # And then, we assume that after camera rotation, each stick moves by the same angular distance, which results in
+        # euclidean distance proportional to the distance from the camera.
+        dist_from_camera = np.linalg.norm(old_stick.bottom - np.array([1000, 1500]))
+        for new_i, new in enumerate(new_sticks):
+            vector = new[0] - old_stick.top
+            matching = [(None, n, 0, np.array([0, 0])) for n in new_sticks]
+            matching[new_i] = (old, new, 999999, vector) # `old` and `new` are trivially matched and hence their distance is 0.0
+            for old_ in old_sticks:
+                if old_ == old:
+                    continue
+                dist_from_camera2 = np.linalg.norm(old_.old_stick.bottom - np.array([1000, 1500]))
+                factor = dist_from_camera2 / dist_from_camera
+                # Correction due to distance from camera
+                corrected_vector = np.round(factor * vector).astype(np.int32)
+                offsetted = old_.old_stick.line() + corrected_vector
+                old_box = line_upright_bbox(offsetted, 5000, 5000, 35)
+                last_match = -1
+                for ik, candidate in enumerate(new_sticks):
+                    new_box = line_upright_bbox(candidate, 5000, 5000, 35)
+                    inters = boxes_intersection(old_box, new_box)
+                    if inters is not None:
+                        area = (inters[1, 0] - inters[0, 0]) * (inters[1, 1] - inters[0, 1])
+                        if matching[ik][0] is None or matching[ik][2] < area:
+                            if last_match >= 0:
+                                conflict_match = matching[last_match]
+                                if conflict_match[2] < area:
+                                    matching[last_match] = (None, conflict_match[1], 0)
+                                    matching[ik] = (old_, candidate, area, corrected_vector)
+                                    last_match = ik
+                            else:
+                                matching[ik] = (old_, candidate, area, corrected_vector)
+                                last_match = ik
+            matching = list(filter(lambda mm: mm[0] is not None, matching))
+            possible_matches.append((matching, vector, 0 * len(matching) + 1 * sum(map(lambda match_: match_[2], matching))))
+    to_return = max(possible_matches, key=lambda m: m[2], default=(None, None))[:2]
+    return to_return
+
+
+
