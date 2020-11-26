@@ -1,5 +1,6 @@
 # This Python file uses the following encoding: utf-8
 import sys
+import typing
 from pathlib import Path
 import json
 from typing import List, Optional, Dict
@@ -7,7 +8,7 @@ import os
 
 from PyQt5.QtWidgets import (QAction, QApplication, QFileDialog, QMainWindow,
                              QToolBar, QMenu, QToolButton, QMessageBox, QPushButton, QWidget, QSizePolicy, QStyle,
-                             QProgressBar, QSystemTrayIcon, QLabel, QHBoxLayout)
+                             QProgressBar, QSystemTrayIcon, QLabel, QHBoxLayout, QProxyStyle)
 from PyQt5.QtCore import QThreadPool, QRunnable, QResource
 from PyQt5.Qt import QKeySequence, Qt
 from PyQt5.QtGui import QCloseEvent, QIcon, QFontDatabase, QFont, QPicture, QPixmap, QColor
@@ -397,8 +398,18 @@ class MainWindow(QMainWindow):
         self.statusBar().hide()
 
 
+class TooltipProxyStyle(QProxyStyle):
+
+    def styleHint(self, hint: QStyle.StyleHint, option: typing.Optional['QStyleOption'] = ...,
+                  widget: typing.Optional[QWidget] = ..., returnData: typing.Optional['QStyleHintReturn'] = ...) -> int:
+        if hint == QStyle.SH_ToolTip_WakeUpDelay:
+            return 5
+        return super().styleHint(hint, option, widget, returnData)
+
+
 if __name__ == "__main__":
     app = QApplication([])
+    app.setStyle(TooltipProxyStyle(app.style()))
 
     window = MainWindow()
     window.showMaximized()
