@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 from numpy import ndarray
@@ -42,6 +43,7 @@ class Stick:
     top: ndarray = np.zeros((2,), np.int32)
     bottom: ndarray = np.zeros((2,), np.int32)
     camera_id: int = -1
+    camera_folder: Path = Path()
     id: int = -1
     length_px: float = field(init=False)
     length_cm: int = 60
@@ -51,6 +53,8 @@ class Stick:
     scale_: float = 1.0
     width: int = 3
     is_visible: bool = True
+    primary: bool = True
+    alternative_view: Optional['Stick'] = None
 
     def __post_init__(self):
         self.length_px = np.linalg.norm(self.top - self.bottom)
@@ -73,7 +77,8 @@ class Stick:
         return Stick(self.local_id, self.view, (factor * self.top).astype(np.int32),
                      (factor * self.bottom).astype(np.int32), label=self.label, scale_=factor*self.scale_,
                      snow_height_cm=int(factor*self.snow_height_cm), snow_height_px=int(factor*self.snow_height_px),
-                     width=int(factor * self.width), camera_id=self.camera_id, id=self.id)
+                     width=int(factor * self.width), camera_id=self.camera_id, id=self.id, primary=self.primary,
+                     camera_folder=self.camera_folder, alternative_view=self.alternative_view)
     
     def set_endpoints(self, x1: int, y1: int, x2: int, y2: int):
         self.top = np.array([x1, y1], np.int32)

@@ -259,6 +259,7 @@ class Camera(QObject):
             sticks = list(map(lambda stick_state: Stick.build_from_state(stick_state), state['sticks']))
             camera.sticks = sticks
             for s in camera.sticks:
+                s.camera_folder = camera.folder
                 camera.average_stick_length += s.length_cm
             camera.average_stick_length /= (len(camera.sticks) + 0.000001)
             camera.__load_measurements()
@@ -280,6 +281,7 @@ class Camera(QObject):
                 self.next_stick_id += 1
             line = lines[i][0]
             stick = Stick(local_id=id_to_assign, view=image, width=lines[i][1])
+            stick.camera_folder = self.folder
             stick.set_endpoints(line[0][0], line[0][1], line[1][0], line[1][1])
             sticks.append(stick)
         self.sticks.extend(sticks)

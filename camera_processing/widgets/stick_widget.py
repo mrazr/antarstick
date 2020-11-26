@@ -261,6 +261,7 @@ class StickWidget(QGraphicsObject):
             self.set_mode(StickMode.EditDelete)
             self.btn_delete.setVisible(False)
         self.mode = mode
+        self._update_tooltip()
         self.update()
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent):
@@ -437,6 +438,7 @@ class StickWidget(QGraphicsObject):
                 self.highlight(QColor(0, 255, 0, 100))
             else:
                 self.highlight(None)
+        self._update_tooltip()
 
     def adjust_line(self):
         self.setPos(QPointF(0.5 * (self.stick.top[0] + self.stick.bottom[0]), 0.5 * (self.stick.top[1] + self.stick.bottom[1])))
@@ -522,6 +524,9 @@ class StickWidget(QGraphicsObject):
         self.update()
 
     def _update_tooltip(self):
+        if self.mode != StickMode.Display:
+            self.setToolTip("")
+            return
         snow_txt = "Snow height: "
         if self.stick.snow_height_px >= 0:
             snow_txt += str(self.stick.snow_height_cm) + " cm"
@@ -532,7 +537,18 @@ class StickWidget(QGraphicsObject):
             snow_txt = "not measured"
             self.stick_label_text.setVisible(False)
             self.show_label = False
-        self.setToolTip(f'{self.stick.label}\nLength: {self.stick.length_cm} cm\n{snow_txt}')
+        stick_view_text = ''
+        role = ''
+        if self.stick.alternative_view is not None:
+            alt_view = self.stick.alternative_view
+            role = " - primary"
+            alt = "Secondary"
+            if not self.stick.primary:
+                role = " - secondary"
+                alt = "Primary"
+            stick_view_text = f'\n{alt} view: {alt_view.label} in {alt_view.camera_folder.name}\n'
+
+        self.setToolTip(f'{self.stick.label}{role}{stick_view_text}\nLength: {self.stick.length_cm} cm\n{snow_txt}')
 
     def set_stick(self, stick: Stick):
         self.stick = stick

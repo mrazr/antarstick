@@ -341,6 +341,16 @@ class Dataset(QObject):
             self.sticks_linked.emit(stick1, stick_view)
         stick2.stick_views.append(stick1)
         stick1.stick_views.append(stick2)
+        stick1.primary = True
+        stick2.primary = True
+        stick1.alternative_view = stick2
+        stick2.alternative_view = stick1
+        if stick1.length_px > stick2.length_px:
+            stick2.primary = False
+            stick2.length_cm = stick1.length_cm
+        else:
+            stick1.primary = False
+            stick1.length_cm = stick2.length_cm
         self.stick_views_map[stick2.id] = stick2.stick_views
         self.stick_views_map[stick1.id] = stick1.stick_views
         self.sticks_linked.emit(stick1, stick2)
@@ -370,7 +380,10 @@ class Dataset(QObject):
             del self.stick_views_map[stick2.id]
         else:
             self.stick_views_map[stick2.id] = stick2.stick_views
-
+        stick1.primary = True
+        stick2.primary = True
+        stick1.alternative_view = None
+        stick2.alternative_view = None
         self.sticks_unlinked.emit(stick1, stick2)
 
     def unlink_stick_(self, stick: Stick):
