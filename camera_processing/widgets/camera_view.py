@@ -55,18 +55,6 @@ class CameraView(QGraphicsObject):
 
         self.show_add_buttons = False
         self.camera = None
-        self.title_rect = QGraphicsRectItem(self)
-        self.title_rect.setBrush(QBrush(QColor(50, 50, 50, 150)))
-        #self.title_rect.setScale(self.scale)
-
-        self.progress_tracker_rect = QGraphicsRectItem(self.title_rect)
-        self.progress_tracker_rect.setBrush(QBrush(QColor(0, 200, 0, 200)))
-
-        self.title = QGraphicsSimpleTextItem("Nothing", self.title_rect)
-        self.title.setFont(CameraView.font)
-        self.title.setBrush(QBrush(QColor(255, 255, 255, 255)))
-        self.title.setPen(QPen(QColor(255, 255, 255, 255)))
-        self.title.setScale(self.scaling)
 
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
         self.show_stick_widgets = False
@@ -82,19 +70,6 @@ class CameraView(QGraphicsObject):
         self.double_click_handler: Callable[[int, int], None] = None
 
         self.stick_widget_mode = StickMode.Display
-
-        self.stick_length_lbl = QGraphicsSimpleTextItem("sticks length: ", parent=self.title_rect)
-        self.stick_length_lbl.setFont(Button.font)
-        self.stick_length_lbl.setBrush(QBrush(Qt.white))
-        self.stick_length_lbl.setVisible(False)
-        #self.stick_length_btn = Button("btn_stick_length", "60 cm", parent=self.title_rect)
-
-        #self.stick_length_input = TextInputWidget(mode='number', label='Sticks length(cm):', parent=self.pixmap)
-        #self.stick_length_input.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
-        #self.stick_length_input.input_entered.connect(self.handle_stick_length_input_entered)
-        #self.stick_length_input.input_cancelled.connect(self.handle_stick_length_input_cancelled)
-        #self.stick_length_input.setZValue(10)
-        self.thread_pool = QThreadPool()
 
         self.highlight_animation = QPropertyAnimation(self, b"highlight_color")
         self.highlight_animation.setEasingCurve(QEasingCurve.Linear)
@@ -156,40 +131,6 @@ class CameraView(QGraphicsObject):
         self.original_pixmap = QPixmap.fromImage(image)
         self.pixmap.setPixmap(self.original_pixmap)
         self.highlight_rect.setRect(self.boundingRect())
-        #self.layout_title_area()
-
-    def layout_title_area(self):
-        self.prepareGeometryChange()
-        self.title.setText(str(self.camera.folder.name))
-        #self.title_rect.setRect(0, 0, self.pixmap.pixmap().width(), 3 * self.stick_length_btn.boundingRect().height())
-        self.title_rect.setPos(0, self.pixmap.boundingRect().height())
-        self.title_rect.setZValue(120)
-        self.title_rect.setVisible(True)
-
-        #self.progress_tracker_rect.setRect(0, 0, self.pixmap.pixmap().width(), self.stick_length_btn.boundingRect().height())
-        self.progress_tracker_rect.setPos(0, 0)
-        self.progress_tracker_rect.setVisible(False)
-
-        self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2,
-                          0)
-        self.title.setVisible(False)
-        #self.stick_length_btn.set_height(self.title_rect.boundingRect().height() - 4)
-        #self.stick_length_btn.setPos(self.title_rect.boundingRect().width() - 5 - self.stick_length_btn.boundingRect().width(),
-        #                             2)
-        #self.stick_length_lbl.setPos(self.stick_length_btn.pos().x() - self.stick_length_lbl.boundingRect().width(), 0)
-
-        #self.stick_length_input.adjust_layout()
-        view = self.scene().views()[0]
-        #self.stick_length_input.setPos(QPointF(0.5 * self.boundingRect().width(),
-        #                                       0.5 * self.boundingRect().height()))
-        #self.stick_length_input.setVisible(self.stick_length_btn.is_on())
-        #self.setPos(0.5 * view.size().width(), 0.5 * view.size().height())
-        #self.stick_length_input.setVisible(self.stick_length_btn.is_on())
-        self.update()
-
-    def set_show_title(self, value: bool):
-        self.title_rect.setVisible(value)
-        self.title.setVisible(value)
 
     def update_stick_widgets(self):
         stick_length = 60
@@ -210,12 +151,6 @@ class CameraView(QGraphicsObject):
         pixmap = self.original_pixmap.scaledToHeight(int(self.original_pixmap.height() * factor))
         self.pixmap.setPixmap(pixmap)
         self.__update_title()
-
-    def __update_title(self):
-        #self.title_rect.setRect(0, 0, self.pixmap.pixmap().width(), self.stick_length_btn.boundingRect().height())
-        self.title_rect.setPos(0, - 0 * self.title.boundingRect().height())
-        self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2, 0)
-        #self.stick_length_btn.setPos(self.title.pos() + QPointF(self.title.boundingRect().width(), 0))
 
     def set_show_stick_widgets(self, value: bool):
         for sw in self.stick_widgets:
@@ -372,37 +307,11 @@ class CameraView(QGraphicsObject):
         #self.stick_length_btn.click_button(artificial_emit=True)
         pass
 
-    def set_progress_bar_progress(self, count: int, out_of: int):
-        if count > out_of:
-            self.progress_tracker_rect.setVisible(False)
-            return
-        one_percent_width = self.title_rect.rect().width() / 100.0
-        percentage = 100 * (count / float(out_of))
-        rect = self.progress_tracker_rect.rect()
-        rect.setWidth(one_percent_width * percentage)
-        self.progress_tracker_rect.setRect(rect)
-        self.progress_tracker_rect.setVisible(True)
-
     def get_top_left(self) -> QPointF:
         return self.sceneBoundingRect().topLeft()
 
     def get_top_right(self) -> QPointF:
         return self.sceneBoundingRect().topRight()
-
-    def set_status_text(self, text: str, duration_ms: int):
-        if len(text) > 0:
-            self.title.setText(f'{str(self.camera.folder.name)} - {text}')
-            self.title.setPos(5, 0)
-            if duration_ms > 0:
-                self.thread_pool.start(Timer(self.clear_status_progress, 5))
-        else:
-            self.title.setText(str(self.camera.folder.name))
-            self.title.setPos(self.title_rect.boundingRect().width() / 2 - self.title.boundingRect().width() / 2, 0)
-        self.update()
-
-    def clear_status_progress(self):
-        self.set_status_text("", 0)
-        self.set_progress_bar_progress(1, 0)
 
     def highlight(self, color: Optional[QColor]):
         if color is None:
