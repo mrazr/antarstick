@@ -6,6 +6,7 @@ import multiprocessing
 from multiprocessing.synchronize import Lock
 from queue import Queue
 from typing import List, Dict, Optional, Any, Tuple
+import itertools
 
 import cv2 as cv
 import numpy as np
@@ -130,7 +131,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.edit_sticks_clicked.connect(self.handle_edit_sticks_clicked)
         self.overlay_gui.link_sticks_clicked.connect(self.handle_link_sticks_clicked)
         self.overlay_gui.delete_sticks_clicked.connect(self.handle_delete_sticks_clicked)
-        self.overlay_gui.process_photos_clicked.connect(self.handle_process_photos_clicked_mp)
+        #self.overlay_gui.process_photos_clicked.connect(self.handle_process_photos_clicked_mp)
+        #self.overlay_gui.process_photos_clicked.connect(self.handle_process_photos_clicked_sp)
         self.overlay_gui.clicked.connect(self.handle_overlay_gui_clicked)
         self.overlay_gui.find_sticks_clicked.connect(self.handle_find_sticks_clicked)
         self.overlay_gui.mes.connect(self.handle_mes)
@@ -205,6 +207,11 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.paused_jobs: int = 0
         self.job_counter_lock = QMutex()
         self.processing_should_continue: bool = False
+        self.single_proc = False
+        self.skip = False
+        self.rem_photos = []
+        self.s_sticks = []
+        self.overlay_gui.use_single_proc.connect(self.handle_use_single)
 
     def _setup_buttons(self):
         self.left_add_button.set_label('Link camera', direction='vertical')
@@ -279,7 +286,6 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.camera_view.initialise_with(self.camera)
 
-        self.camera_view.set_show_title(False)
         self.camera_view.setPos(QPointF(0.5 * self.camera_view.boundingRect().width(), 0))
         self.left_add_button.set_button_height(self.camera_view.boundingRect().height())
         #self.left_add_button.setPos(self.camera_view.get_top_left() -
@@ -306,7 +312,10 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.initialize_link_menu()
         self.overlay_gui.show_loading_screen(False)
-        self.overlay_gui.process_photos_with_jobs_clicked.connect(self.handle_process_photos_clicked_mp)
+        if not self.single_proc:
+            self.overlay_gui.process_photos_with_jobs_clicked.connect(self.handle_process_photos_clicked_mp)
+        else:
+            self.overlay_gui.process_photos_with_jobs_clicked.connect(self.handle_process_photos_clicked_sp)
         self.overlay_gui.handle_cam_view_changed()
         self.initialization_done.emit(self.camera)
         self._recenter_view()
@@ -704,12 +713,28 @@ class CameraViewWidget(QtWidgets.QWidget):
 
     def handle_process_photos_clicked_sp(self):
         #image = self.image_list.data(self.ui.image_list.selectionModel().selectedRows(0)[0])
-        photos = self.camera.get_batch(1, 0)
-        result = antar.analyze_photos(photos[0], self.camera.folder, self.camera.sticks)
-        self.camera.insert_measurements2(result.measurements)
-        if result.reason == antar.Reason.SticksMoved:
-            self.camera.insert_measurements2({result.current_img:  {'sticks': result.sticks_to_confirm,
-                                                                    'image_quality': 0.0}})
+        photos = self.camera.get_batch(1, 0)[0]
+        sticks = self.camera.sticks
+        #if not self.skip:
+        #    photos = list(itertools.dropwhile(lambda name: name != "IMAG2930.JPG", photos))
+        #    sticks = self.camera.sticks
+        #else:
+        #    photos = self.rem_photos[1:]
+        #    sticks = self.s_sticks
+        result = antar.analyze_photos(photos, self.camera.folder, sticks)
+        self.rem_photos = result.remaining_photos
+        self.result_timer.setSingleShot(False)
+        self.result_timer.start()
+        if not self.skip:
+            self.timer.setInterval(1000)
+            self.timer.setSingleShot(False)
+            self.timer.timeout.connect(self.process_confirmation_queue)
+            self.timer.start()
+        self.return_queue.put_nowait(result)
+        #self.camera.insert_measurements2(result.measurements)
+        #if result.reason == antar.Reason.SticksMoved:
+        #    #self.camera.insert_measurements2({result.current_img:  {'sticks': result.sticks_to_confirm,
+        #    #                                                        'image_quality': 0.0}})
         return
 
     def handle_stick_removed(self):
@@ -852,6 +877,11 @@ class CameraViewWidget(QtWidgets.QWidget):
         self._set_view_mode('camera')
         self.moved_sticks_linking.reset()
         self.camera.insert_measurements2({res.remaining_photos[0]: {'sticks': sticks, 'image_quality': 1.0}})
+        if self.single_proc:
+            self.skip = True
+            self.s_sticks = sticks
+            self.queue_lock.unlock()
+            return
         self.job_counter_lock.lock()
         if self.processing_should_continue:
             self.worker_pool.apply_async(antar.analyze_photos, args=(res.remaining_photos[1:], self.camera.folder, sticks,
@@ -869,6 +899,8 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.job_counter_lock.unlock()
         self.queue_lock.unlock()
+
+        #cv.destroyAllWindows()
 
     def handle_moved_sticks_skipped(self, skip_batch: bool):
         sticks = list(map(lambda sw: sw.stick, self.split_view.source_widgets))
@@ -896,6 +928,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.moved_sticks_linking.reset()
         self.queue_lock.unlock()
 
+        #cv.destroyAllWindows()
+
     def handle_worker_returned(self, result: antar.Measurement):
         self.return_queue.put_nowait(result)
 
@@ -906,6 +940,9 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.queue_lock.unlock()
             return
         result = self.confirmation_queue.get_nowait()
+        #if result.im is not None:
+        #    cv.imshow('matches', result.im)
+        #    cv.waitKey(0)
         #print(f'need to confirm img {result.current_img}')
         result.camera = self.camera
         self.split_view = SplitView(result)
@@ -934,8 +971,9 @@ class CameraViewWidget(QtWidgets.QWidget):
     def handle_mes(self):
         gray = cv.cvtColor(self.current_viewed_image, cv.COLOR_BGR2GRAY)
         for sw in self.camera_view.stick_widgets:
-            antar.estimate_snow_height(sw.stick, gray)
+            antar.estimate_snow_height2(sw.stick, gray)
             sw.set_snow_height(sw.stick.snow_height_px)
+        cv.destroyAllWindows()
 
     def handle_save_measurements(self):
         self.camera.save_measurements()
@@ -945,6 +983,11 @@ class CameraViewWidget(QtWidgets.QWidget):
             return
         result: antar.Measurement = self.return_queue.get_nowait()
         self.camera.insert_measurements2(result.measurements)
+        if len(result.measurements) > 0:
+            images = sorted(list(result.measurements.keys()))
+            self.image_list.update_items(images[0], images[-1])
+        else:
+            self.image_list.update_items(result.current_img, result.current_img)
         self.job_counter_lock.lock()
         if result.reason == antar.Reason.FinishedQueue:
             self.running_jobs -= 1
@@ -976,3 +1019,35 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.processing_updated.emit(self.camera.processed_photos_count, self.camera.get_photo_count(),
                                      self.running_jobs + self.paused_jobs, True)
         self.job_counter_lock.unlock()
+
+    def process_result_queue_sp(self):
+        if self.return_queue.empty():
+            return
+        result: antar.Measurement = self.return_queue.get_nowait()
+        self.camera.insert_measurements2(result.measurements)
+        if len(result.measurements) > 0:
+            images = sorted(list(result.measurements.keys()))
+            self.image_list.update_items(images[0], images[-1])
+        else:
+            self.image_list.update_items(result.current_img, result.current_img)
+        self.job_counter_lock.lock()
+        if result.reason == antar.Reason.FinishedQueue:
+            self.running_jobs -= 1
+        else:
+            if result.reason == antar.Reason.Update:
+                pass
+            else:
+                self.confirmation_queue.put_nowait(result)
+
+        self.processing_updated.emit(self.camera.processed_photos_count, self.camera.get_photo_count(),
+                                     self.running_jobs + self.paused_jobs, not self.processing_should_continue)
+        self.job_counter_lock.unlock()
+
+    def handle_use_single(self, btn):
+        self.single_proc = btn['checked']
+        if self.single_proc:
+            self.overlay_gui.process_photos_with_jobs_clicked.disconnect(self.handle_process_photos_clicked_mp)
+            self.overlay_gui.process_photos_with_jobs_clicked.connect(self.handle_process_photos_clicked_sp)
+        else:
+            self.overlay_gui.process_photos_with_jobs_clicked.disconnect(self.handle_process_photos_clicked_sp)
+            self.overlay_gui.process_photos_with_jobs_clicked.connect(self.handle_process_photos_clicked_mp)
