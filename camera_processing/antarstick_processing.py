@@ -541,8 +541,8 @@ def find_sticks(gray: np.ndarray, bgr: np.ndarray, equalize: bool = True) -> Lis
 
         f_vec = extract_feature_vector(line_sample, None, angle_sample, line_angle, left, right)
         valid_flags.append(stick_pipeline.predict([f_vec]) > 0.0)
-
-        final_lines.append((line, valid_flags[-1], int(edge_offsets[0] + edge_offsets[1])))
+        width = max(int(edge_offsets[0] + edge_offsets[1]), 3)
+        final_lines.append((line, valid_flags[-1], width))
 
     return final_lines
 
