@@ -74,6 +74,7 @@ class Stick:
         Stick
             a scaled version of the original stick
         """
+        assert factor > 0.0
         return Stick(self.local_id, self.view, (factor * self.top).astype(np.int32),
                      (factor * self.bottom).astype(np.int32), label=self.label, scale_=factor*self.scale_,
                      snow_height_cm=int(factor*self.snow_height_cm), snow_height_px=int(factor*self.snow_height_px),

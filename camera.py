@@ -281,6 +281,7 @@ class Camera(QObject):
                 self.next_stick_id += 1
             line = lines[i][0]
             stick = Stick(local_id=id_to_assign, view=image, width=lines[i][1])
+            assert stick.width > 0
             stick.camera_folder = self.folder
             stick.set_endpoints(line[0][0], line[0][1], line[1][0], line[1][1])
             sticks.append(stick)
