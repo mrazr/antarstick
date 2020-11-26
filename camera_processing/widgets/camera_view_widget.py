@@ -946,6 +946,9 @@ class CameraViewWidget(QtWidgets.QWidget):
             return
         result: antar.Measurement = self.return_queue.get_nowait()
         self.camera.insert_measurements2(result.measurements)
+        if len(result.measurements) > 0:
+            processed = sorted(result.measurements.keys())
+            self.image_list.update_items(processed[0], processed[-1])
         self.job_counter_lock.lock()
         if result.reason == antar.Reason.FinishedQueue:
             self.running_jobs -= 1
