@@ -1,3 +1,5 @@
 __pycache__/
 .vscode
 settings.json
+state.json
+venv
