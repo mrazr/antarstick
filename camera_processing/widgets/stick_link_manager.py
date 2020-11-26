@@ -557,13 +557,14 @@ class CameraToCameraStickLinkingStrategy(StickLinkingStrategy):
             #sw.set_mode(StickMode.DISPLAY)
             #sw.highlight(None)
             sw.hovered.disconnect(self.handle_stick_widget_hovered)
+            sw.set_mode((StickMode.Display))
 
         for cam in self.secondary_cameras:
             for sw in cam.stick_widgets:
                 #sw.set_mode(StickMode.Display)
                 #sw.set_available_for_linking(False)
                 #sw.set_is_link_source(False)
-                sw.set_mode(StickMode.LinkSource)
+                sw.set_mode(StickMode.Display)
         self.highlight_target_sticks(False)
         self.highlight_source_sticks(False)
 
