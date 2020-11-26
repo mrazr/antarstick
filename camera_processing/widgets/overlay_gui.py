@@ -33,6 +33,7 @@ class OverlayGui(QGraphicsObject):
     process_stop_clicked = pyqtSignal()
     mes = pyqtSignal()
     save_measurements = pyqtSignal()
+    show_measurements = pyqtSignal('PyQt_PyObject')
 
     def __init__(self, view: CamGraphicsView, parent: QGraphicsItem = None):
         QGraphicsObject.__init__(self, parent)
@@ -111,6 +112,9 @@ class OverlayGui(QGraphicsObject):
         self.top_menu.hide_button("process_stop")
         #self.top_menu.add_button("measure_snow", "Measure", call_back=self.mes.emit)
         self.top_menu.add_button("save_measurements", "Save measurements", call_back=self.save_measurements.emit)
+        btn = self.top_menu.add_button("show_measurements", "Show measurements", call_back=self.show_measurements.emit,
+                                 is_checkable=True)
+        btn.set_base_color([ButtonColor.GRAY, ButtonColor.GREEN])
         self.top_menu.set_height(12)
         self.top_menu.center_buttons()
 

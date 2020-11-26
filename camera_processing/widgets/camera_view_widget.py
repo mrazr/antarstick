@@ -142,6 +142,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.set_stick_length_clicked.connect(self.handle_set_stick_length_clicked)
         self.overlay_gui.save_measurements.connect(self.handle_save_measurements)
         self.overlay_gui.process_stop_clicked.connect(self.handle_process_stop_clicked)
+        self.overlay_gui.show_measurements.connect(self.handle_show_measurements)
         self.processing_updated.connect(self.overlay_gui.handle_process_count_changed)
         self.processing_stopped.connect(self.overlay_gui.handle_processing_stopped)
         #self.overlay_gui.set_stick_label.connect(self.handle_set_stick_label_clicked)
@@ -279,7 +280,7 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.camera_view.initialise_with(self.camera)
 
-        self.camera_view.set_show_title(False)
+        #self.camera_view.set_show_title(False)
         self.camera_view.setPos(QPointF(0.5 * self.camera_view.boundingRect().width(), 0))
         self.left_add_button.set_button_height(self.camera_view.boundingRect().height())
         #self.left_add_button.setPos(self.camera_view.get_top_left() -
@@ -976,3 +977,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.processing_updated.emit(self.camera.processed_photos_count, self.camera.get_photo_count(),
                                      self.running_jobs + self.paused_jobs, True)
         self.job_counter_lock.unlock()
+
+    def handle_show_measurements(self, btn):
+        for sw in self.camera_view.stick_widgets:
+            sw.set_show_measurements(btn['checked'])

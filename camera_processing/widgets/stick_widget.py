@@ -136,6 +136,7 @@ class StickWidget(QGraphicsObject):
         self.highlight_animation.valueChanged.connect(self.handle_highlight_animation_value_changed)
         self.deleting = False
         self._update_tooltip()
+        self.show_measurements: bool = False
 
     @pyqtSlot()
     def handle_btn_delete_clicked(self):
@@ -210,7 +211,7 @@ class StickWidget(QGraphicsObject):
             painter.setPen(pen)
             painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)))
 
-        if self.show_label:
+        if self.show_measurements:
             #painter.setFont(StickWidget.font)
             #painter.drawStaticText(self.line.p2(), self.stick_label_text)
             painter.fillRect(self.stick_label_text.boundingRect().translated(self.stick_label_text.pos()),
@@ -531,12 +532,10 @@ class StickWidget(QGraphicsObject):
         if self.stick.snow_height_px >= 0:
             snow_txt += str(self.stick.snow_height_cm) + " cm"
             self.stick_label_text.setText(str(self.stick.snow_height_cm))
-            self.stick_label_text.setVisible(True)
-            self.show_label = True
+            #self.stick_label_text.setVisible(True)
         else:
             snow_txt = "not measured"
             self.stick_label_text.setVisible(False)
-            self.show_label = False
         stick_view_text = ''
         role = ''
         if self.stick.alternative_view is not None:
@@ -559,3 +558,8 @@ class StickWidget(QGraphicsObject):
         #self.line.setP1(QPoint(*self.stick.top))
         #self.line.setP2(QPoint(*self.stick.bottom))
         #self.adjust_line()
+
+    def set_show_measurements(self, show: bool):
+        self.show_measurements = show
+        self.stick_label_text.setVisible(show)
+        self.update()
