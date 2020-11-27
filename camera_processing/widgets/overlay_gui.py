@@ -34,6 +34,7 @@ class OverlayGui(QGraphicsObject):
     mes = pyqtSignal()
     save_measurements = pyqtSignal()
     show_measurements = pyqtSignal('PyQt_PyObject')
+    use_single_proc = pyqtSignal('PyQt_PyObject')
 
     def __init__(self, view: CamGraphicsView, parent: QGraphicsItem = None):
         QGraphicsObject.__init__(self, parent)
@@ -111,10 +112,12 @@ class OverlayGui(QGraphicsObject):
                                  call_back=self.process_stop_clicked.emit)
         self.top_menu.hide_button("process_stop")
         #self.top_menu.add_button("measure_snow", "Measure", call_back=self.mes.emit)
-        self.top_menu.add_button("save_measurements", "Save measurements", call_back=self.save_measurements.emit)
+        #self.top_menu.add_button("save_measurements", "Save measurements", call_back=self.save_measurements.emit)
         btn = self.top_menu.add_button("show_measurements", "Show measurements", call_back=self.show_measurements.emit,
                                  is_checkable=True)
         btn.set_base_color([ButtonColor.GRAY, ButtonColor.GREEN])
+        self.top_menu.add_button("use_single_proc", "Use single process", call_back=self.use_single_proc.emit,
+                                 is_checkable=True)
         self.top_menu.set_height(12)
         self.top_menu.center_buttons()
 
@@ -317,8 +320,19 @@ class OverlayGui(QGraphicsObject):
     def handle_processing_stopped(self):
         btn = self.top_menu.get_button("process_stop")
         self.hide_process_stop()
+        if btn is None:
+            return
         btn.set_disabled(False)
         btn.set_label("Stop processing")
         self.show_process_photos()
         self.top_menu.center_buttons()
         self.update()
+
+    def toggle_edit_sticks_button(self):
+        self.top_menu.get_button("edit_sticks").click_button(artificial_emit=True)
+
+    def uncheck_confirm_sticks_button(self):
+        btn = self.top_menu.get_button("confirm_sticks")
+        if btn.is_on():
+            btn.click_button(artificial_emit=True)
+

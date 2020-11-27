@@ -364,6 +364,7 @@ class Camera(QObject):
                 stick_i_vecs[stick_j] = vec
                 stick_j_vecs = self.stick_to_stick_vectors.setdefault(stick_j, {})
                 stick_j_vecs[stick_i] = -1.0 * vec
+        self.generate_bounding_boxes()
 
         data = {
             'image_name': self.image_list,
@@ -438,6 +439,30 @@ class Camera(QObject):
             stick_id = self.stick_labels_column_ids[stick.label]
             snow_height.append(self.measurements.iat[image_id, stick_id + PD_STICK_SNOW_HEIGHT])
         return np.median(snow_height)
+
+    def generate_bounding_boxes(self):
+        self.sticks.sort(key=lambda s: s.bottom[0])
+        for i, stick in enumerate(self.sticks):
+            left = min(stick.top[0], stick.bottom[0])
+            right = max(stick.top[0], stick.bottom[0])
+            if i > 0:
+                left_neigh = self.sticks[i-1]
+                left_dist = left - max(left_neigh.top[0], left_neigh.bottom[0])
+                x1 = min(int(np.round(0.5 * left_dist)), 12) #max(int(0.3 * left_dist), 12)
+            else:
+                x1 = 12
+            if i < len(self.sticks) - 1:
+                right_neigh = self.sticks[i+1]
+                right_dist = min(right_neigh.top[0], right_neigh.bottom[0]) - right
+                x2 = min(int(np.round(0.5 * right_dist)), 12)
+            else:
+                x2 = 12
+            stick.bbox = np.array([
+                [left - x1, stick.top[1] - 12],
+                [right + x2, stick.bottom[1] + 12]
+            ])
+
+
 
     def __hash__(self):
         return self.folder.__hash__()

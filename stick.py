@@ -55,6 +55,7 @@ class Stick:
     is_visible: bool = True
     primary: bool = True
     alternative_view: Optional['Stick'] = None
+    bbox: np.ndarray = np.array([])
 
     def __post_init__(self):
         self.length_px = np.linalg.norm(self.top - self.bottom)
@@ -157,3 +158,6 @@ class Stick:
 
     def copy(self) -> 'Stick':
         return self.scale(1.0)
+
+    def set_bbox(self, bbox: np.ndarray):
+        self.bbox = bbox

@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Callable, List, Optional, Dict
 
 import PyQt5
@@ -80,6 +81,9 @@ class CameraView(QGraphicsObject):
         self.title_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
         self.title_btn.setZValue(5)
 
+        self.sticks_without_width: List[Stick] = []
+        self.current_image_name: str = ''
+
     def paint(self, painter: QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
         if self.pixmap.pixmap().isNull():
             return
@@ -108,7 +112,7 @@ class CameraView(QGraphicsObject):
         self.camera = camera
         #self.stick_length_btn.btn_id = str(self.camera.folder)
         self.prepareGeometryChange()
-        self.set_image(camera.rep_image)
+        self.set_image(camera.rep_image, Path(camera.rep_image_path).name)
         self.title_btn.set_label(self.camera.folder.name)
         self.title_btn.set_height(46)
         self.title_btn.fit_to_contents()
@@ -124,13 +128,14 @@ class CameraView(QGraphicsObject):
 
         self.update_stick_widgets()
 
-    def set_image(self, img: np.ndarray):
+    def set_image(self, img: np.ndarray, image_name: str):
         self.prepareGeometryChange()
         barray = QByteArray(img.tobytes())
         image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
         self.original_pixmap = QPixmap.fromImage(image)
         self.pixmap.setPixmap(self.original_pixmap)
         self.highlight_rect.setRect(self.boundingRect())
+        self.current_image_name = image_name
 
     def update_stick_widgets(self):
         stick_length = 60
@@ -176,9 +181,8 @@ class CameraView(QGraphicsObject):
         if self.stick_widget_mode == StickMode.EditDelete:
             x = event.pos().toPoint().x()
             y = event.pos().toPoint().y()
-            _ = self.camera.create_new_sticks([(np.array([[x, y - 50], [x, y + 50]]), -1)])[0] #self.dataset.create_new_stick(self.camera)
-            #stick.set_endpoints(x, y - 50, x, y + 50)
-            #self.camera.add_stick(stick)
+            stick = self.camera.create_new_sticks([(np.array([[x, y - 50], [x, y + 50]]), 3)], self.current_image_name)[0] #self.dataset.create_new_stick(self.camera)
+            self.sticks_without_width.append(stick)
 
     def set_button_mode(self, click_handler: Callable[[Camera], None], data: str):
         self.mode = 1 # TODO make a proper ENUM
