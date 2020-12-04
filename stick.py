@@ -56,6 +56,9 @@ class Stick:
     primary: bool = True
     alternative_view: Optional['Stick'] = None
     bbox: np.ndarray = np.array([])
+    determines_quality: bool = True
+    bbox_left_range: int = -1
+    bbox_right_range: int = -1
 
     def __post_init__(self):
         self.length_px = np.linalg.norm(self.top - self.bottom)
@@ -77,9 +80,12 @@ class Stick:
         """
         return Stick(self.local_id, self.view, (factor * self.top).astype(np.int32),
                      (factor * self.bottom).astype(np.int32), label=self.label, scale_=factor*self.scale_,
-                     snow_height_cm=int(factor*self.snow_height_cm), snow_height_px=int(factor*self.snow_height_px),
-                     width=int(factor * self.width), camera_id=self.camera_id, id=self.id, primary=self.primary,
-                     camera_folder=self.camera_folder, alternative_view=self.alternative_view)
+                     snow_height_cm=int(round(factor*self.snow_height_cm)),
+                     snow_height_px=int(round(factor*self.snow_height_px)), width=int(factor * self.width),
+                     camera_id=self.camera_id, id=self.id, primary=self.primary,
+                     camera_folder=self.camera_folder, alternative_view=self.alternative_view,
+                     bbox_left_range=self.bbox_left_range, bbox_right_range=self.bbox_right_range,
+                     determines_quality=self.determines_quality)
     
     def set_endpoints(self, x1: int, y1: int, x2: int, y2: int):
         self.top = np.array([x1, y1], np.int32)
