@@ -68,8 +68,33 @@ class StickLink(QGraphicsObject):
         p2 = None
         if self.temporary_target is not None:
             p2 = self.mapFromScene(self.temporary_target)
+
+        line = self.line_item.line()
+        line.setP1(p1)
+        rect = self.mapFromItem(self.stick1, self.stick1.boundingRect()).boundingRect()
+        if (inter := line.intersects(QLineF(rect.topRight(), rect.bottomRight())))[0] == QLineF.BoundedIntersection:
+            p1 = inter[1]
+        elif (inter := line.intersects(QLineF(rect.topLeft(), rect.bottomLeft())))[0] == QLineF.BoundedIntersection:
+            p1 = inter[1]
+        elif (inter := line.intersects(QLineF(rect.topLeft(), rect.topRight())))[0] == QLineF.BoundedIntersection:
+            p1 = inter[1]
+        elif (inter := line.intersects(QLineF(rect.bottomLeft(), rect.bottomRight())))[0] == QLineF.BoundedIntersection:
+            p1 = inter[1]
+
         if p2 is None:
             p2 = self.mapFromItem(self.stick2, self.stick2.mid_handle.rect().center())
+            line.setP2(p2)
+            rect = self.mapFromItem(self.stick2, self.stick2.boundingRect()).boundingRect()
+
+            if (inter := line.intersects(QLineF(rect.topRight(), rect.bottomRight())))[0] == QLineF.BoundedIntersection:
+                p2 = inter[1]
+            elif (inter := line.intersects(QLineF(rect.topLeft(), rect.bottomLeft())))[0] == QLineF.BoundedIntersection:
+                p2 = inter[1]
+            elif (inter := line.intersects(QLineF(rect.topLeft(), rect.topRight())))[0] == QLineF.BoundedIntersection:
+                p2 = inter[1]
+            elif (inter := line.intersects(QLineF(rect.bottomLeft(), rect.bottomRight())))[0] == QLineF.BoundedIntersection:
+                p2 = inter[1]
+
         self.line_item.setLine(QLineF(p1, p2))
         self.btn_break_link.setPos(self.line_item.line().center())
         self.update()
@@ -105,7 +130,8 @@ class StickLink(QGraphicsObject):
 
     def remove_sticks(self):
         self.stick1.stick_changed.disconnect(self.handle_stick_changed)
-        self.stick2.stick_changed.disconnect(self.handle_stick_changed)
+        if self.stick2 is not None:
+            self.stick2.stick_changed.disconnect(self.handle_stick_changed)
 
     def confirm_link(self):
         if self.stick2 is not None:
@@ -130,6 +156,11 @@ class StickLinkManager(QGraphicsObject):
         self.target_point = QPointF()
         self.anchored = False
         self.unused_colors: List[QColor] = []
+        step = 60
+        for num_groups in range(24):
+            offset = 0 if num_groups < 6 else step / ((num_groups + 6) // 6)
+            hue = int((num_groups % 6) * step + offset)
+            self.unused_colors.append(QColor.fromHsv(hue, 255, 255, 255))
         self.current_link_item: StickLink = None
         self.stick_links_list: List[StickLink] = []
         self.rect = QRectF()
@@ -184,7 +215,7 @@ class StickLinkManager(QGraphicsObject):
     def set_source_stick(self, sw: StickWidget) -> StickLink:
         self.current_link_item = StickLink(sw, parent=None)
         self.stick_links_list.append(self.current_link_item)
-        color = self.get_new_link_group_color()
+        color = self.unused_colors.pop()
         self.current_link_item.set_color(color)
         a = self.color_links.setdefault(color.hue(), [])
         a.append(self.current_link_item)
@@ -512,7 +543,7 @@ class CameraToCameraStickLinkingStrategy(StickLinkingStrategy):
             link.stick2.set_is_linked(False)
             #del self.manager.stick_links[primary_stick.id]
             del self.stick_links[primary_stick.id]
-            self.view.unused_colors.append(color)
+            #self.view.unused_colors.append(color)
         else:
             #self.view.stick_links[primary_stick.id] = (link_list, color)
             self.stick_links[primary_stick.id] = (link_list, color)
@@ -623,6 +654,7 @@ class MovedSticksLinkingStrategy(StickLinkingStrategy):
     def accept(self):
         if self.view.current_link_item is None:
             return
+        self.view.current_link_item.update_line()
         if self.view.anchored:
             link = self.view.current_link_item
             link1 = self.stick_stick_links.get(link.stick1, None)
