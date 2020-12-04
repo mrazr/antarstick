@@ -1,8 +1,8 @@
 import multiprocessing
 from typing import List, Tuple, Optional
 
-from PyQt5.QtCore import QRectF, QMarginsF, QPointF, pyqtSignal
-from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor
+from PyQt5.QtCore import QRectF, QMarginsF, QPointF, pyqtSignal, Qt
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QKeyEvent
 from PyQt5.QtWidgets import QGraphicsObject, QGraphicsPixmapItem, QStyleOptionGraphicsItem, QWidget, QGraphicsItem
 import numpy as np
 
@@ -40,8 +40,8 @@ class SplitView(QGraphicsObject):
         self.source_widgets: List[StickWidget] = []
         self.target_widgets: List[StickWidget] = []
 
-        self.confirm_button = Button('btn_confirm', "Confirm", parent=self)
-        self.skip_button = Button('btn_skip', "Skip", parent=self)
+        self.confirm_button = Button('btn_confirm', "Confirm(Enter)", parent=self)
+        self.skip_button = Button('btn_skip', "Skip(Esc)", parent=self)
         self.skip_batch_button = Button('btn_skip_batch', "Skip this batch", parent=self)
 
         self.confirm_button.clicked.connect(self.handle_confirmed)
@@ -109,6 +109,7 @@ class SplitView(QGraphicsObject):
         self.skip_batch_button.setVisible(True)
         self.skip_batch_button.set_base_color([ButtonColor.RED])
         self.skip_batch_button.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+        self.grabKeyboard()
 
     def _sticks_bounding_box(self) -> Tuple[np.ndarray, np.ndarray]:
         top_left1 = np.min(list(map(lambda s: s.top, self.source_sticks)), axis=0)
@@ -150,13 +151,25 @@ class SplitView(QGraphicsObject):
             st.translate(offset)
 
     def handle_confirmed(self):
+        self.ungrabKeyboard()
         self._offset_sticks()
         self.confirmed.emit()
 
     def handle_skipped(self):
+        self.ungrabKeyboard()
         self._offset_sticks()
         self.skipped.emit(False)
 
     def handle_skipped_batch(self):
+        self.ungrabKeyboard()
         self._offset_sticks()
         self.skipped.emit(True)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key_Enter or event.key() == Qt.Key_Return:
+            self.handle_confirmed()
+        elif event.key() == Qt.Key_Escape:
+            self.handle_skipped()
