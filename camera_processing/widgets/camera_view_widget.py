@@ -4,6 +4,7 @@ from enum import IntEnum
 from multiprocessing import Pool
 import multiprocessing
 from multiprocessing.synchronize import Lock
+from pathlib import Path
 from queue import Queue
 from typing import List, Dict, Optional, Any, Tuple
 
@@ -15,6 +16,10 @@ from PyQt5.QtCore import (QMarginsF, QModelIndex, QPointF, QRectF, Qt,
 from PyQt5.QtCore import pyqtSlot as Slot, QTimer, QMutex
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QBrush, QColor, QFont, QPen
 from PyQt5.QtWidgets import QGraphicsScene, QGraphicsItem, QSizePolicy, QAbstractScrollArea
+import matplotlib.pyplot as plt
+import skimage.filters as fil
+import pandas as pd
+import exifread
 
 import camera_processing.antarstick_processing as antar
 from camera import Camera
@@ -134,6 +139,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.clicked.connect(self.handle_overlay_gui_clicked)
         self.overlay_gui.find_sticks_clicked.connect(self.handle_find_sticks_clicked)
         self.overlay_gui.mes.connect(self.handle_mes)
+        self.overlay_gui.measure_all.connect(self.handle_measure_all_clicked)
         self.detect_thin_sticks = False
         #self.overlay_gui.stick_length_input.input_entered.connect(self.handle_stick_length_entered)
         self.overlay_gui.sticks_length_clicked.connect(self.handle_stick_length_clicked)
@@ -256,11 +262,15 @@ class CameraViewWidget(QtWidgets.QWidget):
 
     def initialise_with(self, camera: Camera):
         self.camera = camera
-        self.camera.sticks_added.connect(lambda: self.overlay_gui.enable_confirm_sticks_button(True))
+        self.camera.sticks_added.connect(lambda: self.camera.timestamps_available and
+                                                 self.overlay_gui.enable_confirm_sticks_button(True))
         self.camera.sticks_removed.connect(self.handle_stick_removed)
         self.camera.stick_removed.connect(self.handle_stick_removed)
         if self.camera.rep_image is None:
-            self.camera.rep_image = cv.resize(cv.imread(str(self.camera.folder / self.camera.rep_image_path)), (0, 0), fx=0.5, fy=0.5)
+            half = (int(round(0.5 * self.camera.standard_image_size[0])),
+                    int(round(0.5 * self.camera.standard_image_size[1])))
+            self.camera.rep_image = cv.resize(cv.imread(str(self.camera.folder / self.camera.rep_image_path)),
+                                              dsize=half)
         self.stick_link_manager_strat.camera = self.camera
         self.stick_link_manager_strat.update_links()
         self.image_list.initialize(self.camera, self.camera.get_processed_count())
@@ -273,9 +283,10 @@ class CameraViewWidget(QtWidgets.QWidget):
         select_index = self.image_list.index(0, 0)
         self.ui.image_list.setCurrentIndex(select_index)
         self.overlay_gui.stick_length_input.set_value(str(self.camera.default_stick_length_cm))
-        if len(self.camera.sticks) == 0 and False:
-            self.handle_find_sticks_clicked()
         #self.initialize_rest_of_gui()
+        if not self.camera.timestamps_available:
+            self.worker_pool.apply_async(self.extract_timestamps, args=(self.camera.image_list, self.camera.folder),
+                                         callback=self.handle_timestamps_extracted)
 
     def initialize_rest_of_gui(self):
         self.overlay_gui.initialize()
@@ -322,6 +333,9 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.fix_timer.setInterval(5)
         self.fix_timer.start()
 
+        if len(self.camera.sticks) == 0 or not self.camera.timestamps_available:
+            self.overlay_gui.enable_confirm_sticks_button(False)
+
     @Slot(bool)
     def link_cameras_enabled(self, enabled: bool):
         if enabled:
@@ -355,7 +369,13 @@ class CameraViewWidget(QtWidgets.QWidget):
     @Slot(QModelIndex, QModelIndex)
     def handle_list_model_current_changed(self, current: QModelIndex, previous: QModelIndex):
         image_path = self.image_list.data(current, Qt.UserRole)
-        self.current_viewed_image = cv.pyrDown(cv.imread(str(image_path)))
+        half = (int(round(0.5 * self.camera.standard_image_size[0])),
+                int(round(0.5 * self.camera.standard_image_size[1])))
+        img = cv.imread(str(image_path))
+        if img.shape == self.camera.standard_image_size:
+            self.current_viewed_image = cv.pyrDown(img)
+        else:
+            self.current_viewed_image = cv.resize(img, dsize=half, interpolation=cv.INTER_LINEAR)
         self.camera_view.set_image(self.current_viewed_image, image_path.name)
         self.current_sticks = self.camera.get_sticks_in_image(image_path.name)
 
@@ -363,6 +383,7 @@ class CameraViewWidget(QtWidgets.QWidget):
             for st in self.current_sticks:
                 if st.label == sw.stick.label:
                     sw.set_stick(st)
+        #TODO synchronize linked camera views
 
     @Slot()
     def handle_edit_sticks_clicked(self):
@@ -700,6 +721,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         if self.overlay_gui.edit_sticks_button_pushed():
             self.overlay_gui.toggle_edit_sticks_button()
         self.camera.initialize_measurements(False)
+        #self.__draw_length_hist()
 
     def handle_process_photos_clicked_mp(self, batch_count: int):
         self.processing_should_continue = True
@@ -919,9 +941,13 @@ class CameraViewWidget(QtWidgets.QWidget):
 
     def handle_moved_sticks_skipped(self, skip_batch: bool):
         sticks = list(map(lambda sw: sw.stick, self.split_view.source_widgets))
-        res = self.split_view.measurement
+        res: antar.Measurement = self.split_view.measurement
         self.graphics_scene.removeItem(self.split_view)
         self.split_view.deleteLater()
+        self.camera.skipped_image(res.current_img)
+        if skip_batch:
+            for img in res.remaining_photos:
+                self.camera.skipped_image(img)
         self.split_view = None
         self._set_view_mode('camera')
         self.job_counter_lock.lock()
@@ -985,9 +1011,13 @@ class CameraViewWidget(QtWidgets.QWidget):
 
     def handle_mes(self):
         gray = cv.cvtColor(self.current_viewed_image, cv.COLOR_BGR2GRAY)
+        hsv = cv.cvtColor(self.current_viewed_image, cv.COLOR_BGR2HSV)
         for sw in self.camera_view.stick_widgets:
-            antar.estimate_snow_height(sw.stick, gray)
+            antar.estimate_snow_height2(sw.stick, cv.pyrDown(self.current_viewed_image[:, :, 2]))
+            #antar.estimate_snow_height(sw.stick, self.current_viewed_image)
+            #antar.estimate_height(sw.stick, gray) #self.current_viewed_image)
             sw.set_snow_height(sw.stick.snow_height_px)
+        cv.destroyAllWindows()
 
     def handle_save_measurements(self):
         self.camera.save_measurements()
@@ -1052,3 +1082,45 @@ class CameraViewWidget(QtWidgets.QWidget):
         else:
             self.overlay_gui.process_photos_with_jobs_clicked.disconnect(self.handle_process_photos_clicked_sp)
             self.overlay_gui.process_photos_with_jobs_clicked.connect(self.handle_process_photos_clicked_mp)
+
+    def __draw_length_hist(self):
+        lengths = list(map(lambda s: np.round(s.length_px).astype(np.int32), self.camera.sticks))
+        lengths.sort()
+        lengths = np.array(lengths)
+        print(f'average length is {np.mean(lengths)}')
+        print(f'median is {np.median(lengths)}')
+        print(f'std is {np.std(lengths)}')
+        range = np.max(lengths) - np.min(lengths)
+        bins = int(range / 10.0)
+        th = fil.threshold_triangle(lengths, bins)
+
+        diff = np.abs(np.diff(lengths))
+        big_diff = min(np.argmax(diff), len(lengths) - 1)
+        print(f'threshold is {th}')
+        plt.hist(lengths, bins=bins)
+        plt.savefig("/home/radoslav/hist.png")
+        plt.clf()
+
+    def handle_measure_all_clicked(self):
+        sticks = list(map(lambda s: s.copy(), self.camera.sticks))
+        for img in self.camera.image_list:
+            measurement = self.camera.get_measurements(img, output_sticks=sticks)
+            sticks = measurement['sticks']
+            image = cv.pyrDown(cv.imread(str(self.camera.folder / img)))
+            for stick in sticks:
+                antar.estimate_snow_height2(stick, image[:, :, 2])
+            self.camera.insert_measurements2({img: {'sticks': sticks, 'image_quality': measurement['image_quality']}})
+
+    @staticmethod
+    def extract_timestamps(images: List[str], folder: Path) -> pd.Series:
+        timestamps = []
+        for img in images:
+            with open(folder / img, 'rb') as f:
+                tags = exifread.process_file(f, details=False)
+            timestamps.append(pd.to_datetime(tags['EXIF DateTimeOriginal'].values, format='%Y:%m:%d %H:%M:%S'))
+        return pd.Series(data=timestamps)
+
+    def handle_timestamps_extracted(self, timestamps: pd.Series):
+        self.camera.insert_timestamps(timestamps)
+        if len(self.camera.sticks) > 0:
+            self.overlay_gui.enable_confirm_sticks_button(True)
