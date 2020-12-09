@@ -135,7 +135,7 @@ class StickWidget(QGraphicsObject):
         self.highlight_animation = QPropertyAnimation(self, b"highlight_color")
         self.highlight_animation.valueChanged.connect(self.handle_highlight_animation_value_changed)
         self.deleting = False
-        self._update_tooltip()
+        self.update_tooltip()
         self.show_measurements: bool = False
 
     @pyqtSlot()
@@ -262,7 +262,7 @@ class StickWidget(QGraphicsObject):
             self.set_mode(StickMode.EditDelete)
             self.btn_delete.setVisible(False)
         self.mode = mode
-        self._update_tooltip()
+        self.update_tooltip()
         self.update()
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent):
@@ -439,7 +439,7 @@ class StickWidget(QGraphicsObject):
                 self.highlight(QColor(0, 255, 0, 100))
             else:
                 self.highlight(None)
-        self._update_tooltip()
+        self.update_tooltip()
 
     def adjust_line(self):
         self.setPos(QPointF(0.5 * (self.stick.top[0] + self.stick.bottom[0]), 0.5 * (self.stick.top[1] + self.stick.bottom[1])))
@@ -510,7 +510,7 @@ class StickWidget(QGraphicsObject):
     def set_stick_label(self, label: str):
         self.stick.label = label
         self.stick_label_text.setText(label)
-        self._update_tooltip()
+        self.update_tooltip()
         self.update()
 
     def get_stick_label(self) -> str:
@@ -521,10 +521,10 @@ class StickWidget(QGraphicsObject):
 
     def set_stick_length_cm(self, length: int):
         self.stick.length_cm = length
-        self._update_tooltip()
+        self.update_tooltip()
         self.update()
 
-    def _update_tooltip(self):
+    def update_tooltip(self):
         if self.mode != StickMode.Display:
             self.setToolTip("")
             return
@@ -536,6 +536,8 @@ class StickWidget(QGraphicsObject):
         else:
             snow_txt = "not measured"
             self.stick_label_text.setVisible(False)
+        self.stick_label_text.setText(self.stick.label)
+        self.stick_label_text.setVisible(True)
         stick_view_text = ''
         role = ''
         if self.stick.alternative_view is not None:
@@ -546,15 +548,15 @@ class StickWidget(QGraphicsObject):
                 role = " - secondary"
                 alt = "Primary"
             stick_view_text = f'\n{alt} view: {alt_view.label} in {alt_view.camera_folder.name}\n'
-
-        self.setToolTip(f'{self.stick.label}{role}{stick_view_text}\nLength: {self.stick.length_cm} cm\n{snow_txt}')
+        mark = '*' if self.stick.determines_quality else ''
+        self.setToolTip(f'{mark}{self.stick.label}{role}{stick_view_text}\nLength: {self.stick.length_cm} cm\n{snow_txt}')
 
     def set_stick(self, stick: Stick):
         self.stick = stick
         self.adjust_line()
         self.adjust_handles()
         self.set_snow_height(stick.snow_height_px)
-        self._update_tooltip()
+        self.update_tooltip()
         #self.line.setP1(QPoint(*self.stick.top))
         #self.line.setP2(QPoint(*self.stick.bottom))
         #self.adjust_line()
