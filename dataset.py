@@ -1,5 +1,6 @@
 from pathlib import PurePath, PosixPath, Path
 from typing import Dict, List, Optional, Set, Tuple, Union, Any
+from datetime import datetime, timedelta
 
 import jsonpickle
 import json
@@ -7,8 +8,9 @@ from numpy import zeros
 from PyQt5.QtCore import QObject, QTimer
 from PyQt5.QtCore import pyqtSignal as Signal
 from PyQt5.QtWidgets import QMessageBox
+from pandas import Timestamp, Timedelta
 
-from camera import Camera
+from camera import Camera, PD_DATE
 from stick import Stick
 
 
@@ -97,7 +99,8 @@ class Dataset(QObject):
         self.cameras: List[Camera] = []
         self.next_camera_id = 0
         self.next_stick_id = 0
-        self.linked_cameras: Set[Tuple[int, int]] = set() #, int]] = set()
+        #self.linked_cameras: Set[Tuple[int, int]] = set() #, int]] = set()
+        self.linked_cameras: List[Dict[str, Camera]] = []
         self.unused_stick_ids: List[int] = []
         self.required_state_fields = set(self.get_state().keys())
         #self.camera_groups: Dict[int, List[Camera]] = {}
@@ -161,10 +164,10 @@ class Dataset(QObject):
 
         del self.cameras_ids[str(camera.folder)]
 
-        camera_links = list(filter(lambda link: link[0] == camera.id or link[1] == camera.id, self.linked_cameras))
+        camera_links = list(filter(lambda link: link['left'] == camera or link['right'] == camera, self.linked_cameras))
 
         for link in camera_links:
-            other_cam_id = link[1] if link[0] == camera.id else link[0]
+            other_cam_id = link['left'] if link['right'] == camera.id else link['left']
             camera2 = next(filter(lambda cam: cam.id == other_cam_id, self.cameras))
             self.unlink_cameras(camera, camera2)
 
@@ -236,7 +239,9 @@ class Dataset(QObject):
                     return False
 
             self.loading_finished.emit()
-            for left_cam_id, right_cam_id in linked_cameras:
+            for link in linked_cameras:
+                left_cam_id = link['left']
+                right_cam_id = link['right']
                 left_cam = self.get_camera(left_cam_id)
                 right_cam = self.get_camera(right_cam_id)
                 self.link_cameras(left_cam, right_cam)
@@ -281,7 +286,12 @@ class Dataset(QObject):
         #    self.available_link_groups.remove(camera_group)
         #else:
         #    print(f'Reached maximum number of linked cameras')
-        self.linked_cameras.add((cam1.id, cam2.id)) #, camera_group))
+        #self.linked_cameras.add((cam1.id, cam2.id)) #, camera_group))
+        self.linked_cameras.append({'left': cam1, 'right': cam2})
+        # synchronize cameras' timestamps
+        synchronized_timestamps = self.find_closest_datetimes(cam1, cam2)
+        print(f'synchronized cameras: {cam1.folder.name} - {synchronized_timestamps[cam1]} <-> {cam2.folder.name} - {synchronized_timestamps[cam2]}')
+
         self.cameras_linked.emit(cam1, cam2) #, camera_group)
     
     def unlink_cameras(self, cam1: Camera, cam2: Camera):
@@ -290,7 +300,7 @@ class Dataset(QObject):
         #link = list(filter(lambda _link: _link == link1 or _link == link2, self.linked_cameras))[0]
         #self.available_link_groups.append(link[2])
         #self.available_link_groups.sort()
-        self.linked_cameras = set(filter(lambda _link: _link != link1 and _link != link2, self.linked_cameras))
+        self.linked_cameras = list(filter(lambda _link: _link != link1 and _link != link2, self.linked_cameras))
         for stick in cam1.sticks:
             links = self.stick_views_map.get(stick.id, [])
             for linked_stick in links:
@@ -455,7 +465,7 @@ class Dataset(QObject):
             #'camera_folders': list(map(lambda path: str(path), self.camera_folders)),
             #'cameras_ids': self.cameras_ids,
             'cameras_ids': self.make_camera_paths_relative(),
-            'linked_cameras': list(self.linked_cameras),
+            'linked_cameras': list(map(lambda link: {k: v.id for k, v in link.items()}, self.linked_cameras)),
             'stick_views_map': stick_views_list,
             'unused_stick_ids': self.unused_stick_ids,
             'stick_local_to_global_ids': self.stick_local_to_global_ids,
@@ -519,3 +529,18 @@ class Dataset(QObject):
     def get_camera_groups(self) -> List[List[Camera]]:
         return list(self.camera_groups.values())
 
+    @staticmethod
+    def find_closest_datetimes(cam1: Camera, cam2: Camera) -> Dict[Camera, Timestamp]:
+        cam1_ts: Timestamp = cam1.measurements.iat[0, PD_DATE]
+        offsets1 = cam2.measurements.loc[:, 'date_time'].sub(cam1_ts).abs()
+        smallest_delta1 = offsets1.min()
+        closest_timestamp_cam2 = cam2.measurements.iloc[offsets1.argmin()]['date_time']
+
+        cam2_ts: Timestamp = cam2.measurements.iat[0, PD_DATE]
+        offsets1 = cam1.measurements.loc[:, 'date_time'].sub(cam2_ts).abs()
+        smallest_delta2 = offsets1.min()
+        closest_timestamp_cam1 = cam1.measurements.iloc[offsets1.argmin()]['date_time']
+
+        if smallest_delta2 < smallest_delta1:
+            return {cam1: closest_timestamp_cam1, cam2: cam2_ts}
+        return {cam1: cam1_ts, cam2: closest_timestamp_cam2}
