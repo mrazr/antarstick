@@ -8,7 +8,7 @@ import sys
 
 from PyQt5.QtGui import QBrush, QColor, QFontDatabase, QFont, QIcon, QImage, QPixmap, QPainter
 
-from camera import Camera
+from camera import Camera, PhotoState
 import resources_rc
 
 
@@ -146,7 +146,8 @@ class ImageListModel(QAbstractTableModel):
             #    return QBrush(QColor(180, 200, 0))
             #elif index.column() == 2:
             #    return QBrush(QColor(0, 100, 200))
-            if self.camera.photos_state[self.image_names[index.row()].name]:
+            photo_state = self.camera.photos_state[self.image_names[index.row()].name]
+            if photo_state == PhotoState.Processed:
                 quality = self.camera.image_quality(self.image_names[index.row()].name)
                 if quality < 0.33:
                     color = self.quality_colors['BAD']
@@ -155,6 +156,8 @@ class ImageListModel(QAbstractTableModel):
                 else:
                     color = self.quality_colors['GOOD']
                 return QBrush(color)
+            elif photo_state == PhotoState.Skipped:
+                return QBrush(QColor(150, 150, 150, 255))
             return None
 
         if role == Qt.UserRole:
@@ -168,7 +171,6 @@ class ImageListModel(QAbstractTableModel):
         if role == Qt.ForegroundRole and index.row() < self.processed_images_count:
             return QBrush(QColor(0, 150, 0))
         return None
-
 
     def set_processed_count(self, count: int):
         self.processed_images_count = count

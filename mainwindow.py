@@ -124,6 +124,11 @@ class MainWindow(QMainWindow):
         self.progress_bar = QProgressBar()
         self.progress_bar.hide()
 
+        skipped_q_indicator = QPixmap(24, 24)
+        skipped_q_indicator.fill(QColor(150, 150, 150))
+        skipped_label = QLabel()
+        skipped_label.setPixmap(skipped_q_indicator)
+
         bad_q_indicator = QPixmap(24, 24)
         bad_q_indicator.fill(QColor(200, 0, 0))
         bad_label = QLabel()
@@ -142,6 +147,8 @@ class MainWindow(QMainWindow):
 
         self.statusBar().hide()
         indicator_box.addWidget(QLabel("Image quality:\t"))
+        indicator_box.addWidget(skipped_label)
+        indicator_box.addWidget(QLabel(" Skipped  "))
         indicator_box.addWidget(bad_label)
         indicator_box.addWidget(QLabel(" Bad  "))
         indicator_box.addWidget(ok_label)
