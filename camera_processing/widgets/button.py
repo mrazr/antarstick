@@ -266,10 +266,11 @@ class Button(QGraphicsObject):
     def paint(self, painter: QPainter, options, widget=None):
         painter.setBrush(QBrush(self.fill_color_current))
         painter.setPen(QPen(QColor(0, 0, 0, 0)))
-        if self.pixmap is not None:
-            painter.drawPixmap(self.hor_margin * self.scaling, self.ver_margin * self.scaling, self.pixmap)
 
         painter.drawRoundedRect(self.rect, 5, 5)
+
+        if self.pixmap is not None:
+            painter.drawPixmap(self.hor_margin * self.scaling, self.ver_margin * self.scaling, self.pixmap)
         if self.tooltip_shown:
             painter.setBrush(QBrush(QColor(50, 50, 50, 200)))
             painter.drawRoundedRect(self.tooltip.boundingRect().translated(self.tooltip.pos())
