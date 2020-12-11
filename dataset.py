@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import PurePath, PosixPath, Path
 from typing import Dict, List, Optional, Set, Tuple, Union, Any
 from datetime import datetime, timedelta
@@ -8,10 +9,216 @@ from numpy import zeros
 from PyQt5.QtCore import QObject, QTimer
 from PyQt5.QtCore import pyqtSignal as Signal
 from PyQt5.QtWidgets import QMessageBox
-from pandas import Timestamp, Timedelta
+from pandas import Timestamp, Timedelta, Series
+import pandas as pd
+import numpy as np
 
 from camera import Camera, PD_DATE
 from stick import Stick
+
+
+class CameraSynchronization:
+
+    def __init__(self, left_cam: Camera, right_cam: Camera, left_ts: Timestamp, right_ts: Timestamp, sync: Dict[Camera, List[str]] = {}):
+        self.left_camera = left_cam
+        self.right_camera = right_cam
+        self.left_timestamp = left_ts
+        self.right_timestamp = right_ts
+        self.synchronized_photos: Dict[Camera, List[str]] = {}
+
+    @staticmethod
+    def get_image_id_for_timestamp(camera: Camera, timestamp: datetime) -> int:
+        return camera.measurements.index.get_loc(timestamp)
+
+    def get_reciprocal_image_by_date(self, source: Camera, timestamp: datetime) -> Optional[Tuple[str, datetime]]:
+        target = self.right_camera if source == self.left_camera else self.left_camera
+        image_id = self.get_image_id_for_timestamp(source, timestamp)
+        rec_image_name = self.synchronized_photos[source][image_id]
+        if rec_image_name == "":
+            return None
+        rec_image_id = target.image_names_ids[rec_image_name]
+        rec_timestamp = target.measurements.iloc[rec_image_id]['date_time']
+        return rec_image_name, rec_timestamp
+
+    def get_reciprocal_image_by_name(self, source: Camera, image_name: str) -> Optional[Tuple[str, datetime]]:
+        target = self.right_camera if source == self.left_camera else self.left_camera
+        source_image_id = source.image_names_ids[image_name]
+        target_image_name = self.synchronized_photos[source][source_image_id]
+        if target_image_name == "":
+            return None
+        target_image_id = target.image_names_ids[target_image_name]
+        target_timestamp = target.measurements.iloc[target_image_id]['date_time']
+        return target_image_name, target_timestamp
+
+    def get_synchronized_images(self) -> Dict[Camera, List[str]]:
+        return self.synchronized_photos
+
+    def get_reciprocal_date(self, source: Camera, timestamp: datetime) -> Optional[datetime]:
+        target = self.right_camera if source == self.left_camera else self.left_camera
+        source_image_id = self.get_image_id_for_timestamp(source, timestamp)
+        target_image_name = self.synchronized_photos[source][source_image_id]
+        if target_image_name == "":
+            return None
+        target_image_id = target.image_names_ids[target_image_name]
+        return target.measurements.iloc[target_image_id]['date_time']
+
+    def synchronize(self, left_ts: Optional[Timestamp] = None, right_ts: Optional[Timestamp] = None):
+        print(f'Implement synchronize_cameras()')
+        if left_ts is None or right_ts is None:
+            left_ts = self.left_timestamp
+            right_ts = self.right_timestamp
+        common_time = pd.Timestamp(datetime(year=2000, month=1, day=1))
+
+        cam1_image_id = self.left_camera.measurements.index.get_loc(left_ts)
+        cam1_image_name = self.left_camera.image_list[cam1_image_id]
+        cam1_offsets: Series = self.left_camera.measurements.loc[:, 'date_time'].sub(left_ts)
+        cam1_offsets.loc[left_ts] = pd.Timedelta(days=0)
+
+        self.left_camera.measurements.loc[:, 'date_time'].diff().to_csv(f'/home/radoslav/{self.left_camera.folder.name}_off.csv')
+
+        df1 = pd.DataFrame(data={'date_time':  [common_time] * cam1_offsets.shape[0],
+                                 'offset': cam1_offsets,
+                                 'cam': [0] * cam1_offsets.shape[0],
+                                 'orig_dt': self.left_camera.measurements.loc[:, 'date_time'],
+                                 'image_name': self.left_camera.measurements.loc[:, 'image_name']})
+        #df1.loc[:, 'date_time'] = self.left_camera.measurements.loc[:, 'date_time']
+        df1.loc[:, 'date_time'] = df1.loc[:, 'date_time'].add(cam1_offsets)
+        df1.set_index('image_name', drop=False, inplace=True)
+
+        df1.iat[cam1_image_id, PD_DATE] = df1.iat[cam1_image_id, PD_DATE] + Timedelta(seconds=1)
+        df1.set_index('date_time', drop=False, inplace=True)
+
+
+        cam2_image_id = self.right_camera.measurements.index.get_loc(right_ts)
+        cam2_image_name = self.right_camera.image_list[cam2_image_id]
+        self.right_camera.measurements.loc[:, 'date_time'].diff().to_csv(f'/home/radoslav/{self.right_camera.folder.name}_off.csv')
+        #cam2_offsets: Series = self.right_camera.measurements.loc[:, 'date_time'].diff()
+        cam2_offsets: Series = self.right_camera.measurements.loc[:, 'date_time'].sub(right_ts)
+        cam2_offsets.loc[right_ts] = pd.Timedelta(days=0)
+        df2 = pd.DataFrame(data={'date_time': [common_time] * cam2_offsets.shape[0],
+                                 'offset': cam2_offsets,
+                                 'cam': [1] * cam2_offsets.shape[0],
+                                 'orig_dt': self.right_camera.measurements.loc[:, 'date_time'],
+                                 'image_name': self.right_camera.measurements.loc[:, 'image_name']})
+        #df2.loc[:, 'date_time'] = self.right_camera.measurements.loc[:, 'date_time']
+        df2.loc[:, 'date_time'] = df2.loc[:, 'date_time'].add(cam2_offsets)
+        df2.iat[cam2_image_id, 0] += Timedelta(seconds=1)
+
+        df2.set_index('image_name', drop=False, inplace=True)
+
+        df2.set_index('date_time', drop=False, inplace=True)
+
+        df = df1.append(df2)
+        df.set_index('date_time', drop=False, inplace=True)
+        df.sort_index(inplace=True)
+
+        source = 0 if cam1_offsets.shape[0] < cam2_offsets.shape[0] else 1
+        target = 0 if source == 1 else 1
+
+        source_df = df1 if source == 0 else df2
+        target_df = df2 if target == 1 else df1
+
+        dupli_dt = df.index.duplicated(keep='first')
+
+        for i, is_dup in enumerate(dupli_dt):
+            if not is_dup:
+                continue
+            dt = df.iloc[i]['date_time']
+            #df['date_time'].iloc[i] = dt + Timedelta(seconds=1)
+            df.iloc[i, PD_DATE] = dt + Timedelta(seconds=1)
+            if df.iloc[i]['cam'] == source:
+                source_df.loc[dt, 'date_time'] = source_df.loc[dt, 'date_time'] + Timedelta(seconds=1)
+            else:
+                target_df.loc[dt, 'date_time'] = target_df.loc[dt, 'date_time'] + Timedelta(seconds=1)
+
+        #df.loc[dupli_dt, 'date_time'] = df.loc[dupli_dt, 'date_time'] + Timedelta(seconds=1)
+        df.set_index('date_time', drop=False, inplace=True)
+        source_df.set_index('date_time', drop=False, inplace=True)
+        target_df.set_index('date_time', drop=False, inplace=True)
+
+        source_ids = df.loc[df['cam'] == source].index
+        target_ids = df.loc[df['cam'] == target].index
+
+        source_idxs: Dict[int, int] = {int(df.index.get_loc(dt)): int(source_df.index.get_loc(dt)) for dt in source_ids}
+        target_idxs: Dict[int, int] = {int(df.index.get_loc(dt)): int(target_df.index.get_loc(dt)) for dt in target_ids}
+
+        target_to_source: List[Tuple[int, Timedelta]] = [(-1, Timedelta(days=9999))] * target_df.shape[0]
+        source_to_target: List[Tuple[int, Timedelta]] = [(-1, Timedelta(days=9999))] * source_df.shape[0]
+
+        for common_idx, local_idx in source_idxs.items():
+            source_dt = df.iloc[common_idx]['date_time']
+            if common_idx - 1 >= 0 and df.iloc[common_idx - 1]['cam'] == target:
+                target_dt_prev = df.iloc[common_idx - 1]['date_time']
+                target_delta_prev = source_dt - target_dt_prev
+                prev_target_idx = target_idxs[common_idx - 1]
+                prev_target_assignment = target_to_source[prev_target_idx]
+            else:
+                #target_dt_prev = Timestamp(year=2442, month=1, day=1)
+                target_delta_prev = Timedelta(days=9999)
+                prev_target_assignment = (-1, Timedelta(days=9999))
+            if common_idx + 1 < df.shape[0] and df.iloc[common_idx + 1]['cam'] == target:
+                target_dt_next = df.iloc[common_idx + 1]['date_time']
+                target_delta_next = target_dt_next - source_dt
+                next_target_idx = target_idxs[common_idx + 1]
+                next_target_assignment = target_to_source[next_target_idx]
+            else:
+                #target_dt_next = Timestamp(year=2442, month=1, day=1)
+                target_delta_next = Timedelta(days=9999)
+                next_target_assignment = (-1, Timedelta(days=9999))
+
+            if target_delta_prev < target_delta_next and target_delta_prev < prev_target_assignment[1]:
+                source_to_target[local_idx] = (prev_target_idx, target_delta_prev)
+                previous_source = target_to_source[prev_target_idx][0]
+                if previous_source >= 0:
+                    source_to_target[previous_source] = (-1, Timedelta(days=9999))
+                target_to_source[prev_target_idx] = (local_idx, target_delta_prev)
+            elif target_delta_next < target_delta_prev and target_delta_next < next_target_assignment[1]:
+                source_to_target[local_idx] = (next_target_idx, target_delta_next)
+                previous_source = target_to_source[next_target_idx][0]
+                if previous_source >= 0:
+                    source_to_target[previous_source] = (-1, Timedelta(days=9999))
+                target_to_source[next_target_idx] = (local_idx, target_delta_next)
+
+        source_cam = self.left_camera if len(self.left_camera.image_list) < len(self.right_camera.image_list) else self.right_camera
+        target_cam = self.right_camera if source_cam == self.left_camera else self.left_camera
+        source_to_target = list(map(lambda idx_td: '' if idx_td[0] < 0 else target_cam.image_list[idx_td[0]],
+                                    source_to_target))
+        target_to_source = list(map(lambda idx_td: '' if idx_td[0] < 0 else source_cam.image_list[idx_td[0]],
+                                    target_to_source))
+
+        self.synchronized_photos = {source_cam: source_to_target, target_cam: target_to_source}
+        source_ = []
+        target_ = []
+        for source_dt in source_cam.measurements.loc[:, 'date_time']:
+            target_dt = self.get_reciprocal_date(source_cam, source_dt)
+            if target_dt is None:
+                continue
+            source_.append(source_dt)
+            target_.append(target_dt)
+        mapp = pd.DataFrame(data={'s': source_, 't': target_})
+        mapp.to_csv('/home/radoslav/mapp.csv')
+        print('helo')
+
+    def __eq__(self, other: Union[Tuple[Camera, Camera], 'CameraSynchronization']):
+        if isinstance(other, tuple):
+            return (other[0] == self.left_camera and other[1] == self.right_camera) or (other[0] == self.right_camera and other[1] == self.left_camera)
+        elif isinstance(other, CameraSynchronization):
+            return other.left_camera == self.left_camera and other.right_camera == self.right_camera
+        return False
+
+
+class CameraSynchronizationEncoder(json.JSONEncoder):
+
+    def default(self, o: Any) -> Any:
+        if isinstance(o, CameraSynchronization):
+            return {
+                'left': o.left_camera.id,
+                'right': o.right_camera.id,
+                'left_timestamp': str(o.left_timestamp),
+                'right_timestamp': str(o.right_timestamp),
+                'synchronized_photos': {cam.id: image_names for cam, image_names in o.synchronized_photos.items()}
+            }
+        return json.JSONEncoder.default(self, o)
 
 
 class Dataset(QObject):
@@ -71,7 +278,7 @@ class Dataset(QObject):
     camera_added = Signal(Camera)
     camera_removed = Signal(Camera)
     camera_sticks_detected = Signal(Camera)
-    cameras_linked = Signal([Camera, Camera])
+    cameras_linked = Signal([Camera, Camera, CameraSynchronization])
     cameras_unlinked = Signal([Camera, Camera])
     stick_removed = Signal([Stick])
     stick_created = Signal([Stick])
@@ -100,7 +307,8 @@ class Dataset(QObject):
         self.next_camera_id = 0
         self.next_stick_id = 0
         #self.linked_cameras: Set[Tuple[int, int]] = set() #, int]] = set()
-        self.linked_cameras: List[Dict[str, Camera]] = []
+        #self.linked_cameras: List[Dict[str, Camera]] = []
+        self.linked_cameras: List[CameraSynchronization] = []
         self.unused_stick_ids: List[int] = []
         self.required_state_fields = set(self.get_state().keys())
         #self.camera_groups: Dict[int, List[Camera]] = {}
@@ -164,10 +372,10 @@ class Dataset(QObject):
 
         del self.cameras_ids[str(camera.folder)]
 
-        camera_links = list(filter(lambda link: link['left'] == camera or link['right'] == camera, self.linked_cameras))
+        camera_links = list(filter(lambda link: link.left_camera == camera or link.right_camera == camera, self.linked_cameras))
 
         for link in camera_links:
-            other_cam_id = link['left'] if link['right'] == camera.id else link['left']
+            other_cam_id = link.left_camera if link.right_camera == camera.id else link.left_camera
             camera2 = next(filter(lambda cam: cam.id == other_cam_id, self.cameras))
             self.unlink_cameras(camera, camera2)
 
@@ -192,7 +400,7 @@ class Dataset(QObject):
                 #for camera in self.cameras:
                 #    camera.save()
                 state = self.get_state()
-                json.dump(state, output_file, indent=1)
+                json.dump(state, output_file, indent=1, cls=CameraSynchronizationEncoder)
         except OSError as err:
             print(f"Could not open {self.path} for writing: {err.strerror}")
             return False
@@ -239,12 +447,36 @@ class Dataset(QObject):
                     return False
 
             self.loading_finished.emit()
-            for link in linked_cameras:
-                left_cam_id = link['left']
-                right_cam_id = link['right']
+            #for link in linked_cameras:
+            #    left_cam_id = link['left']
+            #    right_cam_id = link['right']
+            #    left_cam = self.get_camera(left_cam_id)
+            #    right_cam = self.get_camera(right_cam_id)
+            #    self.link_cameras(left_cam, right_cam)
+
+            for sync in linked_cameras:
+                sync_photos = sync['synchronized_photos']
+
+                left_cam_id = sync['left']
                 left_cam = self.get_camera(left_cam_id)
+                left_timestamp = pd.Timestamp(sync['left_timestamp'])
+                left_to_right_photos = sync_photos[str(left_cam_id)]
+
+                right_cam_id = sync['right']
                 right_cam = self.get_camera(right_cam_id)
-                self.link_cameras(left_cam, right_cam)
+                right_timestamp = pd.Timestamp(sync['right_timestamp'])
+                right_to_left_photos = sync_photos[str(right_cam_id)]
+
+                camera_sync = CameraSynchronization(left_cam, right_cam, left_ts=left_timestamp,
+                                                    right_ts=right_timestamp)
+                camera_sync.left_camera = left_cam
+                camera_sync.left_timestamp = left_timestamp
+                camera_sync.right_camera = right_cam
+                camera_sync.right_timestamp = right_timestamp
+                camera_sync.synchronized_photos = {left_cam: left_to_right_photos,
+                                                   right_cam: right_to_left_photos}
+                self.linked_cameras.append(camera_sync)
+                self.cameras_linked.emit(left_cam, right_cam, camera_sync)
 
             for stick_views in stick_views_map:
                 stick1 = self.get_stick_by_id(stick_views[0])
@@ -287,16 +519,28 @@ class Dataset(QObject):
         #else:
         #    print(f'Reached maximum number of linked cameras')
         #self.linked_cameras.add((cam1.id, cam2.id)) #, camera_group))
-        self.linked_cameras.append({'left': cam1, 'right': cam2})
+        #self.linked_cameras.append({'left': cam1, 'right': cam2})
         # synchronize cameras' timestamps
         synchronized_timestamps = self.find_closest_datetimes(cam1, cam2)
+        synchronization = CameraSynchronization(left_cam=cam1, right_cam=cam2,
+                                                left_ts=synchronized_timestamps[cam1],
+                                                right_ts=synchronized_timestamps[cam2])
+        #synchronization.left_camera = cam1
+        #synchronization.right_camera = cam2
+        #synchronization.left_timestamp = synchronized_timestamps[synchronization.left_camera]
+        #synchronization.right_timestamp = synchronized_timestamps[synchronization.right_camera]
+        self.linked_cameras.append(synchronization)
+        #self.synchronize_cameras(synchronization)
+        synchronization.synchronize()
         print(f'synchronized cameras: {cam1.folder.name} - {synchronized_timestamps[cam1]} <-> {cam2.folder.name} - {synchronized_timestamps[cam2]}')
 
-        self.cameras_linked.emit(cam1, cam2) #, camera_group)
+        self.cameras_linked.emit(cam1, cam2, synchronization) #, camera_group)
     
     def unlink_cameras(self, cam1: Camera, cam2: Camera):
         link1 = (cam1.id, cam2.id)
         link2 = (cam2.id, cam1.id)
+        link1 = (cam1, cam2)
+        link2 = (cam2, cam1)
         #link = list(filter(lambda _link: _link == link1 or _link == link2, self.linked_cameras))[0]
         #self.available_link_groups.append(link[2])
         #self.available_link_groups.sort()
@@ -465,7 +709,8 @@ class Dataset(QObject):
             #'camera_folders': list(map(lambda path: str(path), self.camera_folders)),
             #'cameras_ids': self.cameras_ids,
             'cameras_ids': self.make_camera_paths_relative(),
-            'linked_cameras': list(map(lambda link: {k: v.id for k, v in link.items()}, self.linked_cameras)),
+            'linked_cameras': self.linked_cameras,
+            #'linked_cameras': list(map(lambda link: {k: v.id for k, v in link.items()}, self.linked_cameras)),
             'stick_views_map': stick_views_list,
             'unused_stick_ids': self.unused_stick_ids,
             'stick_local_to_global_ids': self.stick_local_to_global_ids,
@@ -544,3 +789,7 @@ class Dataset(QObject):
         if smallest_delta2 < smallest_delta1:
             return {cam1: closest_timestamp_cam1, cam2: cam2_ts}
         return {cam1: cam1_ts, cam2: closest_timestamp_cam2}
+
+    def synchronize_cameras(self, sync: CameraSynchronization):
+        pass
+

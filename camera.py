@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 import cv2 as cv
 from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtWidgets import QMessageBox
 import exifread
 
 from stick import Stick
@@ -16,10 +17,11 @@ from stick import Stick
 import json
 
 PD_DATE = 0
-PD_IMAGE_NAME = 1
-PD_IMAGE_STATE = 2
-PD_IMAGE_QUALITY = 3
-PD_IS_DAY = 4
+PD_ORIG_DATE = 1
+PD_IMAGE_NAME = 2
+PD_IMAGE_STATE = 3
+PD_IMAGE_QUALITY = 4
+PD_IS_DAY = 5
 
 PD_DAY = 1
 PD_SNOW = 2
@@ -78,6 +80,7 @@ class Camera(QObject):
     sticks_added = pyqtSignal(['PyQt_PyObject', 'PyQt_PyObject'])
     sticks_removed = pyqtSignal('PyQt_PyObject')
     stick_changed = pyqtSignal(Stick)
+    non_increasingness = pyqtSignal('PyQt_PyObject')
 
     def __init__(self, folder: Path, _id: int = -1, measurements_path: Optional[Path] = None):
         super(Camera, self).__init__()
@@ -152,7 +155,7 @@ class Camera(QObject):
                 else:
                     measurements = measurements.set_index(keys=['date_time'], drop=False)
                     if measurements.shape[0] > 0:
-                        last_photo = measurements.iloc[-1][1]
+                        last_photo = measurements.iloc[-1][PD_IMAGE_NAME]
                         self.next_photo_id = self.image_list.index(last_photo) + 1
                         self.next_photo = self.image_list[self.next_photo_id] if self.next_photo_id < len(
                             self.image_list) else None
@@ -530,14 +533,58 @@ class Camera(QObject):
             self.measurements['date_time'] = timestamps
         else:
             self.measurements.insert(0, 'date_time', timestamps)
+        self.measurements.insert(1, 'orig_date_time', timestamps)
         self.measurements = self.measurements.set_index('date_time', drop=False)
         self.timestamps_available = True
+        self.check_for_temporal_monotonicity()
         self.save_measurements()
         print('isnerted')
 
     def skipped_image(self, img: str):
         img_id = self.image_names_ids[img]
         self.measurements.iat[img_id, PD_IMAGE_STATE] = PhotoState.Skipped
+
+    def check_for_temporal_monotonicity(self):
+        if not self.measurements['date_time'].is_monotonic:
+            diff = self.measurements['date_time'].diff()
+            problem_id = diff.argmin()
+            last_correct_img = self.image_list[problem_id - 1]
+            last_correct_date = self.measurements['date_time'].iloc[problem_id - 1]
+            problem_img = self.image_list[problem_id]
+            problem_date = self.measurements['date_time'].iloc[problem_id]
+            proposed_date = last_correct_date + (
+                    self.measurements['date_time'].iloc[problem_id - 1] - self.measurements['date_time'].iloc[problem_id - 2])
+            self.non_increasingness.emit((last_correct_img, last_correct_date, problem_img, problem_date, proposed_date))
+            #msg = QMessageBox()
+            #msg.setIcon(QMessageBox.Warning)
+            #msg.setWindowTitle(f'Camera {self.folder.name} - Temporal inconsistency')
+            #msg.setText('The sequence of images in the camera is not temporally monotonically increasing.')
+            ##msg.setInformativeText(f'The image {last_correct_img} has timestamp {str(last_correct_date)} while {problem_img} has timestamp {str(problem_date)}\nDo you want to set the timestamp for the image {problem_img} to {str(proposed_date)} and adjust all subsequent images accordingly?')
+            #msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            #ret = msg.exec()
+            #if ret == QMessageBox.Yes:
+            #    print('')
+        else:
+            self.save_measurements()
+
+    def repair_timestamps(self):
+        diff = self.measurements['date_time'].diff()
+        problem_id = diff.argmin()
+        last_correct_img = self.image_list[problem_id - 1]
+        last_correct_date = self.measurements['date_time'].iloc[problem_id - 1]
+        problem_img = self.image_list[problem_id]
+        problem_date = self.measurements['date_time'].iloc[problem_id]
+        proposed_date = last_correct_date + (
+                self.measurements['date_time'].iloc[problem_id - 1] - self.measurements['date_time'].iloc[
+            problem_id - 2])
+
+        self.measurements.iat[problem_id, PD_DATE] = proposed_date
+        offsets = self.measurements['orig_date_time'].iloc[problem_id:].diff()[1:]
+        indices = self.measurements.index[problem_id+1:]
+        # self.measurements['date_time'].iloc[problem_id+1:] = offsets.cumsum().add(proposed_date)
+        #self.measurements.iat[problem_id + 1:, PD_DATE] = offsets.cumsum().add(proposed_date)
+        self.measurements.loc[indices, 'date_time'] = offsets.cumsum().add(proposed_date)
+        self.check_for_temporal_monotonicity()
 
     def __hash__(self):
         return self.folder.__hash__()
