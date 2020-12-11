@@ -3,18 +3,18 @@ from typing import Callable, List, Optional, Dict
 
 import PyQt5
 from PyQt5.QtCore import QByteArray, QLine, QMarginsF, QPoint, pyqtSignal, QPointF, Qt, QTimer, QTimerEvent, QThread, \
-    QThreadPool, QRunnable, pyqtProperty, QPropertyAnimation, QEasingCurve, QAbstractAnimation
-from PyQt5.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap
+    QThreadPool, QRunnable, pyqtProperty, QPropertyAnimation, QEasingCurve, QAbstractAnimation, QRectF
+from PyQt5.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap, QStaticText
 from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsPixmapItem,
                              QGraphicsRectItem, QGraphicsSceneHoverEvent,
                              QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem,
-                             QWidget, QGraphicsObject)
+                             QWidget, QGraphicsObject, QStyleOptionGraphicsItem, QGraphicsBlurEffect)
 import numpy as np
 
 from camera import Camera
 from camera_processing.widgets.stick_length_input import TextInputWidget
 from camera_processing.widgets.stick_widget import StickWidget, StickMode
-from camera_processing.widgets.button import Button
+from camera_processing.widgets.button import Button, ButtonColor
 from dataset import Dataset
 from stick import Stick
 
@@ -31,6 +31,134 @@ class Timer(QRunnable):
         self.func()
 
 
+class ControlWidget(QGraphicsObject):
+
+    def __init__(self, parent: Optional[QGraphicsItem] = None):
+        QGraphicsObject.__init__(self, parent)
+        self.mode = 'view' # 'sync'
+        self.widget_width: int = 0
+        self.title_btn = Button('btn_title', '', parent=self)
+        self.title_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+        self.title_btn.setZValue(5)
+        self.title_btn.setVisible(True)
+
+
+        self.first_photo_btn = Button('btn_first_photo', 'First photo', parent=self)
+        self.first_photo_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+        self.prev_photo_btn = Button('btn_prev_photo', '<', parent=self)
+        self.prev_photo_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+        self.enter_photo_num_btn = Button('btn_enter_photo_num', 'Manual', parent=self)
+        self.enter_photo_num_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+        self.enter_photo_num_btn.set_is_check_button(True)
+        self.enter_photo_num_btn.setVisible(False)
+
+        self.accept_btn = Button('btn_accept_sync', 'Confirm', parent=self)
+        self.accept_btn.set_base_color([ButtonColor.GREEN])
+        self.cancel_btn = Button('btn_cancel_sync', 'Cancel', parent=self)
+        self.cancel_btn.set_base_color([ButtonColor.RED])
+
+        self.next_photo_btn = Button('btn_next_photo', '>', parent=self)
+        self.next_photo_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+        self.synchronize_btn = Button('btn_synchronize', 'Synchronize', parent=self)
+        self.synchronize_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+
+        self.sync_mode_btns = [self.prev_photo_btn, self.accept_btn, self.first_photo_btn, self.cancel_btn,
+                               self.next_photo_btn]
+        self.view_mode_btns = [self.prev_photo_btn, self.title_btn, self.synchronize_btn, self.next_photo_btn]
+
+        for btn in self.sync_mode_btns:
+            btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+        for btn in self.view_mode_btns:
+            btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+
+        self.set_font_height(12)
+
+        self._layout()
+
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: Optional[QWidget] = ...) -> None:
+        pass
+
+    def boundingRect(self) -> QRectF:
+        return QRectF(self.first_photo_btn.boundingRect().topLeft(),
+                      self.synchronize_btn.pos() + self.synchronize_btn.boundingRect().bottomRight())
+
+    def _layout(self):
+        if self.mode == 'sync':
+            btns = self.sync_mode_btns
+        else:
+            btns = self.view_mode_btns
+
+        for i, btn in enumerate(btns):
+            if i == 0:
+                btn.setPos(0, 0)
+                continue
+            prev_btn = btns[i-1]
+            btn.setPos(prev_btn.pos().x() + prev_btn.boundingRect().width(), 0)
+
+    def set_widget_height(self, height: int):
+        for btn in self.sync_mode_btns:
+            btn.set_button_height(height)
+        for btn in self.view_mode_btns:
+            btn.set_button_height(height)
+        self._layout()
+
+    def set_font_height(self, height: int):
+        for btn in self.sync_mode_btns:
+            btn.set_height(height)
+            btn.fit_to_contents()
+        for btn in self.view_mode_btns:
+            btn.set_height(height)
+            btn.fit_to_contents()
+        self._layout()
+
+    def set_widget_width(self, width: int):
+        self.widget_width = width
+        btns = self.sync_mode_btns if self.mode == 'sync' else self.view_mode_btns
+        units_per_character = width / sum(map(lambda btn: len(btn.label.text()), btns))
+
+        for btn in btns:
+            btn.set_width(int(round(len(btn.label.text()) * units_per_character)))
+
+        self._layout()
+
+    def set_mode(self, mode: str):
+        self.mode = mode
+        if self.mode == 'sync':
+            for btn in self.view_mode_btns:
+                btn.setVisible(False)
+            for btn in self.sync_mode_btns:
+                btn.setVisible(True)
+        else:
+            for btn in self.sync_mode_btns:
+                btn.setVisible(False)
+            for btn in self.view_mode_btns:
+                btn.setVisible(True)
+        self.set_widget_width(self.widget_width)
+
+    def disable_widget(self):
+        for btn in self.sync_mode_btns:
+            btn.set_disabled(True)
+        for btn in self.view_mode_btns:
+            btn.set_disabled(True)
+
+    def enable_widget(self):
+        for btn in self.sync_mode_btns:
+            btn.set_disabled(False)
+        for btn in self.view_mode_btns:
+            btn.set_disabled(False)
+
+    def show_sync_button(self, show: bool):
+        if show:
+            if self.synchronize_btn not in self.view_mode_btns:
+                self.view_mode_btns.insert(2, self.synchronize_btn)
+        else:
+            if self.synchronize_btn in self.view_mode_btns:
+                self.view_mode_btns.remove(self.synchronize_btn)
+        self.synchronize_btn.setVisible(show)
+        if self.mode == 'view':
+            self._layout()
+
+
 class CameraView(QGraphicsObject):
 
     font: QFont = QFont("monospace", 16)
@@ -38,6 +166,12 @@ class CameraView(QGraphicsObject):
     stick_context_menu = pyqtSignal('PyQt_PyObject', 'PyQt_PyObject')
     stick_widgets_out_of_sync = pyqtSignal('PyQt_PyObject')
     visibility_toggled = pyqtSignal()
+    synchronize_clicked = pyqtSignal('PyQt_PyObject')
+    previous_photo_clicked = pyqtSignal('PyQt_PyObject')
+    next_photo_clicked = pyqtSignal('PyQt_PyObject')
+    sync_confirm_clicked = pyqtSignal('PyQt_PyObject')
+    sync_cancel_clicked = pyqtSignal('PyQt_PyObject')
+    first_photo_clicked = pyqtSignal('PyQt_PyObject')
 
     def __init__(self, scale: float, parent: Optional[QGraphicsItem] = None):
         QGraphicsObject.__init__(self, parent)
@@ -77,17 +211,45 @@ class CameraView(QGraphicsObject):
         self.highlight_animation.valueChanged.connect(self.handle_highlight_color_changed)
         self.highlight_rect = QGraphicsRectItem(self)
         self.highlight_rect.setZValue(4)
+        self.highlight_rect.setPen(QPen(QColor(0, 0, 0, 0)))
         self.title_btn = Button('btn_title', '', parent=self)
         self.title_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
         self.title_btn.setZValue(5)
+        self.title_btn.setVisible(False)
 
         self.sticks_without_width: List[Stick] = []
         self.current_image_name: str = ''
+        self.control_widget = ControlWidget(parent=self)
+        self.control_widget.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+        self.control_widget.setVisible(True)
+        self._connect_control_buttons()
+        self.image_available = True
+        self.blur_eff = QGraphicsBlurEffect()
+        self.blur_eff.setBlurRadius(5.0)
+        self.blur_eff.setEnabled(False)
+        self.pixmap.setGraphicsEffect(self.blur_eff)
+        self.not_available_text = QGraphicsSimpleTextItem('not available', parent=self)
+        font = self.title_btn.font
+        font.setPointSize(48)
+        self.not_available_text.setFont(font)
+        self.not_available_text.setBrush(QBrush(QColor(200, 200, 200, 200)))
+        self.not_available_text.setPen(QPen(QColor(0, 0, 0, 200), 2.0))
+        self.not_available_text.setVisible(False)
+        self.not_available_text.setZValue(6)
+
+    def _connect_control_buttons(self):
+        self.control_widget.synchronize_btn.clicked.connect(lambda: self.synchronize_clicked.emit(self))
+        self.control_widget.prev_photo_btn.clicked.connect(lambda: self.previous_photo_clicked.emit(self))
+        self.control_widget.next_photo_btn.clicked.connect(lambda: self.next_photo_clicked.emit(self))
+        self.control_widget.accept_btn.clicked.connect(lambda: self.sync_confirm_clicked.emit(self))
+        self.control_widget.cancel_btn.clicked.connect(lambda: self.sync_cancel_clicked.emit(self))
+        self.control_widget.first_photo_btn.clicked.connect(lambda: self.first_photo_clicked.emit(self))
 
     def paint(self, painter: QPainter, option: PyQt5.QtWidgets.QStyleOptionGraphicsItem, widget: QWidget):
         if self.pixmap.pixmap().isNull():
             return
         painter.setRenderHint(QPainter.Antialiasing, True)
+
 
         if self.show_stick_widgets:
             brush = QBrush(QColor(255, 255, 255, 100))
@@ -97,7 +259,7 @@ class CameraView(QGraphicsObject):
             pen = QPen(QColor(0, 125, 200, 255))
             pen.setWidth(4)
             painter.setPen(pen)
-            painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(4, 4, 4, 4)))
+            #painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(4, 4, 4, 4)))
 
     def boundingRect(self) -> PyQt5.QtCore.QRectF:
         return self.pixmap.boundingRect().united(self.title_btn.boundingRect().translated(self.title_btn.pos()))
@@ -118,6 +280,7 @@ class CameraView(QGraphicsObject):
         self.title_btn.fit_to_contents()
         self.title_btn.set_width(int(self.boundingRect().width()))
         self.title_btn.setPos(0, self.boundingRect().height())
+        self.control_widget.title_btn.set_label(self.camera.folder.name)
         #self.stick_length_btn.setVisible(True)
         #self.stick_length_lbl.setVisible(True)
         self.camera.stick_added.connect(self.handle_stick_created)
@@ -126,9 +289,27 @@ class CameraView(QGraphicsObject):
         self.camera.sticks_removed.connect(self.handle_sticks_removed)
         self.camera.stick_changed.connect(self.handle_stick_changed)
 
+        self.control_widget.set_font_height(32)
+        self.control_widget.set_widget_height(self.title_btn.boundingRect().height())
+        self.control_widget.set_widget_width(int(self.boundingRect().width()))
+        self.control_widget.setPos(0, self.pixmap.boundingRect().height()) #self.boundingRect().height())
+        self.control_widget.set_mode('view')
         self.update_stick_widgets()
 
-    def set_image(self, img: np.ndarray, image_name: str):
+    def set_image(self, img: Optional[np.ndarray] = None, image_name: Optional[str] = None):
+        if img is None:
+            self.not_available_text.setPos(self.pixmap.boundingRect().center() - QPointF(
+                0.5 * self.not_available_text.boundingRect().width(),
+                0.5 * self.not_available_text.boundingRect().height()
+            ))
+            self.not_available_text.setVisible(True)
+            self.image_available = False
+            self.blur_eff.setEnabled(True)
+            self.update()
+            return
+        self.not_available_text.setVisible(False)
+        self.image_available = True
+        self.blur_eff.setEnabled(False)
         self.prepareGeometryChange()
         barray = QByteArray(img.tobytes())
         image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
@@ -279,6 +460,7 @@ class CameraView(QGraphicsObject):
             return
         sw = next(filter(lambda _sw: _sw.stick.id == stick.id, self.stick_widgets))
         sw.adjust_line()
+        sw.update_tooltip()
         #self.stick_length_btn.set_label(str(stick.length_cm) + " cm")
         #self.stick_length_btn.fit_to_contents()
         #self.layout_title_area()

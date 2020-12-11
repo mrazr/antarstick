@@ -15,7 +15,7 @@ from PyQt5.QtCore import (QMarginsF, QModelIndex, QPointF, QRectF, Qt,
                           pyqtSignal, QByteArray, QRect)
 from PyQt5.QtCore import pyqtSlot as Slot, QTimer, QMutex
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QBrush, QColor, QFont, QPen
-from PyQt5.QtWidgets import QGraphicsScene, QGraphicsItem, QSizePolicy, QAbstractScrollArea
+from PyQt5.QtWidgets import QGraphicsScene, QGraphicsItem, QSizePolicy, QAbstractScrollArea, QMessageBox
 import matplotlib.pyplot as plt
 import skimage.filters as fil
 import pandas as pd
@@ -33,7 +33,7 @@ from camera_processing.widgets.split_view import SplitView
 from camera_processing.widgets.stick_length_input import TextInputWidget
 from camera_processing.widgets.stick_link_manager import StickLinkManager, CameraToCameraStickLinkingStrategy, MovedSticksLinkingStrategy
 from camera_processing.widgets.stick_widget import StickMode, StickWidget
-from dataset import Dataset
+from dataset import Dataset, CameraSynchronization
 from image_list_model import ImageListModel
 from stick import Stick
 from stick_detection_dialog import StickDetectionDialog
@@ -121,6 +121,9 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.camera_view.stick_context_menu.connect(self.handle_stick_widget_context_menu)
         self.camera_view.setAcceptHoverEvents(False)
         self.camera_view.setZValue(3)
+        self.camera_view.control_widget.show_sync_button(False)
+        self.camera_view.next_photo_clicked.connect(self.handle_next_photo_clicked)
+        self.camera_view.previous_photo_clicked.connect(self.handle_previous_photo_clicked)
 
         self.graphics_scene.addItem(self.camera_view)
 
@@ -217,6 +220,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.rem_photos = []
         self.s_sticks = []
         self.overlay_gui.use_single_proc.connect(self.handle_use_single)
+        self.sync: Dict[LinkMenuPosition, CameraSynchronization] = {}
 
     def _setup_buttons(self):
         self.left_add_button.set_label('Link camera', direction='vertical')
@@ -266,6 +270,7 @@ class CameraViewWidget(QtWidgets.QWidget):
                                                  self.overlay_gui.enable_confirm_sticks_button(True))
         self.camera.sticks_removed.connect(self.handle_stick_removed)
         self.camera.stick_removed.connect(self.handle_stick_removed)
+        self.camera.non_increasingness.connect(self.handle_camera_temporal_non_increasigness_found)
         if self.camera.rep_image is None:
             half = (int(round(0.5 * self.camera.standard_image_size[0])),
                     int(round(0.5 * self.camera.standard_image_size[1])))
@@ -379,11 +384,46 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.camera_view.set_image(self.current_viewed_image, image_path.name)
         self.current_sticks = self.camera.get_sticks_in_image(image_path.name)
 
+        if self.left_side_camera_state == SideCameraState.Shown:
+            if self.left_link.control_widget.mode != 'sync':
+                sync = self.sync[LinkMenuPosition.LEFT]
+                left_cam = sync.left_camera
+                reciprocal_image = sync.get_reciprocal_image_by_name(self.camera, image_path.name)
+                if reciprocal_image is not None:
+                    reciprocal_image = reciprocal_image[0]
+                    rec_img = cv.imread(str(left_cam.folder / reciprocal_image))
+                    rec_img = self.standardized_image(rec_img)
+                    self.left_link.set_image(rec_img, reciprocal_image)
+                else:
+                    self.left_link.set_image(None)
+
+        if self.right_side_camera_state == SideCameraState.Shown:
+            if self.right_link.control_widget.mode != 'sync':
+                sync = self.sync[LinkMenuPosition.RIGHT]
+                right_cam = sync.right_camera
+                reciprocal_image = sync.get_reciprocal_image_by_name(self.camera, image_path.name)
+                if reciprocal_image is not None:
+                    reciprocal_image = reciprocal_image[0]
+                    rec_img = cv.imread(str(right_cam.folder / reciprocal_image))
+                    rec_img = self.standardized_image(rec_img)
+                    self.right_link.set_image(rec_img, reciprocal_image)
+                else:
+                    self.right_link.set_image(None)
+
         for sw in self.camera_view.stick_widgets:
             for st in self.current_sticks:
                 if st.label == sw.stick.label:
                     sw.set_stick(st)
         #TODO synchronize linked camera views
+
+    def standardized_image(self, img: np.ndarray, camera: Optional[Camera] = None) -> np.ndarray:
+        if camera is None:
+            camera = self.camera
+        half = (int(round(0.5 * camera.standard_image_size[0])),
+                int(round(0.5 * camera.standard_image_size[1])))
+        if img.shape == camera.standard_image_size:
+            return cv.pyrDown(img)
+        return cv.resize(img, dsize=half, interpolation=cv.INTER_LINEAR)
 
     @Slot()
     def handle_edit_sticks_clicked(self):
@@ -470,13 +510,20 @@ class CameraViewWidget(QtWidgets.QWidget):
     def _destroy(self):
         self.graphics_scene.removeItem(self.stick_link_manager)
 
-    def handle_cameras_linked(self, cam1: Camera, cam2: Camera):
+    def handle_cameras_linked(self, cam1: Camera, cam2: Camera, sync: CameraSynchronization):
         if cam1.id != self.camera.id and cam2.id != self.camera.id:
             return
         other_camera_view = CameraView(self.scaling)
         other_camera_view.stick_context_menu.connect(self.handle_stick_widget_context_menu)
         self.graphics_scene.addItem(other_camera_view)
         other_camera_view.setAcceptHoverEvents(False)
+
+        other_camera_view.synchronize_clicked.connect(self.handle_synchronize_clicked)
+        other_camera_view.previous_photo_clicked.connect(self.handle_previous_photo_clicked)
+        other_camera_view.next_photo_clicked.connect(self.handle_next_photo_clicked)
+        other_camera_view.sync_cancel_clicked.connect(self.handle_sync_cancel_clicked)
+        other_camera_view.sync_confirm_clicked.connect(self.handle_sync_confirm_clicked)
+        other_camera_view.first_photo_clicked.connect(self.handle_first_photo_clicked)
 
         other_camera_view.set_display_mode()
         other_camera_view.set_show_stick_widgets(True)
@@ -504,6 +551,7 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.left_link = other_camera_view
             self.left_link.setZValue(3)
             self.set_side_camera_state(SideCameraState.Shown, LinkMenuPosition.LEFT)
+            self.sync[LinkMenuPosition.LEFT] = sync
         else:
             pos = self.right_add_button.scenePos() + QPointF(self.right_add_button.boundingRect().width(), 0)
             if self.right_link is not None:
@@ -511,6 +559,7 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.right_link = other_camera_view
             self.right_link.setZValue(3)
             self.set_side_camera_state(SideCameraState.Shown, LinkMenuPosition.RIGHT)
+            self.sync[LinkMenuPosition.RIGHT] = sync
 
         other_camera_view.setPos(pos)
         other_camera_view.stick_link_requested.connect(self.stick_link_manager_strat.handle_stick_widget_link_requested)
@@ -1124,3 +1173,137 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.camera.insert_timestamps(timestamps)
         if len(self.camera.sticks) > 0:
             self.overlay_gui.enable_confirm_sticks_button(True)
+
+    def handle_synchronize_clicked(self, cam_view: CameraView):
+        cam_view.control_widget.set_mode('sync')
+        if self.right_link != cam_view and self.right_link is not None:
+            self.right_link.control_widget.disable_widget()
+        elif self.left_link != cam_view and self.left_link is not None:
+            self.left_link.control_widget.disable_widget()
+        if self.left_link == cam_view:
+            self.left_add_button.set_disabled(True)
+            self.left_show_button.set_disabled(True)
+        else:
+            self.right_add_button.set_disabled(True)
+            self.right_show_button.set_disabled(True)
+
+
+    def handle_previous_photo_clicked(self, cam_view: CameraView):
+        if cam_view.control_widget.mode == 'sync':
+            curr_photo = cam_view.current_image_name
+            prev_photo_id = cam_view.camera.image_names_ids[curr_photo] - 1
+            if prev_photo_id >= len(cam_view.camera.image_list):
+                return
+            prev_photo = cam_view.camera.image_list[prev_photo_id]
+            self.display_image(prev_photo, cam_view)
+        else:
+            if cam_view == self.right_link:
+                image = self.sync[LinkMenuPosition.RIGHT].get_reciprocal_image_by_name(cam_view.camera,
+                                                                                       cam_view.current_image_name)
+            elif cam_view == self.left_link:
+                image = self.sync[LinkMenuPosition.LEFT].get_reciprocal_image_by_name(cam_view.camera,
+                                                                                      cam_view.current_image_name)
+            else:
+                image = (self.camera_view.current_image_name, None)
+            if image is None:
+                self.display_image(cam_view.current_image_name, cam_view)
+            else:
+                image_id = self.camera.image_names_ids[image[0]] - 1
+                if image_id >= 0:
+                    index = self.image_list.index(image_id, 0)
+                    self.ui.image_list.setCurrentIndex(index)
+
+    def handle_next_photo_clicked(self, cam_view: CameraView):
+        if cam_view.control_widget.mode == 'sync':
+            curr_photo = cam_view.current_image_name
+            next_photo_id = cam_view.camera.image_names_ids[curr_photo] + 1
+            if next_photo_id >= len(cam_view.camera.image_list):
+                return
+            next_photo = cam_view.camera.image_list[next_photo_id]
+            self.display_image(next_photo, cam_view)
+        else:
+            if cam_view == self.right_link:
+                image = self.sync[LinkMenuPosition.RIGHT].get_reciprocal_image_by_name(cam_view.camera,
+                                                                                       cam_view.current_image_name)
+            elif cam_view == self.left_link:
+                image = self.sync[LinkMenuPosition.LEFT].get_reciprocal_image_by_name(cam_view.camera,
+                                                                                       cam_view.current_image_name)
+            else:
+                image = (self.camera_view.current_image_name, None)
+            if image is None:
+                self.display_image(cam_view.current_image_name, cam_view)
+            else:
+                image_id = self.camera.image_names_ids[image[0]] + 1
+                if image_id < len(self.camera.image_list):
+                    index = self.image_list.index(image_id, 0)
+                    self.ui.image_list.setCurrentIndex(index)
+
+    def display_image(self, img_name: str, cam_view: CameraView):
+        img = cv.imread(str(cam_view.camera.folder / img_name))
+        img = self.standardized_image(img, cam_view.camera)
+        cam_view.set_image(img, img_name)
+
+    def handle_sync_confirm_clicked(self, cam_view: CameraView):
+        img_id = self.camera.image_names_ids[self.camera_view.current_image_name]
+        this_dt = self.camera.measurements.iloc[img_id]['date_time']
+        if cam_view == self.left_link:
+            other_id = self.left_link.camera.image_names_ids[self.left_link.current_image_name]
+            other_dt = self.left_link.camera.measurements.iloc[other_id]['date_time']
+            print(f'trying to sync {str(this_dt)} to {str(other_dt)}')
+            self.sync[LinkMenuPosition.LEFT].synchronize(other_dt, this_dt)
+        else:
+            other_id = self.right_link.camera.image_names_ids[self.right_link.current_image_name]
+            other_dt = self.right_link.camera.measurements.iloc[other_id]['date_time']
+            print(f'trying to sync {str(this_dt)} to {str(other_dt)}')
+            self.sync[LinkMenuPosition.RIGHT].synchronize(this_dt, other_dt)
+        cam_view.control_widget.set_mode('view')
+
+        self.left_add_button.set_disabled(False)
+        self.left_show_button.set_disabled(False)
+        self.right_add_button.set_disabled(False)
+        self.right_show_button.set_disabled(False)
+
+    def handle_sync_cancel_clicked(self, cam_view: CameraView):
+        if cam_view == self.left_link:
+            rec_image_name = self.sync[LinkMenuPosition.LEFT].get_reciprocal_image_by_name(self.camera,
+                self.camera_view.current_image_name)
+        else:
+            rec_image_name = self.sync[LinkMenuPosition.RIGHT].get_reciprocal_image_by_name(self.camera,
+                self.camera_view.current_image_name)
+        if rec_image_name is not None:
+            rec_image_name = rec_image_name[0]
+            self.display_image(rec_image_name, cam_view)
+        if self.right_link is not None:
+            self.right_link.control_widget.enable_widget()
+            self.right_link.control_widget.set_mode('view')
+        if self.left_link is not None:
+            self.left_link.control_widget.enable_widget()
+            self.left_link.control_widget.set_mode('view')
+        self.left_add_button.set_disabled(False)
+        self.left_show_button.set_disabled(False)
+        self.right_add_button.set_disabled(False)
+        self.right_show_button.set_disabled(False)
+
+    def handle_camera_temporal_non_increasigness_found(self, point: Tuple[str, pd.Timestamp, str, pd.Timestamp, pd.Timestamp]):
+        last_correct_img = point[0]
+        last_correct_date = point[1]
+        problem_img = point[2]
+        problem_date = point[3]
+        proposed_date = point[4]
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle(f'Camera {self.camera.folder.name} - Temporal inconsistency')
+        msg.setText('The sequence of images in the camera is not temporally monotonically increasing.')
+        msg.setInformativeText(f'The image {last_correct_img} has timestamp {str(last_correct_date)} while {problem_img} has timestamp {str(problem_date)}\nDo you want to set the timestamp for the image {problem_img} to {str(proposed_date)} and adjust all subsequent images accordingly?')
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        ret = msg.exec()
+        if ret == QMessageBox.Yes:
+            self.camera.repair_timestamps()
+
+    def handle_first_photo_clicked(self, cam_view: CameraView):
+        if cam_view == self.camera_view:
+            index = self.image_list.index(0, 0)
+            self.ui.image_list.setCurrentIndex(index)
+        else:
+            if cam_view.control_widget.mode == 'sync':
+                self.display_image(cam_view.camera.image_list[0], cam_view)
