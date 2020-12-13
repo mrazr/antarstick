@@ -133,6 +133,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self.pause_button.setChecked(False)
 
         self.active_camera: Optional[Camera] = None
+        self.closing = False
 
     camera_link_available = Signal(bool)
     camera_added = Signal(Camera)
@@ -227,6 +228,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
     def cleanup(self):
         #if self.process is not None and self.process.is_alive():
         #    self.process.terminate()
+        self.closing = True
         if self.dataset is None:
             return
         self.dataset.save()
@@ -246,6 +248,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
     def set_dataset(self, dataset: Dataset):
         self.cleanup()
+        self.closing = False
         self.dataset = dataset
         self.dataset.camera_added.connect(self.handle_camera_added)
         self.dataset.camera_removed.connect(self.handle_camera_removed)
@@ -290,6 +293,8 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         cam_widget: CameraViewWidget = self.widget(idx)
         if cam_widget is not None and isinstance(cam_widget, CameraViewWidget):
             self.active_camera = cam_widget.camera
+            if not self.closing:
+                cam_widget.recenter_view()
 
     def handle_pause_button_toggled(self, checked: bool):
         if not checked:

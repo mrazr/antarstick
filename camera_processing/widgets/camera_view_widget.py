@@ -10,7 +10,7 @@ from typing import List, Dict, Optional, Any, Tuple
 
 import cv2 as cv
 import numpy as np
-from PyQt5 import QtWidgets
+from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtCore import (QMarginsF, QModelIndex, QPointF, QRectF, Qt,
                           pyqtSignal, QByteArray, QRect)
 from PyQt5.QtCore import pyqtSlot as Slot, QTimer, QMutex
@@ -39,10 +39,10 @@ from stick import Stick
 from stick_detection_dialog import StickDetectionDialog
 
 
-class LinkMenuPosition(IntEnum):
-    HIDDEN = 0,
-    LEFT = 1,
-    RIGHT = 2,
+class CameraSide(IntEnum):
+    Hidden = 0,
+    Left = 1,
+    Right = 2,
 
 
 class SideCameraState(IntEnum):
@@ -136,7 +136,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.right_link: Optional[CameraView] = None
 
         self.overlay_gui = OverlayGui(self.graphics_view)
-        self.overlay_gui.reset_view_requested.connect(self._recenter_view)
+        self.overlay_gui.reset_view_requested.connect(self.recenter_view)
         self.overlay_gui.edit_sticks_clicked.connect(self.handle_edit_sticks_clicked)
         self.overlay_gui.link_sticks_clicked.connect(self.handle_link_sticks_clicked)
         self.overlay_gui.delete_sticks_clicked.connect(self.handle_delete_sticks_clicked)
@@ -163,7 +163,7 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.link_menu = ButtonMenu(self.scaling, self.overlay_gui)
         self.link_menu.show_close_button(True)
-        self.link_menu_position: LinkMenuPosition = LinkMenuPosition.HIDDEN
+        self.link_menu_position: CameraSide = CameraSide.Hidden
         self.link_menu.setZValue(100)
         self.link_menu.setVisible(False)
         self.link_menu.set_layout_direction("vertical")
@@ -205,8 +205,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.right_show_button = Button(self.BTN_RIGHT_SHOW, 'Show', parent=self.camera_view)
 
         self._setup_buttons()
-        self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.LEFT)
-        self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.RIGHT)
+        self.set_side_camera_state(SideCameraState.Unavailable, CameraSide.Left)
+        self.set_side_camera_state(SideCameraState.Unavailable, CameraSide.Right)
 
         self.rect_to_view = QRectF()
         self.stick_widget_in_context: Optional[StickWidget] = None
@@ -222,7 +222,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.rem_photos = []
         self.s_sticks = []
         self.overlay_gui.use_single_proc.connect(self.handle_use_single)
-        self.sync: Dict[LinkMenuPosition, CameraSynchronization] = {}
+        self.sync: Dict[CameraSide, CameraSynchronization] = {}
 
     def _setup_buttons(self):
         self.left_add_button.set_label('Link camera', direction='vertical')
@@ -333,10 +333,10 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.process_photos_with_jobs_clicked.connect(self.handle_process_photos_clicked_mp)
         self.overlay_gui.handle_cam_view_changed()
         self.initialization_done.emit(self.camera)
-        self._recenter_view()
+        self.recenter_view()
         self.graphics_view.view_changed.emit()
         self.fix_timer.setSingleShot(True)
-        self.fix_timer.timeout.connect(lambda: self._recenter_view())
+        self.fix_timer.timeout.connect(lambda: self.recenter_view())
         self.fix_timer.setInterval(5)
         self.fix_timer.start()
 
@@ -347,15 +347,15 @@ class CameraViewWidget(QtWidgets.QWidget):
     def link_cameras_enabled(self, enabled: bool):
         if enabled:
             if self.left_side_camera_state == SideCameraState.Unavailable:
-                self.set_side_camera_state(SideCameraState.Vacant, LinkMenuPosition.LEFT)
+                self.set_side_camera_state(SideCameraState.Vacant, CameraSide.Left)
             if self.right_side_camera_state == SideCameraState.Unavailable:
-                self.set_side_camera_state(SideCameraState.Vacant, LinkMenuPosition.RIGHT)
+                self.set_side_camera_state(SideCameraState.Vacant, CameraSide.Right)
         else:
-            self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.LEFT)
-            self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.RIGHT)
+            self.set_side_camera_state(SideCameraState.Unavailable, CameraSide.Left)
+            self.set_side_camera_state(SideCameraState.Unavailable, CameraSide.Right)
         self.links_available = enabled
 
-    def _recenter_view(self):
+    def recenter_view(self):
         if self.viewed == 'camera':
             self.rect_to_view = self.camera_view.sceneBoundingRect().united(self.left_add_button.sceneBoundingRect())
             self.rect_to_view = self.rect_to_view.united(self.right_add_button.sceneBoundingRect())
@@ -388,7 +388,7 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         if self.left_side_camera_state == SideCameraState.Shown:
             if self.left_link.control_widget.mode != 'sync':
-                sync = self.sync[LinkMenuPosition.LEFT]
+                sync = self.sync[CameraSide.Left]
                 left_cam = sync.left_camera
                 reciprocal_image = sync.get_reciprocal_image_by_name(self.camera, image_path.name)
                 if reciprocal_image is not None:
@@ -401,7 +401,7 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         if self.right_side_camera_state == SideCameraState.Shown:
             if self.right_link.control_widget.mode != 'sync':
-                sync = self.sync[LinkMenuPosition.RIGHT]
+                sync = self.sync[CameraSide.Right]
                 right_cam = sync.right_camera
                 reciprocal_image = sync.get_reciprocal_image_by_name(self.camera, image_path.name)
                 if reciprocal_image is not None:
@@ -529,44 +529,44 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         other_camera_view.set_display_mode()
         other_camera_view.set_show_stick_widgets(True)
-        cam_position = LinkMenuPosition.RIGHT
+        cam_position = CameraSide.Right
 
         if self.camera.id == cam1.id:  # self.camera is on the left
             cam = cam2
         else:  # self.camera is on the right
             cam = cam1
-            cam_position = LinkMenuPosition.LEFT
+            cam_position = CameraSide.Left
 
         self.link_menu.hide_button(str(cam.folder))
         if self.link_menu.visible_buttons_count() == 0:
             if self.left_side_camera_state == SideCameraState.Vacant:
-                self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.LEFT)
+                self.set_side_camera_state(SideCameraState.Unavailable, CameraSide.Left)
             if self.right_side_camera_state == SideCameraState.Vacant:
-                self.set_side_camera_state(SideCameraState.Unavailable, LinkMenuPosition.RIGHT)
+                self.set_side_camera_state(SideCameraState.Unavailable, CameraSide.Right)
         other_camera_view.initialise_with(cam)
 
         pos: QPointF = self.camera_view.pos()
-        if cam_position == LinkMenuPosition.LEFT:
+        if cam_position == CameraSide.Left:
             pos = self.left_add_button.scenePos() - QPointF(self.camera_view.boundingRect().width(), 0)
             if self.left_link is not None:
                 self.dataset.unlink_cameras(self.camera, self.left_link.camera)
             self.left_link = other_camera_view
             self.left_link.setZValue(3)
-            self.set_side_camera_state(SideCameraState.Shown, LinkMenuPosition.LEFT)
-            self.sync[LinkMenuPosition.LEFT] = sync
+            self.set_side_camera_state(SideCameraState.Shown, CameraSide.Left)
+            self.sync[CameraSide.Left] = sync
         else:
             pos = self.right_add_button.scenePos() + QPointF(self.right_add_button.boundingRect().width(), 0)
             if self.right_link is not None:
                 self.dataset.unlink_cameras(self.camera, self.right_link.camera)
             self.right_link = other_camera_view
             self.right_link.setZValue(3)
-            self.set_side_camera_state(SideCameraState.Shown, LinkMenuPosition.RIGHT)
-            self.sync[LinkMenuPosition.RIGHT] = sync
+            self.set_side_camera_state(SideCameraState.Shown, CameraSide.Right)
+            self.sync[CameraSide.Right] = sync
 
         other_camera_view.setPos(pos)
         other_camera_view.stick_link_requested.connect(self.stick_link_manager_strat.handle_stick_widget_link_requested)
 
-        self._recenter_view()
+        self.recenter_view()
 
         self.sync_stick_link_manager()
         self.overlay_gui.enable_link_sticks_button(True)
@@ -583,39 +583,39 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.left_link.setParentItem(None)
             self.graphics_scene.removeItem(self.left_link)
             self.left_link = None
-            self.set_side_camera_state(SideCameraState.Vacant, LinkMenuPosition.LEFT)
+            self.set_side_camera_state(SideCameraState.Vacant, CameraSide.Left)
         elif self.right_link is not None and self.right_link.camera.id == to_remove.id:
             self.right_link.stick_link_requested.disconnect(self.stick_link_manager_strat.handle_stick_widget_link_requested)
             self.right_link.stick_context_menu.disconnect(self.handle_stick_widget_context_menu)
             self.right_link.setParentItem(None)
             self.graphics_scene.removeItem(self.right_link)
             self.right_link = None
-            self.set_side_camera_state(SideCameraState.Vacant, LinkMenuPosition.RIGHT)
+            self.set_side_camera_state(SideCameraState.Vacant, CameraSide.Right)
         if self.left_link is None and self.right_link is None:
             self.overlay_gui.enable_link_sticks_button(False)
 
         if self.link_menu.visible_buttons_count() > 0:
             if self.left_side_camera_state == SideCameraState.Unavailable:
-                self.set_side_camera_state(SideCameraState.Vacant, LinkMenuPosition.LEFT)
+                self.set_side_camera_state(SideCameraState.Vacant, CameraSide.Left)
             if self.right_side_camera_state == SideCameraState.Unavailable:
-                self.set_side_camera_state(SideCameraState.Vacant, LinkMenuPosition.RIGHT)
+                self.set_side_camera_state(SideCameraState.Vacant, CameraSide.Right)
 
-        self._recenter_view()
+        self.recenter_view()
 
     def handle_link_camera_button_left_clicked(self, data: Dict[str, Any]):
-        self.handle_link_camera_button_clicked(LinkMenuPosition.LEFT, data['button'].is_on())
+        self.handle_link_camera_button_clicked(CameraSide.Left, data['button'].is_on())
 
     def handle_link_camera_button_right_clicked(self, data: Dict[str, Any]):
-        self.handle_link_camera_button_clicked(LinkMenuPosition.RIGHT, data['button'].is_on())
+        self.handle_link_camera_button_clicked(CameraSide.Right, data['button'].is_on())
 
-    def handle_link_camera_button_clicked(self, button_position: LinkMenuPosition, is_pushed: bool):
+    def handle_link_camera_button_clicked(self, button_position: CameraSide, is_pushed: bool):
         if not is_pushed:
             self.dataset.unlink_cameras(self.camera,
-                                        self.left_link.camera if button_position == LinkMenuPosition.LEFT
+                                        self.left_link.camera if button_position == CameraSide.Left
                                         else self.right_link.camera)
             return
         self.link_menu.center_buttons()
-        if self.link_menu_position != LinkMenuPosition.HIDDEN:
+        if self.link_menu_position != CameraSide.Hidden:
             self.set_side_camera_state(SideCameraState.Vacant, self.link_menu_position)
 
         self.link_menu_position = button_position
@@ -678,13 +678,13 @@ class CameraViewWidget(QtWidgets.QWidget):
         btn_id = btn_dict["btn_id"]
         camera = self.dataset.get_camera(btn_id)
 
-        if self.link_menu_position == LinkMenuPosition.RIGHT:
+        if self.link_menu_position == CameraSide.Right:
             self.dataset.link_cameras(self.camera, camera)
         else:
             self.dataset.link_cameras(camera, self.camera)
 
         self.link_menu.setVisible(False)
-        self.link_menu_position = LinkMenuPosition.HIDDEN
+        self.link_menu_position = CameraSide.Hidden
         self.link_menu.reset_button_states()
 
     def handle_cam_view_rubber_band_started(self):
@@ -831,8 +831,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.graphics_scene.clear()
         self.graphics_scene.deleteLater()
 
-    def set_side_camera_state(self, state: SideCameraState, side: LinkMenuPosition):
-        if side == LinkMenuPosition.LEFT:
+    def set_side_camera_state(self, state: SideCameraState, side: CameraSide):
+        if side == CameraSide.Left:
             add_button = self.left_add_button
             show_button = self.left_show_button
             link = self.left_link
@@ -859,7 +859,7 @@ class CameraViewWidget(QtWidgets.QWidget):
             show_button.set_label('Hide', direction='vertical')
             self.stick_link_manager_strat.show_links_from_camera(link.camera)
             link.setVisible(True)
-            self._recenter_view()
+            self.recenter_view()
         elif state == SideCameraState.Hidden:
             add_button.setVisible(True)
             add_button.set_button_height(int(0.5 * self.camera_view.boundingRect().height()))
@@ -867,7 +867,7 @@ class CameraViewWidget(QtWidgets.QWidget):
             show_button.set_label('Show', direction='vertical')
             self.stick_link_manager_strat.hide_links_from_camera(link.camera)
             link.setVisible(False)
-            self._recenter_view()
+            self.recenter_view()
         elif state == SideCameraState.Adding:
             add_button.set_disabled(True)
         elif state == SideCameraState.Synchronizing:
@@ -882,17 +882,17 @@ class CameraViewWidget(QtWidgets.QWidget):
     def handle_side_show_button_clicked(self, btn_state: Dict[str, Any]):
         if btn_state['btn_id'] == 'btn_left_show':
             state = self.left_side_camera_state
-            side = LinkMenuPosition.LEFT
+            side = CameraSide.Left
         else:
             state = self.right_side_camera_state
-            side = LinkMenuPosition.RIGHT
+            side = CameraSide.Right
         state = SideCameraState.Hidden if state == SideCameraState.Shown else SideCameraState.Shown
         self.set_side_camera_state(state, side)
 
-    def show_hide_side_camera(self, side: LinkMenuPosition, state: SideCameraState):
-        link = self.left_link if side == LinkMenuPosition.LEFT else self.right_link
+    def show_hide_side_camera(self, side: CameraSide, state: SideCameraState):
+        link = self.left_link if side == CameraSide.Left else self.right_link
         link.setVisible(state == SideCameraState.Shown)
-        self._recenter_view()
+        self.recenter_view()
 
     def handle_side_button_hovered(self, btn: Dict[str, Any]):
         button = btn['button']
@@ -1062,7 +1062,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         else:
             self.camera_view.setVisible(False)
             self.split_view.setVisible(True)
-        self._recenter_view()
+        self.recenter_view()
 
     def handle_mes(self):
         gray = cv.cvtColor(self.current_viewed_image, cv.COLOR_BGR2GRAY)
@@ -1204,11 +1204,11 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.display_image(prev_photo, cam_view)
         else:
             if cam_view == self.right_link:
-                image = self.sync[LinkMenuPosition.RIGHT].get_reciprocal_image_by_name(cam_view.camera,
-                                                                                       cam_view.current_image_name)
+                image = self.sync[CameraSide.Right].get_reciprocal_image_by_name(cam_view.camera,
+                                                                                 cam_view.current_image_name)
             elif cam_view == self.left_link:
-                image = self.sync[LinkMenuPosition.LEFT].get_reciprocal_image_by_name(cam_view.camera,
-                                                                                      cam_view.current_image_name)
+                image = self.sync[CameraSide.Left].get_reciprocal_image_by_name(cam_view.camera,
+                                                                                cam_view.current_image_name)
             else:
                 image = (self.camera_view.current_image_name, None)
             if image is None:
@@ -1229,11 +1229,11 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.display_image(next_photo, cam_view)
         else:
             if cam_view == self.right_link:
-                image = self.sync[LinkMenuPosition.RIGHT].get_reciprocal_image_by_name(cam_view.camera,
-                                                                                       cam_view.current_image_name)
+                image = self.sync[CameraSide.Right].get_reciprocal_image_by_name(cam_view.camera,
+                                                                                 cam_view.current_image_name)
             elif cam_view == self.left_link:
-                image = self.sync[LinkMenuPosition.LEFT].get_reciprocal_image_by_name(cam_view.camera,
-                                                                                       cam_view.current_image_name)
+                image = self.sync[CameraSide.Left].get_reciprocal_image_by_name(cam_view.camera,
+                                                                                cam_view.current_image_name)
             else:
                 image = (self.camera_view.current_image_name, None)
             if image is None:
@@ -1257,15 +1257,15 @@ class CameraViewWidget(QtWidgets.QWidget):
             other_dt = self.left_link.camera.measurements.iloc[other_id]['date_time']
             #print(f'trying to sync {str(this_dt)} to {str(other_dt)}')
             #self.set_side_camera_state(SideCameraState.Synchronizing, LinkMenuPosition.LEFT)
-            self.sync[LinkMenuPosition.LEFT].synchronize(other_dt, this_dt)
-            sync = self.sync[LinkMenuPosition.LEFT]
+            self.sync[CameraSide.Left].synchronize(other_dt, this_dt)
+            sync = self.sync[CameraSide.Left]
         else:
             other_id = self.right_link.camera.image_names_ids[self.right_link.current_image_name]
             other_dt = self.right_link.camera.measurements.iloc[other_id]['date_time']
             #print(f'trying to sync {str(this_dt)} to {str(other_dt)}')
             #self.set_side_camera_state(SideCameraState.Synchronizing, LinkMenuPosition.RIGHT)
-            self.sync[LinkMenuPosition.RIGHT].synchronize(this_dt, other_dt)
-            sync = self.sync[LinkMenuPosition.RIGHT]
+            self.sync[CameraSide.Right].synchronize(this_dt, other_dt)
+            sync = self.sync[CameraSide.Right]
         cam_view.control_widget.set_mode('view')
 
         self.left_add_button.set_disabled(False)
@@ -1276,11 +1276,11 @@ class CameraViewWidget(QtWidgets.QWidget):
 
     def handle_sync_cancel_clicked(self, cam_view: CameraView):
         if cam_view == self.left_link:
-            rec_image_name = self.sync[LinkMenuPosition.LEFT].get_reciprocal_image_by_name(self.camera,
-                self.camera_view.current_image_name)
+            rec_image_name = self.sync[CameraSide.Left].get_reciprocal_image_by_name(self.camera,
+                                                                                     self.camera_view.current_image_name)
         else:
-            rec_image_name = self.sync[LinkMenuPosition.RIGHT].get_reciprocal_image_by_name(self.camera,
-                self.camera_view.current_image_name)
+            rec_image_name = self.sync[CameraSide.Right].get_reciprocal_image_by_name(self.camera,
+                                                                                      self.camera_view.current_image_name)
         if rec_image_name is not None:
             rec_image_name = rec_image_name[0]
             self.display_image(rec_image_name, cam_view)
