@@ -12,15 +12,17 @@ from queue import Empty
 import cv2 as cv
 import numpy as np
 from PyQt5 import QtWidgets, QtGui
-from PyQt5.QtCore import pyqtSignal as Signal, QRunnable, QThreadPool, QTimer, pyqtSignal
+from PyQt5.QtCore import pyqtSignal as Signal, QRunnable, QThreadPool, QTimer, pyqtSignal, Qt
 from PyQt5.QtCore import pyqtSlot as Slot
 from PyQt5.QtGui import QIcon, QColor, QBrush, QPalette
-from PyQt5.QtWidgets import QPushButton, QProxyStyle, QStyle, QWidget, QStyleOption, QStyleOptionTab, QTabBar
+from PyQt5.QtWidgets import QPushButton, QProxyStyle, QStyle, QWidget, QStyleOption, QStyleOptionTab, QTabBar, \
+    QProgressDialog, QMessageBox
 
 import camera_processing.antarstick_processing as antar
 from camera import Camera
 from camera_processing.widgets.camera_view_widget import CameraViewWidget
-from dataset import Dataset
+from dataset import Dataset, CameraSynchronization
+
 
 #logging_start = time()
 #logging.basicConfig(filename='process.log', level=logging.DEBUG)
@@ -250,6 +252,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self.dataset.loading_finished.connect(self.handle_dataset_loading_finished)
         self.dataset.cameras_linked.connect(self.handle_cameras_linked)
         self.dataset.cameras_unlinked.connect(self.handle_cameras_unlinked)
+        self.dataset.synchronization_finished.connect(self.handle_synchronization_finished)
         self._camera_tab_map: Dict[int, int] = dict({})
 
     def handle_timeout(self):
@@ -301,7 +304,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
             self.fetch_next_batch()
             self.timer.start(1000)
 
-    def handle_cameras_linked(self, cam1: Camera, cam2: Camera):
+    def handle_cameras_linked(self, cam1: Camera, cam2: Camera, sync: CameraSynchronization):
         separator = '|'
         cam1_tab = self._camera_tab_map[cam1.id]
         cam1_tab_text = self.tabText(cam1_tab)
@@ -361,6 +364,21 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
     def handle_stick_verification_needed(self, widget: CameraViewWidget):
         cam = widget.camera
         self.stick_verification_needed.emit(str(cam.folder.name))
+
+    def handle_synchronization_finished(self, sync: CameraSynchronization):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+
+        left_img = sync.left_camera.measurements.loc[sync.left_timestamp]['image_name']
+        right_img = sync.right_camera.measurements.loc[sync.right_timestamp]['image_name']
+
+        msg.setWindowTitle('Synchronization complete')
+        msg.setTextFormat(Qt.RichText)
+        msg.setText(f'Cameras {sync.left_camera.folder.name} and {sync.right_camera.folder.name} have been synchronized.')
+        msg.setInformativeText(f'The synchronization point is<br><b>{sync.left_camera.folder.name}: {str(sync.left_timestamp)}({left_img})</b>\n\t<->\n<b>{sync.right_camera.folder.name}: {str(sync.right_timestamp)}({right_img})</b>.<br>'
+                               f'If you wish to adjust the synchronization, you can do so by manually defining the synchronization point by clicking on <b>Synchronize</b> under the secondary camera.')
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec()
 
 
 def analyze_daytime_snow(to_process: Queue, result_queue: Queue, channel: Connection, logging_start: int):
