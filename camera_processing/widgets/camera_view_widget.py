@@ -51,6 +51,7 @@ class SideCameraState(IntEnum):
     Shown = 2,
     Hidden = 3,
     Unavailable = 4,  # no other camera available for linking
+    Synchronizing = 5,
 
 
 class CameraViewWidget(QtWidgets.QWidget):
@@ -85,6 +86,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.dataset.cameras_linked.connect(self.handle_cameras_linked)
         self.dataset.cameras_unlinked.connect(self.handle_cameras_unlinked)
         self.dataset.camera_removed.connect(self.handle_camera_removed)
+        self.dataset.synchronization_finished.connect(self.handle_synchronization_finished)
         self.camera: Optional[Camera] = None
         self.graphics_scene = QGraphicsScene()
 
@@ -527,13 +529,13 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         other_camera_view.set_display_mode()
         other_camera_view.set_show_stick_widgets(True)
-        cam_position = 'right'
+        cam_position = LinkMenuPosition.RIGHT
 
         if self.camera.id == cam1.id:  # self.camera is on the left
             cam = cam2
         else:  # self.camera is on the right
             cam = cam1
-            cam_position = 'left'
+            cam_position = LinkMenuPosition.LEFT
 
         self.link_menu.hide_button(str(cam.folder))
         if self.link_menu.visible_buttons_count() == 0:
@@ -544,7 +546,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         other_camera_view.initialise_with(cam)
 
         pos: QPointF = self.camera_view.pos()
-        if cam_position == 'left':
+        if cam_position == LinkMenuPosition.LEFT:
             pos = self.left_add_button.scenePos() - QPointF(self.camera_view.boundingRect().width(), 0)
             if self.left_link is not None:
                 self.dataset.unlink_cameras(self.camera, self.left_link.camera)
@@ -868,6 +870,10 @@ class CameraViewWidget(QtWidgets.QWidget):
             self._recenter_view()
         elif state == SideCameraState.Adding:
             add_button.set_disabled(True)
+        elif state == SideCameraState.Synchronizing:
+            add_button.set_disabled(True)
+            show_button.set_disabled(True)
+            link.show_overlay_message(f'synchronizing with {self.camera.folder.name}')
         else:
             add_button.setVisible(False)
             show_button.setVisible(False)
@@ -1249,19 +1255,24 @@ class CameraViewWidget(QtWidgets.QWidget):
         if cam_view == self.left_link:
             other_id = self.left_link.camera.image_names_ids[self.left_link.current_image_name]
             other_dt = self.left_link.camera.measurements.iloc[other_id]['date_time']
-            print(f'trying to sync {str(this_dt)} to {str(other_dt)}')
+            #print(f'trying to sync {str(this_dt)} to {str(other_dt)}')
+            #self.set_side_camera_state(SideCameraState.Synchronizing, LinkMenuPosition.LEFT)
             self.sync[LinkMenuPosition.LEFT].synchronize(other_dt, this_dt)
+            sync = self.sync[LinkMenuPosition.LEFT]
         else:
             other_id = self.right_link.camera.image_names_ids[self.right_link.current_image_name]
             other_dt = self.right_link.camera.measurements.iloc[other_id]['date_time']
-            print(f'trying to sync {str(this_dt)} to {str(other_dt)}')
+            #print(f'trying to sync {str(this_dt)} to {str(other_dt)}')
+            #self.set_side_camera_state(SideCameraState.Synchronizing, LinkMenuPosition.RIGHT)
             self.sync[LinkMenuPosition.RIGHT].synchronize(this_dt, other_dt)
+            sync = self.sync[LinkMenuPosition.RIGHT]
         cam_view.control_widget.set_mode('view')
 
         self.left_add_button.set_disabled(False)
         self.left_show_button.set_disabled(False)
         self.right_add_button.set_disabled(False)
         self.right_show_button.set_disabled(False)
+        #self.handle_synchronization_finished(sync)
 
     def handle_sync_cancel_clicked(self, cam_view: CameraView):
         if cam_view == self.left_link:
@@ -1307,3 +1318,12 @@ class CameraViewWidget(QtWidgets.QWidget):
         else:
             if cam_view.control_widget.mode == 'sync':
                 self.display_image(cam_view.camera.image_list[0], cam_view)
+
+    def handle_synchronization_finished(self, sync: CameraSynchronization):
+        if self.camera != sync.left_camera and self.camera != sync.right_camera:
+            return
+        timestamp = sync.left_timestamp if self.camera == sync.left_camera else sync.right_timestamp
+        img_name = self.camera.measurements.loc[timestamp, 'image_name']
+        img_id = self.camera.image_names_ids[img_name]
+        index = self.image_list.index(img_id, 0)
+        self.ui.image_list.setCurrentIndex(index)

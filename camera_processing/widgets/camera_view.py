@@ -228,14 +228,14 @@ class CameraView(QGraphicsObject):
         self.blur_eff.setBlurRadius(5.0)
         self.blur_eff.setEnabled(False)
         self.pixmap.setGraphicsEffect(self.blur_eff)
-        self.not_available_text = QGraphicsSimpleTextItem('not available', parent=self)
+        self.overlay_message = QGraphicsSimpleTextItem('not available', parent=self)
         font = self.title_btn.font
         font.setPointSize(48)
-        self.not_available_text.setFont(font)
-        self.not_available_text.setBrush(QBrush(QColor(200, 200, 200, 200)))
-        self.not_available_text.setPen(QPen(QColor(0, 0, 0, 200), 2.0))
-        self.not_available_text.setVisible(False)
-        self.not_available_text.setZValue(6)
+        self.overlay_message.setFont(font)
+        self.overlay_message.setBrush(QBrush(QColor(200, 200, 200, 200)))
+        self.overlay_message.setPen(QPen(QColor(0, 0, 0, 200), 2.0))
+        self.overlay_message.setVisible(False)
+        self.overlay_message.setZValue(6)
 
     def _connect_control_buttons(self):
         self.control_widget.synchronize_btn.clicked.connect(lambda: self.synchronize_clicked.emit(self))
@@ -249,7 +249,6 @@ class CameraView(QGraphicsObject):
         if self.pixmap.pixmap().isNull():
             return
         painter.setRenderHint(QPainter.Antialiasing, True)
-
 
         if self.show_stick_widgets:
             brush = QBrush(QColor(255, 255, 255, 100))
@@ -298,18 +297,20 @@ class CameraView(QGraphicsObject):
 
     def set_image(self, img: Optional[np.ndarray] = None, image_name: Optional[str] = None):
         if img is None:
-            self.not_available_text.setPos(self.pixmap.boundingRect().center() - QPointF(
-                0.5 * self.not_available_text.boundingRect().width(),
-                0.5 * self.not_available_text.boundingRect().height()
-            ))
-            self.not_available_text.setVisible(True)
-            self.image_available = False
-            self.blur_eff.setEnabled(True)
-            self.update()
+            #self.overlay_message.setPos(self.pixmap.boundingRect().center() - QPointF(
+            #    0.5 * self.overlay_message.boundingRect().width(),
+            #    0.5 * self.overlay_message.boundingRect().height()
+            #))
+            #self.overlay_message.setVisible(True)
+            #self.image_available = False
+            #self.blur_eff.setEnabled(True)
+            #self.update()
+            self.show_overlay_message('not available')
             return
-        self.not_available_text.setVisible(False)
-        self.image_available = True
-        self.blur_eff.setEnabled(False)
+        #self.overlay_message.setVisible(False)
+        #self.image_available = True
+        #self.blur_eff.setEnabled(False)
+        self.show_overlay_message(None)
         self.prepareGeometryChange()
         barray = QByteArray(img.tobytes())
         image = QImage(barray, img.shape[1], img.shape[0], QImage.Format_BGR888)
@@ -530,3 +531,16 @@ class CameraView(QGraphicsObject):
 
     def handle_stick_widget_context_menu(self, sender: Dict[str, StickWidget]):
         self.stick_context_menu.emit(sender['stick_widget'], self)
+
+    def show_overlay_message(self, msg: Optional[str]):
+        if msg is None:
+            self.overlay_message.setVisible(False)
+            self.blur_eff.setEnabled(False)
+            return
+        self.overlay_message.setText(msg)
+        self.overlay_message.setPos(self.pixmap.boundingRect().center() - QPointF(
+            0.5 * self.overlay_message.boundingRect().width(),
+            0.5 * self.overlay_message.boundingRect().height()
+        ))
+        self.overlay_message.setVisible(True)
+        self.blur_eff.setEnabled(True)
