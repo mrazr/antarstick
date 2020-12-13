@@ -5,21 +5,26 @@ from datetime import datetime, timedelta
 
 import jsonpickle
 import json
+
 from numpy import zeros
-from PyQt5.QtCore import QObject, QTimer
+from PyQt5.QtCore import QObject, QTimer, Qt
 from PyQt5.QtCore import pyqtSignal as Signal
-from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtWidgets import QMessageBox, QProgressDialog, QWidget
 from pandas import Timestamp, Timedelta, Series
 import pandas as pd
 import numpy as np
+import pprofile
 
 from camera import Camera, PD_DATE
 from stick import Stick
 
 
-class CameraSynchronization:
+class CameraSynchronization(QObject):
+
+    synchronization_finished = Signal('PyQt_PyObject')
 
     def __init__(self, left_cam: Camera, right_cam: Camera, left_ts: Timestamp, right_ts: Timestamp, sync: Dict[Camera, List[str]] = {}):
+        QObject.__init__(self)
         self.left_camera = left_cam
         self.right_camera = right_cam
         self.left_timestamp = left_ts
@@ -62,8 +67,7 @@ class CameraSynchronization:
         target_image_id = target.image_names_ids[target_image_name]
         return target.measurements.iloc[target_image_id]['date_time']
 
-    def synchronize(self, left_ts: Optional[Timestamp] = None, right_ts: Optional[Timestamp] = None):
-        print(f'Implement synchronize_cameras()')
+    def synchronize(self, left_ts: Optional[Timestamp] = None, right_ts: Optional[Timestamp] = None) -> 'CameraSynchronization':
         if left_ts is None or right_ts is None:
             left_ts = self.left_timestamp
             right_ts = self.right_timestamp
@@ -74,14 +78,13 @@ class CameraSynchronization:
         cam1_offsets: Series = self.left_camera.measurements.loc[:, 'date_time'].sub(left_ts)
         cam1_offsets.loc[left_ts] = pd.Timedelta(days=0)
 
-        self.left_camera.measurements.loc[:, 'date_time'].diff().to_csv(f'/home/radoslav/{self.left_camera.folder.name}_off.csv')
+        #self.left_camera.measurements.loc[:, 'date_time'].diff().to_csv(f'/home/radoslav/{self.left_camera.folder.name}_off.csv')
 
         df1 = pd.DataFrame(data={'date_time':  [common_time] * cam1_offsets.shape[0],
                                  'offset': cam1_offsets,
                                  'cam': [0] * cam1_offsets.shape[0],
                                  'orig_dt': self.left_camera.measurements.loc[:, 'date_time'],
                                  'image_name': self.left_camera.measurements.loc[:, 'image_name']})
-        #df1.loc[:, 'date_time'] = self.left_camera.measurements.loc[:, 'date_time']
         df1.loc[:, 'date_time'] = df1.loc[:, 'date_time'].add(cam1_offsets)
         df1.set_index('image_name', drop=False, inplace=True)
 
@@ -91,7 +94,7 @@ class CameraSynchronization:
 
         cam2_image_id = self.right_camera.measurements.index.get_loc(right_ts)
         cam2_image_name = self.right_camera.image_list[cam2_image_id]
-        self.right_camera.measurements.loc[:, 'date_time'].diff().to_csv(f'/home/radoslav/{self.right_camera.folder.name}_off.csv')
+        #self.right_camera.measurements.loc[:, 'date_time'].diff().to_csv(f'/home/radoslav/{self.right_camera.folder.name}_off.csv')
         #cam2_offsets: Series = self.right_camera.measurements.loc[:, 'date_time'].diff()
         cam2_offsets: Series = self.right_camera.measurements.loc[:, 'date_time'].sub(right_ts)
         cam2_offsets.loc[right_ts] = pd.Timedelta(days=0)
@@ -138,33 +141,37 @@ class CameraSynchronization:
 
         source_ids = df.loc[df['cam'] == source].index
         target_ids = df.loc[df['cam'] == target].index
+        #source_ids = enumerate(map(lambda t: t[0], filter(lambda t: t[1], enumerate(df['cam'] == source))))
+        #target_ids = enumerate(map(lambda t: t[0], filter(lambda t: t[1], enumerate(df['cam'] == target))))
 
         source_idxs: Dict[int, int] = {int(df.index.get_loc(dt)): int(source_df.index.get_loc(dt)) for dt in source_ids}
         target_idxs: Dict[int, int] = {int(df.index.get_loc(dt)): int(target_df.index.get_loc(dt)) for dt in target_ids}
+
+        #source_idxs: Dict[int, int] = {dt[1]: dt[0] for dt in source_ids}
+        #target_idxs: Dict[int, int] = {dt[1]: dt[0] for dt in target_ids}
 
         target_to_source: List[Tuple[int, Timedelta]] = [(-1, Timedelta(days=9999))] * target_df.shape[0]
         source_to_target: List[Tuple[int, Timedelta]] = [(-1, Timedelta(days=9999))] * source_df.shape[0]
 
         for common_idx, local_idx in source_idxs.items():
-            source_dt = df.iloc[common_idx]['date_time']
-            if common_idx - 1 >= 0 and df.iloc[common_idx - 1]['cam'] == target:
-                target_dt_prev = df.iloc[common_idx - 1]['date_time']
+            source_dt = df.iat[common_idx, 0]
+
+            target_delta_next = Timedelta(days=9999)
+            next_target_assignment = (-1, Timedelta(days=9999))
+            target_delta_prev = Timedelta(days=9999)
+            prev_target_assignment = (-1, Timedelta(days=9999))
+
+            if common_idx - 1 >= 0 and df.iat[common_idx - 1, 2] == target:
+                target_dt_prev = df.iat[common_idx - 1, 0]
                 target_delta_prev = source_dt - target_dt_prev
                 prev_target_idx = target_idxs[common_idx - 1]
                 prev_target_assignment = target_to_source[prev_target_idx]
-            else:
-                #target_dt_prev = Timestamp(year=2442, month=1, day=1)
-                target_delta_prev = Timedelta(days=9999)
-                prev_target_assignment = (-1, Timedelta(days=9999))
-            if common_idx + 1 < df.shape[0] and df.iloc[common_idx + 1]['cam'] == target:
-                target_dt_next = df.iloc[common_idx + 1]['date_time']
-                target_delta_next = target_dt_next - source_dt
-                next_target_idx = target_idxs[common_idx + 1]
-                next_target_assignment = target_to_source[next_target_idx]
-            else:
-                #target_dt_next = Timestamp(year=2442, month=1, day=1)
-                target_delta_next = Timedelta(days=9999)
-                next_target_assignment = (-1, Timedelta(days=9999))
+            if common_idx + 1 < df.shape[0]:
+                if df.iat[common_idx + 1, 2] == target:
+                    target_dt_next = df.iat[common_idx + 1, 0]
+                    target_delta_next = target_dt_next - source_dt
+                    next_target_idx = target_idxs[common_idx + 1]
+                    next_target_assignment = target_to_source[next_target_idx]
 
             if target_delta_prev < target_delta_next and target_delta_prev < prev_target_assignment[1]:
                 source_to_target[local_idx] = (prev_target_idx, target_delta_prev)
@@ -187,17 +194,20 @@ class CameraSynchronization:
                                     target_to_source))
 
         self.synchronized_photos = {source_cam: source_to_target, target_cam: target_to_source}
-        source_ = []
-        target_ = []
-        for source_dt in source_cam.measurements.loc[:, 'date_time']:
-            target_dt = self.get_reciprocal_date(source_cam, source_dt)
-            if target_dt is None:
-                continue
-            source_.append(source_dt)
-            target_.append(target_dt)
-        mapp = pd.DataFrame(data={'s': source_, 't': target_})
-        mapp.to_csv('/home/radoslav/mapp.csv')
-        print('helo')
+        #source_ = []
+        #target_ = []
+        #for source_dt in source_cam.measurements.loc[:, 'date_time']:
+        #    target_dt = self.get_reciprocal_date(source_cam, source_dt)
+        #    if target_dt is None:
+        #        continue
+        #    source_.append(source_dt)
+        #    target_.append(target_dt)
+        #mapp = pd.DataFrame(data={'s': source_, 't': target_})
+        #mapp.to_csv('/home/radoslav/mapp.csv')
+        self.left_timestamp = left_ts
+        self.right_timestamp = right_ts
+        self.synchronization_finished.emit(self)
+        return self
 
     def __eq__(self, other: Union[Tuple[Camera, Camera], 'CameraSynchronization']):
         if isinstance(other, tuple):
@@ -287,6 +297,8 @@ class Dataset(QObject):
     sticks_linked = Signal([Stick, Stick])
     sticks_unlinked = Signal([Stick, Stick])
     loading_finished = Signal()
+    synchronization_started = Signal()
+    synchronization_finished = Signal('PyQt_PyObject')
 
     def __init__(self, path: Optional[Path] = None):
         super(Dataset, self).__init__()
@@ -529,11 +541,11 @@ class Dataset(QObject):
         #synchronization.right_camera = cam2
         #synchronization.left_timestamp = synchronized_timestamps[synchronization.left_camera]
         #synchronization.right_timestamp = synchronized_timestamps[synchronization.right_camera]
+        synchronization.synchronization_finished.connect(self.synchronization_finished.emit)
         self.linked_cameras.append(synchronization)
-        #self.synchronize_cameras(synchronization)
         synchronization.synchronize()
-        print(f'synchronized cameras: {cam1.folder.name} - {synchronized_timestamps[cam1]} <-> {cam2.folder.name} - {synchronized_timestamps[cam2]}')
-
+        #self.synchronize_cameras(synchronization)
+        #print(f'synchronized cameras: {cam1.folder.name} - {synchronized_timestamps[cam1]} <-> {cam2.folder.name} - {synchronized_timestamps[cam2]}')
         self.cameras_linked.emit(cam1, cam2, synchronization) #, camera_group)
     
     def unlink_cameras(self, cam1: Camera, cam2: Camera):
