@@ -21,7 +21,8 @@ PD_ORIG_DATE = 1
 PD_IMAGE_NAME = 2
 PD_IMAGE_STATE = 3
 PD_IMAGE_QUALITY = 4
-PD_IS_DAY = 5
+PD_IS_SNOWY = 5
+PD_IS_DAY = 6
 
 PD_DAY = 1
 PD_SNOW = 2
@@ -32,7 +33,8 @@ PD_STICK_TOP = 0
 PD_STICK_BOTTOM = 1
 PD_STICK_LENGTH_PX = 2
 PD_STICK_SNOW_HEIGHT = 3
-PD_STICK_COLUMNS_COUNT = 4
+PD_STICK_VISIBLE = 4
+PD_STICK_COLUMNS_COUNT = 5
 
 ENDPOINT_COLUMN_CONVERTER = lambda cell: np.array(list(map(int, cell.strip('[] ').split())))
 
@@ -159,7 +161,7 @@ class Camera(QObject):
                         self.next_photo_id = self.image_list.index(last_photo) + 1
                         self.next_photo = self.image_list[self.next_photo_id] if self.next_photo_id < len(
                             self.image_list) else None
-                    for i in range(PD_FIRST_STICK_COLUMN, len(measurements.columns.values), 4):
+                    for i in range(PD_FIRST_STICK_COLUMN, len(measurements.columns.values), PD_STICK_COLUMNS_COUNT):
                         column: str = measurements.columns.values[i]
                         self.stick_labels_column_ids[column[:column.index('_')]] = i
                     self.measurements = measurements.apply(
@@ -299,7 +301,16 @@ class Camera(QObject):
             camera.unused_stick_ids = state['unused_stick_ids']
             camera.default_stick_length_cm = state.get('default_stick_length_cm', 60)
             camera.timestamps_available = state.get('timestamps_available', False)
-            camera.standard_image_size = state['standard_image_size']
+            camera.standard_image_size = state.get('standard_image_size', None)
+            if camera.standard_image_size is None:
+                try:
+                    with open(camera.folder / camera.image_list[-1], 'rb') as f:
+                        tags = exifread.process_file(f, details=False)
+                    camera.standard_image_size = (
+                        tags['EXIF ExifImageWidth'].values[0], tags['EXIF ExifImageLength'].values[0])
+                except KeyError:
+                    img = cv.imread(str(camera.folder / camera.image_list[-1]), cv.IMREAD_GRAYSCALE)
+                    camera.standard_image_size = (img.shape[1], img.shape[0])
             sticks = list(map(lambda stick_state: Stick.build_from_state(stick_state), state['sticks']))
             camera.sticks = sticks
             for s in camera.sticks:
@@ -339,15 +350,15 @@ class Camera(QObject):
         for i, stick in enumerate(self.sticks):
             self.stick_labels_column_ids[stick.label] = PD_STICK_COLUMNS_COUNT * i + PD_FIRST_STICK_COLUMN
 
-    def get_batch(self, batch_count: int = 2, batch_size: int = 50) -> List[List[str]]:
-        non_processed = self.measurements[self.measurements['state'] == 0]['image_name']
+    def get_batch(self, batch_count: int = 2, batch_size: int = 50) -> Tuple[List[List[str]], int]:
+        non_processed = self.measurements[self.measurements.iloc[:, PD_IMAGE_STATE] == PhotoState.Unprocessed]['image_name']
         if batch_size == 0:
             batch_size = min(int(np.ceil(non_processed.shape[0] / batch_count)), non_processed.shape[0])
         batches = []
         for i in range(batch_count):
             batch = non_processed[i * batch_size: i * batch_size + batch_size].tolist()
             batches.append(batch)
-        return batches
+        return batches, len(non_processed)
 
     def get_processed_count(self) -> int:
         return self.processed_photos_count
@@ -394,6 +405,7 @@ class Camera(QObject):
             stick.bottom = self.measurements.iat[image_id, stick_id + PD_STICK_BOTTOM]
             stick.length_px = float(self.measurements.iat[image_id, stick_id + PD_STICK_LENGTH_PX])
             stick.set_snow_height_cm(int(self.measurements.iat[image_id, stick_id + PD_STICK_SNOW_HEIGHT]))
+            stick.is_visible = self.measurements.iat[image_id, stick_id + PD_STICK_VISIBLE]
             self.stick_changed.emit(stick)
         return sticks
 
@@ -416,12 +428,16 @@ class Camera(QObject):
 
         stick_data = {}
         for stick in self.sticks:
-            stick_data[stick.label + '_top'] = pd.Series(data=[np.array([-1, -1], np.int32)] * len(self.image_list))
-            stick_data[stick.label + '_bottom'] = pd.Series(data=[np.array([-1, -1], np.int32)] * len(self.image_list))
-            stick_data[stick.label + '_height_px'] = pd.Series(data=[-1] * len(self.image_list))
-            stick_data[stick.label + '_snow_height'] = pd.Series(data=[-1] * len(self.image_list))
+            stick_data[stick.label + '_top'] = [np.array([-1, -1], np.int32)] * len(self.image_list) #pd.Series(data=[np.array([-1, -1], np.int32)] * len(self.image_list))
+            stick_data[stick.label + '_bottom'] = [np.array([-1, -1], np.int32)] * len(self.image_list) #pd.Series(data=[np.array([-1, -1], np.int32)] * len(self.image_list))
+            stick_data[stick.label + '_height_px'] = [-1] * len(self.image_list) #pd.Series(data=[-1] * len(self.image_list))
+            stick_data[stick.label + '_snow_height'] = [-1] * len(self.image_list) #pd.Series(data=[-1] * len(self.image_list))
+            stick_data[stick.label + '_visible'] = [False] * len(self.image_list) #pd.Series(data=[-1] * len(self.image_list))
 
-        self.measurements = pd.concat((self.measurements, pd.DataFrame(data=stick_data)), axis=1)
+        for col, val in stick_data.items():
+            self.measurements.insert(self.measurements.shape[1], col, val)
+
+        #self.measurements = pd.concat((self.measurements, pd.DataFrame(data=stick_data)), axis=1)
         self.sticks.sort(key=lambda stick: stick.local_id)
 
         image_id = self.image_names_ids[self.sticks[0].view]
@@ -432,6 +448,7 @@ class Camera(QObject):
             self.measurements.iat[image_id, stick_id + PD_STICK_BOTTOM] = stick.bottom
             self.measurements.iat[image_id, stick_id + PD_STICK_LENGTH_PX] = stick.length_px
             self.measurements.iat[image_id, stick_id + PD_STICK_SNOW_HEIGHT] = stick.snow_height_cm
+            self.measurements.iat[image_id, stick_id + PD_STICK_VISIBLE] = stick.is_visible
 
         if save_immediately:
             self.save_measurements()
@@ -443,6 +460,7 @@ class Camera(QObject):
             'image_name': self.image_list,
             'state': [PhotoState.Unprocessed] * len(self.image_list),
             'image_quality': [-1.0] * len(self.image_list),
+            'snowy': [False] * len(self.image_list),
             'is_day': [True] * len(self.image_list),
         })
         self.timestamps_available = False
@@ -455,6 +473,7 @@ class Camera(QObject):
             state = sticks_photoinfo['state']
             self.measurements.iat[image_id, PD_IMAGE_STATE] = state
             self.measurements.iat[image_id, PD_IMAGE_QUALITY] = sticks_photoinfo['image_quality']
+            self.measurements.iat[image_id, PD_IS_SNOWY] = sticks_photoinfo.get('is_snowy', False)
             self.measurements.iat[image_id, PD_IS_DAY] = sticks_photoinfo['is_day']
             self.photos_state[img_name] = state
             for stick in sticks:
@@ -464,6 +483,7 @@ class Camera(QObject):
                 self.measurements.iat[image_id, stick_id + PD_STICK_BOTTOM] = stick.bottom
                 self.measurements.iat[image_id, stick_id + PD_STICK_LENGTH_PX] = stick.length_px
                 self.measurements.iat[image_id, stick_id + PD_STICK_SNOW_HEIGHT] = stick.snow_height_cm
+                self.measurements.iat[image_id, stick_id + PD_STICK_VISIBLE] = stick.is_visible
 
     def get_measurements(self, img: str, output_sticks: Optional[List[Stick]] = None) -> Dict[
         str, Union[List[Stick], float]]:
@@ -492,16 +512,26 @@ class Camera(QObject):
     def image_quality(self, image: str) -> float:
         return self.measurements.iat[self.image_names_ids[image], PD_IMAGE_QUALITY]
 
-    def average_snow_height(self, image: str) -> float:
+    def is_snowy(self, image: str) -> bool:
+        if self.measurements.shape[1] > 5:
+            return self.measurements.iat[self.image_names_ids[image], PD_IS_SNOWY]
+        return False
+
+    def average_snow_height(self, image: str) -> int:
         image_id = self.image_names_ids[image]
 
         if self.measurements.shape[0] == 0 or self.measurements.iloc[0]['state'] <= 0: #self.measurements.iat[image_id, 3] < 0:
-            return -1.0
+            return 0
         snow_height = []
         for stick in self.sticks:
             stick_id = self.stick_labels_column_ids[stick.label]
-            snow_height.append(self.measurements.iat[image_id, stick_id + PD_STICK_SNOW_HEIGHT])
-        return np.median(snow_height)
+            if not self.measurements.iat[image_id, stick_id + PD_STICK_VISIBLE]:
+                continue
+            qu = stick.length_px * 0.25
+            quarter_id = int(round(max(self.measurements.iat[image_id, stick_id + PD_STICK_SNOW_HEIGHT], 0) / qu))
+            snow_height.append(quarter_id)
+
+        return 0 if len(snow_height) == 0 else int(np.median(snow_height))
 
     def generate_bounding_boxes(self):
         sticks = self.sticks.copy()
@@ -538,7 +568,6 @@ class Camera(QObject):
         self.timestamps_available = True
         self.check_for_temporal_monotonicity()
         self.save_measurements()
-        print('isnerted')
 
     def skipped_image(self, img: str):
         img_id = self.image_names_ids[img]
@@ -555,15 +584,6 @@ class Camera(QObject):
             proposed_date = last_correct_date + (
                     self.measurements['date_time'].iloc[problem_id - 1] - self.measurements['date_time'].iloc[problem_id - 2])
             self.non_increasingness.emit((last_correct_img, last_correct_date, problem_img, problem_date, proposed_date))
-            #msg = QMessageBox()
-            #msg.setIcon(QMessageBox.Warning)
-            #msg.setWindowTitle(f'Camera {self.folder.name} - Temporal inconsistency')
-            #msg.setText('The sequence of images in the camera is not temporally monotonically increasing.')
-            ##msg.setInformativeText(f'The image {last_correct_img} has timestamp {str(last_correct_date)} while {problem_img} has timestamp {str(problem_date)}\nDo you want to set the timestamp for the image {problem_img} to {str(proposed_date)} and adjust all subsequent images accordingly?')
-            #msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-            #ret = msg.exec()
-            #if ret == QMessageBox.Yes:
-            #    print('')
         else:
             self.save_measurements()
 
