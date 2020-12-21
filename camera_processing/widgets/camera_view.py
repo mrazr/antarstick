@@ -14,7 +14,7 @@ import numpy as np
 from camera import Camera
 from camera_processing.widgets.stick_length_input import TextInputWidget
 from camera_processing.widgets.stick_widget import StickWidget, StickMode
-from camera_processing.widgets.button import Button, ButtonColor
+from camera_processing.widgets.button import Button, ButtonColor, ButtonMode
 from dataset import Dataset
 from stick import Stick
 
@@ -41,7 +41,7 @@ class ControlWidget(QGraphicsObject):
         self.title_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
         self.title_btn.setZValue(5)
         self.title_btn.setVisible(True)
-
+        self.title_btn.set_mode(ButtonMode.Label)
 
         self.first_photo_btn = Button('btn_first_photo', 'First photo', parent=self)
         self.first_photo_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
@@ -157,6 +157,11 @@ class ControlWidget(QGraphicsObject):
         self.synchronize_btn.setVisible(show)
         if self.mode == 'view':
             self._layout()
+
+    def set_title_text(self, text: str):
+        self.title_btn.set_label(text)
+        self.set_widget_width(self.widget_width)
+        self._layout()
 
 
 class CameraView(QGraphicsObject):
@@ -544,3 +549,9 @@ class CameraView(QGraphicsObject):
         ))
         self.overlay_message.setVisible(True)
         self.blur_eff.setEnabled(True)
+
+    def show_status_message(self, msg: Optional[str]):
+        if msg is None:
+            self.control_widget.set_title_text(self.camera.folder.name)
+        else:
+            self.control_widget.set_title_text(msg)
