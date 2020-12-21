@@ -2,7 +2,7 @@ import math
 from typing import Optional, Callable, Any
 
 from PyQt5 import QtGui
-from PyQt5.QtGui import QPainter, QKeyEvent, QBrush, QColor, QTextCursor
+from PyQt5.QtGui import QPainter, QKeyEvent, QBrush, QColor, QTextCursor, QFont
 from PyQt5.QtWidgets import QGraphicsTextItem, QGraphicsObject, QGraphicsItem, QGraphicsRectItem, QWidget, \
     QStyleOptionGraphicsItem
 from PyQt5.QtCore import QRectF, pyqtSignal, Qt, QPointF
@@ -89,6 +89,7 @@ class TextInputWidget(QGraphicsObject):
 
     input_entered = pyqtSignal(str)
     input_cancelled = pyqtSignal(str)
+    font = QFont('monospace', 16)
 
     def __init__(self, mode: str = 'number', label: str = '', getter=None, setter=None, parser=str, validator=None,
                  parent: Optional[QGraphicsItem] = None):
@@ -110,7 +111,7 @@ class TextInputWidget(QGraphicsObject):
         self.background_rect = QGraphicsRectItem(parent=self)
         self.background_rect.setBrush(QBrush(QColor(50, 50, 50, 200)))
         self.text_field = NumberInputItem(self)
-        self.text_field.setFont(Button.font)
+        self.text_field.setFont(self.font)
         self.text_field.setTextInteractionFlags(Qt.TextEditable)
         self.text_field.setDefaultTextColor(Qt.white)
         self.text_field.text_changed.connect(self.adjust_layout)
@@ -122,7 +123,7 @@ class TextInputWidget(QGraphicsObject):
         self.text_field.accepted.connect(lambda: self.accept_button.click_button(artificial_emit=True))
         self.text_field.cancelled.connect(lambda: self.cancel_button.click_button(artificial_emit=True))
         self.text_label = QGraphicsTextItem(self)
-        self.text_label.setFont(Button.font)
+        self.text_label.setFont(self.font)
         self.text_label.setPlainText(label)
         self.text_label.setDefaultTextColor(Qt.white)
         self.setVisible(False)
