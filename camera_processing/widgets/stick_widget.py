@@ -22,6 +22,7 @@ class StickMode(Enum):
     EditDelete = 2
     LinkSource = 3
     LinkTarget = 4
+    Measurement = 5
 
 
 class StickWidget(QGraphicsObject):
@@ -137,6 +138,7 @@ class StickWidget(QGraphicsObject):
         self.deleting = False
         self.update_tooltip()
         self.show_measurements: bool = False
+        self.proposed_snow_height: int = -1
 
     @pyqtSlot()
     def handle_btn_delete_clicked(self):
@@ -195,13 +197,22 @@ class StickWidget(QGraphicsObject):
             painter.drawEllipse(self.line.p2(), 10, 10)
             painter.setBrush(br)
 
-            #self.measured_height = self.stick.snow_height_px
+            if self.mode == StickMode.Measurement and self.proposed_snow_height >= 0:
+                point = QPointF(self.boundingRect().x(), -self.proposed_snow_height + self.line.p2().y())
+                pen = QPen(QColor(200, 100, 0, 255), 3.0)
+                painter.setPen(pen)
+                painter.drawLine(point,
+                                 point + QPointF(self.boundingRect().width(), 0.0))
+
             if self.measured_height >= 0:
                 vec = (self.stick.top - self.stick.bottom) / np.linalg.norm(self.stick.top - self.stick.bottom)
                 dist_along_stick = self.measured_height / np.dot(np.array([0.0, -1.0]), vec)
                 point = self.line.p2() + dist_along_stick * QPointF(vec[0], vec[1])
-                point = QPointF(point.x(), point.y())
-                painter.drawLine(point - QPointF(20.0, 0.0), point + QPointF(20.0, 0.0))
+                point = QPointF(self.boundingRect().x(), point.y())
+                pen = QPen(QColor(0, 100, 200, 255), 3.0)
+                painter.setPen(pen)
+                painter.drawLine(point,
+                                 point + QPointF(self.boundingRect().width(), 0.0))
         else:
             painter.drawLine(self.line.p1(), self.line.p2())
 
@@ -261,6 +272,7 @@ class StickWidget(QGraphicsObject):
         elif mode == StickMode.Edit:
             self.set_mode(StickMode.EditDelete)
             self.btn_delete.setVisible(False)
+
         self.mode = mode
         self.update_tooltip()
         self.update()
@@ -288,6 +300,11 @@ class StickWidget(QGraphicsObject):
         if self.available_for_linking:
             self.link_accepted.emit(self)
             return
+
+        if self.mode == StickMode.Measurement:
+            self.measured_height = self.proposed_snow_height
+            self.stick.set_snow_height_px(self.proposed_snow_height)
+            self.proposed_snow_height = -1
 
         if self.mode != StickMode.EditDelete and self.mode != StickMode.Edit:
             return
@@ -352,10 +369,15 @@ class StickWidget(QGraphicsObject):
         self.link_button.setVisible(False)
         #self.show_label = False
         #self.stick_label_text.hide()
+        self.proposed_snow_height = -1
         self.scene().update()
     
     def hoverMoveEvent(self, event: QGraphicsSceneHoverEvent):
-        if self.mode != StickMode.EditDelete and self.mode != StickMode.Edit:
+        if self.mode != StickMode.EditDelete and self.mode != StickMode.Edit and self.mode != StickMode.Measurement:
+            return
+        if self.mode == StickMode.Measurement:
+            self.proposed_snow_height = max(self.line.p2().y() - event.pos().y(), 0)
+            self.update()
             return
         hovered_handle = list(filter(lambda h: h.rect().contains(event.pos()), self.handles))
         if len(hovered_handle) == 0:
@@ -525,7 +547,7 @@ class StickWidget(QGraphicsObject):
         self.update()
 
     def update_tooltip(self):
-        if self.mode != StickMode.Display:
+        if self.mode != StickMode.Display or self.mode == StickMode.Measurement:
             self.setToolTip("")
             return
         snow_txt = "Snow height: "
@@ -557,6 +579,7 @@ class StickWidget(QGraphicsObject):
         self.adjust_handles()
         self.set_snow_height(stick.snow_height_px)
         self.update_tooltip()
+        self.setVisible(self.stick.is_visible)
         #self.line.setP1(QPoint(*self.stick.top))
         #self.line.setP2(QPoint(*self.stick.bottom))
         #self.adjust_line()
