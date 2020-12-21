@@ -18,7 +18,7 @@ from PyQt5.QtGui import QIcon, QColor, QBrush, QPalette
 from PyQt5.QtWidgets import QPushButton, QProxyStyle, QStyle, QWidget, QStyleOption, QStyleOptionTab, QTabBar, \
     QProgressDialog, QMessageBox
 
-import camera_processing.antarstick_processing as antar
+import camera_processing.stick_detection as antar
 from camera import Camera
 from camera_processing.widgets.camera_view_widget import CameraViewWidget
 from dataset import Dataset, CameraSynchronization
@@ -195,19 +195,6 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
             camera_widget: CameraViewWidget = self.widget(i)
             self._camera_tab_map[camera_widget.camera.id] = i
 
-    def find_non_snow_pics_in_camera(self, camera: Camera, count: int) -> List[np.ndarray]:
-        images = []
-        for entry in scandir(camera.folder):
-            if entry.is_dir():
-                continue
-            img = cv.pyrDown(cv.imread(entry.path))
-            hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
-            if antar.is_non_snow(hsv):
-                images.append(cv.pyrDown(img))
-                if len(images) == count:
-                    break
-        return images
-
     @Slot()
     def handle_dataset_loading_finished(self):
         for i in range(self.count()):
@@ -355,9 +342,9 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
         self.tabBar().update()
 
-    def handle_camera_processing_started(self, widget: CameraViewWidget):
+    def handle_camera_processing_started(self, widget: CameraViewWidget, unprocessed_count: int):
         cam = widget.camera
-        self.processing_started.emit(str(cam.folder.name), cam.get_photo_count())
+        self.processing_started.emit(str(cam.folder.name), unprocessed_count)
 
     def handle_camera_processing_updated(self, processed: int, total: int, job_count: int, processing_stopped: bool):
         self.processing_updated.emit(processed)
@@ -385,24 +372,4 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         msg.setStandardButtons(QMessageBox.Ok)
         msg.exec()
 
-
-def analyze_daytime_snow(to_process: Queue, result_queue: Queue, channel: Connection, logging_start: int):
-    keep_processing, items = channel.recv() # Tuple[bool, List[Tuple[int, List[Path]]]]
-
-    while keep_processing:
-        results: List[Tuple[int, List[Tuple[Path, bool, bool]]]] = []
-        for item in items:  # item: Tuple[int, List[Path]]
-            cam_id, img_paths = item
-            res: List[Tuple[Path, bool, bool]] = []
-            for img_path in img_paths:
-                img = cv.imread(str(img_path))
-                img = cv.resize(img, (0, 0), fx=0.25, fy=0.25, interpolation=cv.INTER_NEAREST)
-                gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-                daytime = not antar.is_night(img)
-                snow = antar.is_snow(gray, img)
-                res.append((img_path.name, daytime, snow))
-            results.append((cam_id, res))
-
-        channel.send(results)
-        keep_processing, items = channel.recv()
 
