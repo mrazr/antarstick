@@ -15,7 +15,7 @@ import pandas as pd
 import numpy as np
 import pprofile
 
-from camera import Camera, PD_DATE
+from camera import Camera, PD_DATE, PD_STICK_SNOW_HEIGHT, PD_IMAGE_NAME
 from stick import Stick
 
 
@@ -42,7 +42,7 @@ class CameraSynchronization(QObject):
         if rec_image_name == "":
             return None
         rec_image_id = target.image_names_ids[rec_image_name]
-        rec_timestamp = target.measurements.iloc[rec_image_id]['date_time']
+        rec_timestamp = target.measurements.iloc[rec_image_id, 0]#['date_time']
         return rec_image_name, rec_timestamp
 
     def get_reciprocal_image_by_name(self, source: Camera, image_name: str) -> Optional[Tuple[str, datetime]]:
@@ -52,7 +52,7 @@ class CameraSynchronization(QObject):
         if target_image_name == "":
             return None
         target_image_id = target.image_names_ids[target_image_name]
-        target_timestamp = target.measurements.iloc[target_image_id]['date_time']
+        target_timestamp = target.measurements.iloc[target_image_id, 0]#['date_time']
         return target_image_name, target_timestamp
 
     def get_synchronized_images(self) -> Dict[Camera, List[str]]:
@@ -65,7 +65,7 @@ class CameraSynchronization(QObject):
         if target_image_name == "":
             return None
         target_image_id = target.image_names_ids[target_image_name]
-        return target.measurements.iloc[target_image_id]['date_time']
+        return target.measurements.iat[target_image_id, 0]#['date_time']
 
     def synchronize(self, left_ts: Optional[Timestamp] = None, right_ts: Optional[Timestamp] = None) -> 'CameraSynchronization':
         if left_ts is None or right_ts is None:
@@ -387,9 +387,9 @@ class Dataset(QObject):
         camera_links = list(filter(lambda link: link.left_camera == camera or link.right_camera == camera, self.linked_cameras))
 
         for link in camera_links:
-            other_cam_id = link.left_camera if link.right_camera == camera.id else link.left_camera
-            camera2 = next(filter(lambda cam: cam.id == other_cam_id, self.cameras))
-            self.unlink_cameras(camera, camera2)
+            #camera2 = link.left_camera if link.right_camera == camera else link.left_camera
+            #camera2 = next(filter(lambda cam: cam == other_cam_id, self.cameras))
+            self.unlink_cameras(link.left_camera, link.right_camera)
 
         self.disconnect_camera_signals(camera)
         self.cameras = list(filter(lambda camera_: camera_.id != camera_id, self.cameras))
@@ -802,6 +802,93 @@ class Dataset(QObject):
             return {cam1: closest_timestamp_cam1, cam2: cam2_ts}
         return {cam1: cam1_ts, cam2: closest_timestamp_cam2}
 
-    def synchronize_cameras(self, sync: CameraSynchronization):
-        pass
+    def get_json_data(self) -> str:
+        sticks_processed: Set[Stick] = set({})
+        sticks_data = []
+        for cam in self.cameras:
+            for stick in cam.sticks:
+                if stick in sticks_processed:
+                    continue
+                sticks_processed.add(stick)
+                if stick.alternative_view is not None:
+                    if stick.primary:
+                        primary = stick
+                        primary_cam = self.cameras[primary.camera_id]
+                        secondary = stick.alternative_view
+                        secondary_cam = self.cameras[secondary.camera_id]
+                    else:
+                        primary = stick.alternative_view
+                        primary_cam = self.cameras[primary.camera_id]
+                        secondary = stick
+                        secondary_cam = self.cameras[secondary.camera_id]
+                    sync = next(filter(lambda s: s == (primary_cam, secondary_cam), self.linked_cameras))
+                    sticks_processed.add(secondary)
+                else:
+                    primary = stick
+                    primary_cam = cam
+                    secondary = None
+                    secondary_cam = None
+                    sync = None
 
+                stick_data = {"id": primary.id, "description": primary.label}
+                stick_views = []
+
+                primary_stick_data = primary_cam.measurements.iloc[:, [0, PD_IMAGE_NAME, primary_cam.stick_labels_column_ids[primary.label] + PD_STICK_SNOW_HEIGHT]]
+                stick_view = {"primary": True, "camera": primary_cam.folder.name}
+                data = []
+                stick_snow = primary_cam.stick_labels_column_ids[primary.label] + PD_STICK_SNOW_HEIGHT
+                for i in range(primary_stick_data.shape[0]):
+                    #row = primary_stick_data.iloc[i]
+                    timestamp = primary_stick_data.iat[i, 0] #row.iloc[0]
+                    if sync is not None:
+                        reciprocal_timestamp = sync.get_reciprocal_date(primary_cam, timestamp)
+                        if reciprocal_timestamp is None:
+                            reciprocal_timestamp = ""
+                        else:
+                            reciprocal_timestamp = reciprocal_timestamp.isoformat()
+                    else:
+                        reciprocal_timestamp = ""
+                    measurement = {
+                        "imagePath": str(primary_cam.folder / primary_stick_data.iat[i, 1]), #row.iloc[1]),
+                        "timestamp": str(timestamp),
+                        "snowHeight": int(primary_stick_data.iat[i, 2]), #int(row.iloc[2]),
+                        "reciprocalTimestamps": "" if secondary_cam is None else {
+                            secondary_cam.folder.name: str(reciprocal_timestamp)
+                        }
+                    }
+                    data.append(measurement)
+                stick_view["data"] = data
+                stick_views.append(stick_view)
+
+                if secondary is not None:
+                    secondary_stick_data = secondary_cam.measurements.iloc[:, [0, PD_IMAGE_NAME, secondary_cam.stick_labels_column_ids[secondary.label] + PD_STICK_SNOW_HEIGHT]]
+                    stick_view = {"primary": False, "camera": secondary_cam.folder.name}
+                    data = []
+                    stick_snow = secondary_cam.stick_labels_column_ids[secondary.label] + PD_STICK_SNOW_HEIGHT
+                    for i in range(secondary_stick_data.shape[0]):
+                        #row = secondary_stick_data.iloc[i]
+                        timestamp = secondary_stick_data.iat[i, 0] #row.iloc[0]
+                        if sync is not None:
+                            reciprocal_timestamp = sync.get_reciprocal_date(secondary_cam, timestamp)
+                            if reciprocal_timestamp is None:
+                                reciprocal_timestamp = ""
+                            else:
+                                reciprocal_timestamp = reciprocal_timestamp.isoformat()
+                        else:
+                            reciprocal_timestamp = ""
+                        measurement = {
+                            "imagePath": str(secondary_cam.folder / secondary_stick_data.iat[i, 1]), #row.iloc[1]),
+                            "timestamp": str(timestamp),
+                            "snowHeight": int(secondary_stick_data.iat[i, 2]), #int(row.iloc[2]),
+                            "reciprocalTimestamps": {
+                                primary_cam.folder.name: str(reciprocal_timestamp)
+                            }
+                        }
+                        data.append(measurement)
+                    stick_view["data"] = data
+                    stick_views.append(stick_view)
+
+                stick_data["stickViews"] = stick_views
+                sticks_data.append(stick_data)
+        #prof.dump_stats("/home/radoslav/json_export_profiler.json")
+        return json.dumps({"sticksData": sticks_data}, indent=4)
