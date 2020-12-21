@@ -25,6 +25,10 @@ class ButtonColor(IntEnum):
     GREEN = 2
 
 
+class ButtonMode(IntEnum):
+    Button = 0
+    Label = 1
+
 IDLE_COLORS = [
     QColor(50, 50, 50, 200),
     QColor(255, 0, 0, 200),
@@ -177,6 +181,7 @@ class Button(QGraphicsObject):
         self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
         self.scaling = 1.0
         self.label = QGraphicsSimpleTextItem(label, self)
+        #self.font_ = QFont(self.font)
         self.label.setFont(Button.font)
         #self.label.setDefaultTextColor(QColor(255, 255, 255, 255))
         #self.label.setTextInteractionFlags(Qt.TextEditable)
@@ -215,6 +220,8 @@ class Button(QGraphicsObject):
         self.max_pixmap_height = 128
         self.disabled = False
 
+        self.mode = ButtonMode.Button
+
     def set_height(self, h: int):
         self.prepareGeometryChange()
         self.ver_margin = int(0.25 * h)
@@ -236,7 +243,7 @@ class Button(QGraphicsObject):
             factor = w / self.label.boundingRect().width()
             h = factor * self.label.boundingRect().height()
             font = self.label.font()
-            font.setPixelSize(h)
+            font.setPixelSize(max(h, 12))
             self.label.setFont(font)
         self._reposition_text()
 
@@ -277,16 +284,18 @@ class Button(QGraphicsObject):
                                     .marginsAdded(QMarginsF(5, 0, 5, 0)), 5, 5)
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent):
-        if self.disabled:
+        if self.disabled or self.mode == ButtonMode.Label:
             return
         self.fill_color_current = self.logic.press_color()
         self.scene().update()
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
+        if self.disabled or self.mode == ButtonMode.Label:
+            return
         self.click_button()
 
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent):
-        if self.disabled:
+        if self.disabled or self.mode == ButtonMode.Label:
             return
         self.hovered_.emit({'btn_id': self.btn_id, 'button': self, 'hovered': True})
         self.hovered = True
@@ -313,7 +322,7 @@ class Button(QGraphicsObject):
         self.current_timer = self.startTimer(self.color_animation.duration() // 80)
 
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent):
-        if self.disabled:
+        if self.disabled or self.mode == ButtonMode.Label:
             return
 
         self.hovered_.emit({'btn_id': self.btn_id, 'button': self, 'hovered': False})
@@ -466,3 +475,6 @@ class Button(QGraphicsObject):
         #self.logic.set_colors([color, color.lighter(120), color.darker(120)])
         self.fill_color_current = self.logic.idle_color()
         self.update()
+
+    def set_mode(self, mode: ButtonMode):
+        self.mode = mode
