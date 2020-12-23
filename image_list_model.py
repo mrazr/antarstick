@@ -7,15 +7,17 @@ from os import scandir
 import sys
 
 from PyQt5.QtGui import QBrush, QColor, QFontDatabase, QFont, QIcon, QImage, QPixmap, QPainter
+from PyQt5.QtCore import QThread
 
-from camera import Camera, PhotoState
-import resources_rc
+from camera import Camera, PhotoState, PD_IMAGE_STATE
+#import resources_rc
+from thumbnail_storage import ThumbnailStorage
 
 
-class ImageListModel(QAbstractTableModel):
+class ImageListModel(QAbstractListModel):
 
     def __init__(self, parent: QWidget = None):
-        QAbstractTableModel.__init__(self, parent)
+        QAbstractListModel.__init__(self, parent)
 
         self.image_names: List[Path] = []
         self.processed_images_count: int = 0
@@ -31,15 +33,18 @@ class ImageListModel(QAbstractTableModel):
         self.snow_level3 = QPixmap()
         self.sun = QIcon(':/icons/sun.svg')
         self.moon = QIcon(':/icons/moon.svg')
+        #self.sun = "☀"
+        #self.moon = "🌙"
+        #self.hourglass = "⏳"
         self.quality_colors = {
             'BAD': QColor(200, 0, 0),
             'OK': QColor(200, 100, 0),
             'GOOD': QColor(100, 200, 0),
         }
-        #self.sun = "☀"
-        #self.moon = "🌙"
-        #self.hourglass = "⏳"
         self._generate_snow_level_icons()
+        self.thumbnails = ThumbnailStorage()
+        self.thumbnails.thumbnails_loaded.connect(self.handle_thumbnails_loaded)
+        self.dragging = False
 
     def _generate_snow_level_icons(self):
         self.snow_level2 = QPixmap(2 * self.snow_level1.width(), self.snow_level1.height())
@@ -62,6 +67,7 @@ class ImageListModel(QAbstractTableModel):
         self.processed_images_count = processed_count
         if not folder.exists():
             raise FileNotFoundError("This should not happen")
+        self.thumbnails.initialize(self.camera)
         #only_images = filter(lambda f: not f.is_dir(), scandir(folder))
         self.beginResetModel()
         #self.image_names = list(map(lambda f: Path(f.path), sorted(only_images, key=lambda f: f.name)))
@@ -72,12 +78,11 @@ class ImageListModel(QAbstractTableModel):
         return len(self.image_names)
 
     def columnCount(self, parent: QModelIndex = QModelIndex()):
-        return 3
+        return 1
 
     def data(self, index: QModelIndex, role=Qt.DisplayRole):
         if not index.isValid():
             return None
-
         if role == Qt.DisplayRole:
             if index.column() == 0:
                 return self.image_names[index.row()].name
@@ -92,61 +97,24 @@ class ImageListModel(QAbstractTableModel):
                     snow = self.camera.photo_is_snow(self.image_names[index.row()].name)
                     text += " " + self.snow_level1 if snow else ""
 
-                #if daytime is None:
-                #    text += self.hourglass
-                #else:
-                #    text += self.sun if daytime else self.moon
-
-                #snow = self.camera.photo_is_snow(self.image_names[index.row()].name)
-                #if snow is None:
-                #    text += " " + self.hourglass
-                #else:
-                #    text += " " + self.snow if snow else ""
                 return text
-                #if index.row() % 2 == 0:
-                #    return self.sun + self.snow
-                #else:
-                #    return self.moon + self.snow
-            #elif index.column() == 2:
-            #    return "❄"
-
-        #if role == Qt.SizeHintRole:
-        #    if index.column() == 1:
-        #        return QSize(64, 64)
 
         if role == Qt.DecorationRole and index.column() == 1:
-            #r = random.random()
-            #if r < .5:
-            #    return self.sun
-            #return self.moon
-            avg_stick_length = self.camera.average_stick_length + 0.00001
             average_snow_height = self.camera.average_snow_height(self.image_names[index.row()].name)
-            average_snow_height = average_snow_height / avg_stick_length
-            if average_snow_height > 0.05:
-                if average_snow_height < 0.33:
+            if average_snow_height > 0:
+                if average_snow_height == 1:
                     return self.snow_level1
-                elif average_snow_height < 0.66:
+                elif average_snow_height == 2:
                     return self.snow_level2
-                elif average_snow_height < 1.0:
+                elif average_snow_height >= 3:
                     return self.snow_level3
             return None
 
-
-        #if role == Qt.DecorationRole and index.column() == 2:
-        #    if random.random() > .75:
-        #        return self.snow_level1
-        #    return None
-
-        if role == Qt.SizeHintRole:
-            if index.column() == 1 or index.column() == 2:
-                return QSize(32, 32)
+        if role == Qt.DecorationRole and index.column() == 0:
+            return self.thumbnails.get_thumbnail(index.row(), self.dragging)
 
         if role == Qt.BackgroundRole:
-            #if index.column() == 1:
-            #    return QBrush(QColor(180, 200, 0))
-            #elif index.column() == 2:
-            #    return QBrush(QColor(0, 100, 200))
-            photo_state = self.camera.photos_state[self.image_names[index.row()].name]
+            photo_state = self.camera.measurements.iat[index.row(), PD_IMAGE_STATE]
             if photo_state == PhotoState.Processed:
                 quality = self.camera.image_quality(self.image_names[index.row()].name)
                 if quality < 0.33:
@@ -163,9 +131,8 @@ class ImageListModel(QAbstractTableModel):
         if role == Qt.UserRole:
             return self.image_names[index.row()]
 
-        #if role == Qt.FontRole:
-        #    if index.column() == 1 or index.column() == 2:
-        #        return self.emoji_font
+        if role == Qt.UserRole + 1:
+            return self.camera.measurements.iat[index.row(), 5]
 
 
         if role == Qt.ForegroundRole and index.row() < self.processed_images_count:
@@ -182,3 +149,15 @@ class ImageListModel(QAbstractTableModel):
         top_left = self.index(start_id, 0)
         bottom_right = self.index(end_id, 2)
         self.dataChanged.emit(top_left, bottom_right, [Qt.BackgroundRole, Qt.DecorationRole])
+
+    def handle_slider_pressed(self):
+        self.dragging = True
+
+    def handle_slider_released(self, first_index: QModelIndex, last_index: QModelIndex):
+        self.dragging = False
+        self.thumbnails.load_thumbnails(first_index.row(), last_index.row())
+
+    def handle_thumbnails_loaded(self, indices: List[int]):
+        fidx = self.index(indices[0], 0)
+        lidx = self.index(indices[-1], 0)
+        self.dataChanged.emit(fidx, lidx, [Qt.DecorationRole])
