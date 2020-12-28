@@ -433,7 +433,8 @@ class Camera(QObject):
             stick_data[stick.label + '_height_px'] = [-1] * len(self.image_list) #pd.Series(data=[-1] * len(self.image_list))
             stick_data[stick.label + '_snow_height'] = [-1] * len(self.image_list) #pd.Series(data=[-1] * len(self.image_list))
             stick_data[stick.label + '_visible'] = [False] * len(self.image_list) #pd.Series(data=[-1] * len(self.image_list))
-
+        if self.measurements.shape[1] >= PD_FIRST_STICK_COLUMN:
+            self.measurements = self.measurements.iloc[:, PD_DATE:PD_FIRST_STICK_COLUMN]
         for col, val in stick_data.items():
             self.measurements.insert(self.measurements.shape[1], col, val)
 
@@ -605,6 +606,9 @@ class Camera(QObject):
         #self.measurements.iat[problem_id + 1:, PD_DATE] = offsets.cumsum().add(proposed_date)
         self.measurements.loc[indices, 'date_time'] = offsets.cumsum().add(proposed_date)
         self.check_for_temporal_monotonicity()
+
+    def measurements_initialized(self) -> bool:
+        return self.measurements.shape[1] > PD_FIRST_STICK_COLUMN
 
     def __hash__(self):
         return self.folder.__hash__()
