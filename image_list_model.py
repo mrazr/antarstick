@@ -132,7 +132,8 @@ class ImageListModel(QAbstractListModel):
             return self.image_names[index.row()]
 
         if role == Qt.UserRole + 1:
-            return self.camera.measurements.iat[index.row(), 5]
+            return self.camera.is_snowy(self.image_names[index.row()].name)
+            #return self.camera.measurements.iat[index.row(), 5]
 
 
         if role == Qt.ForegroundRole and index.row() < self.processed_images_count:
