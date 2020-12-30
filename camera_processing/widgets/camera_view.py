@@ -4,18 +4,20 @@ from typing import Callable, List, Optional, Dict
 import PyQt5
 from PyQt5.QtCore import QByteArray, QLine, QMarginsF, QPoint, pyqtSignal, QPointF, Qt, QTimer, QTimerEvent, QThread, \
     QThreadPool, QRunnable, pyqtProperty, QPropertyAnimation, QEasingCurve, QAbstractAnimation, QRectF
-from PyQt5.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap, QStaticText
+from PyQt5.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap, QStaticText, QKeyEvent
 from PyQt5.QtWidgets import (QGraphicsItem, QGraphicsPixmapItem,
                              QGraphicsRectItem, QGraphicsSceneHoverEvent,
                              QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem,
                              QWidget, QGraphicsObject, QStyleOptionGraphicsItem, QGraphicsBlurEffect)
 import numpy as np
+from PyQt5.uic.properties import QtGui
 
 from camera import Camera
 from camera_processing.widgets.stick_length_input import TextInputWidget
 from camera_processing.widgets.stick_widget import StickWidget, StickMode
 from camera_processing.widgets.button import Button, ButtonColor, ButtonMode
 from dataset import Dataset
+from camera_processing.antarstick_processing import get_stick_area
 from stick import Stick
 
 
@@ -177,6 +179,7 @@ class CameraView(QGraphicsObject):
     sync_confirm_clicked = pyqtSignal('PyQt_PyObject')
     sync_cancel_clicked = pyqtSignal('PyQt_PyObject')
     first_photo_clicked = pyqtSignal('PyQt_PyObject')
+    enter_pressed = pyqtSignal()
 
     def __init__(self, scale: float, parent: Optional[QGraphicsItem] = None):
         QGraphicsObject.__init__(self, parent)
@@ -241,6 +244,11 @@ class CameraView(QGraphicsObject):
         self.overlay_message.setPen(QPen(QColor(0, 0, 0, 200), 2.0))
         self.overlay_message.setVisible(False)
         self.overlay_message.setZValue(6)
+
+        self.stick_box = QGraphicsRectItem(parent=self)
+        self.stick_box.setFlag(QGraphicsItem.ItemIsMovable, True)
+        self.stick_box.setVisible(False)
+        self.stick_box_start_pos = QPoint()
 
     def _connect_control_buttons(self):
         self.control_widget.synchronize_btn.clicked.connect(lambda: self.synchronize_clicked.emit(self))
@@ -336,6 +344,7 @@ class CameraView(QGraphicsObject):
         #self.stick_length_btn.fit_to_contents()
         #self.stick_length_input.set_value(str(stick_length))
         #self.layout_title_area()
+        self.update_stick_box()
         self.scene().update()
 
     def scale_item(self, factor: float):
@@ -386,8 +395,8 @@ class CameraView(QGraphicsObject):
             sw.deleteLater()
         self.stick_widgets.clear()
     
-    def set_stick_edit_mode(self, value: bool):
-        self.stick_edit_mode = value
+    #def set_stick_edit_mode(self, value: bool):
+    #    self.stick_edit_mode = value
 
     def handle_stick_created(self, stick: Stick):
         if stick.camera_id != self.camera.id:
@@ -421,7 +430,8 @@ class CameraView(QGraphicsObject):
                     break
             self.stick_widgets.remove(to_remove)
             to_remove.setParentItem(None)
-            self.scene().removeItem(to_remove)
+            if self.scene() is not None:
+                self.scene().removeItem(to_remove)
             to_remove.deleteLater()
         self.update()
 
@@ -435,6 +445,7 @@ class CameraView(QGraphicsObject):
             sw.set_mode(self.stick_widget_mode)
             self.connect_stick_widget_signals(sw)
             self.stick_widgets.append(sw)
+        self.update_stick_box()
         self.stick_widgets_out_of_sync.emit(self)
         self.update()
 
@@ -457,6 +468,7 @@ class CameraView(QGraphicsObject):
         self.stick_widget_mode = mode
         for sw in self.stick_widgets:
             sw.set_mode(mode)
+        self.set_stick_edit_mode(mode == StickMode.Edit)
 
     def handle_stick_widget_changed(self, stick_widget: StickWidget):
         self.camera.stick_changed.emit(stick_widget.stick)
@@ -555,3 +567,55 @@ class CameraView(QGraphicsObject):
             self.control_widget.set_title_text(self.camera.folder.name)
         else:
             self.control_widget.set_title_text(msg)
+
+    def update_stick_box(self):
+        left = 9000
+        right = 0
+        top = 9000
+        bottom = -1
+
+        for stick in self.camera.sticks:
+            left = min(left, min(stick.top[0], stick.bottom[0]))
+            right = max(right, max(stick.top[0], stick.bottom[0]))
+            top = min(top, min(stick.top[1], stick.bottom[1]))
+            bottom = max(bottom, max(stick.top[1], stick.bottom[1]))
+        left -= 100
+        right += 100
+        top -= 100
+        bottom += 100
+        self.stick_box.setRect(left, top,
+                               right - left, bottom - top)
+        pen = QPen(QColor(0, 100, 200, 200))
+        pen.setWidth(2)
+        pen.setStyle(Qt.DashLine)
+        self.stick_box.setPen(pen)
+
+    def set_stick_edit_mode(self, is_edit: bool):
+        if is_edit:
+            self.update_stick_box()
+            self.stick_box_start_pos = self.stick_box.pos()
+            for sw in self.stick_widgets:
+                sw.setParentItem(self.stick_box)
+        else:
+            offset = self.stick_box.pos() - self.stick_box_start_pos
+            for sw in self.stick_widgets:
+                stick = sw.stick
+                stick.translate(np.array([int(offset.x()), int(offset.y())]))
+                sw.setParentItem(self)
+                sw.set_stick(stick)
+            self.stick_box.setParentItem(None)
+            self.stick_box = QGraphicsRectItem(self)
+            self.stick_box.setFlag(QGraphicsItem.ItemIsMovable, True)
+            self.stick_box.setVisible(False)
+        self.stick_box.setVisible(is_edit)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        pass
+
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:
+        if event.key() in [Qt.Key_Right, Qt.Key_Tab, Qt.Key_Space]:
+            self.control_widget.next_photo_btn.click_button(True)
+        elif event.key() in [Qt.Key_Left]:
+            self.control_widget.prev_photo_btn.click_button(True)
+        elif event.key() == Qt.Key_S:
+            self.enter_pressed.emit()

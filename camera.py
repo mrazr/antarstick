@@ -410,6 +410,8 @@ class Camera(QObject):
         return sticks
 
     def initialize_measurements(self, save_immediately: bool = False):
+        if self.measurements.shape[1] > PD_FIRST_STICK_COLUMN:
+            return
         self._update_stick_labels_id()
         self.stick_to_stick_vectors.clear()
         average_length = np.mean(list(map(lambda stick: stick.length_px, self.sticks)))
@@ -609,6 +611,12 @@ class Camera(QObject):
 
     def measurements_initialized(self) -> bool:
         return self.measurements.shape[1] > PD_FIRST_STICK_COLUMN
+
+    def reset_measurements(self):
+        self.initialize_results()
+        #self.measurements = self.measurements.iloc[:, PD_DATE:PD_FIRST_STICK_COLUMN]
+        #self.measurements.iloc[:, PD_IMAGE_STATE] = PhotoState.Unprocessed
+        #self.measurements
 
     def __hash__(self):
         return self.folder.__hash__()

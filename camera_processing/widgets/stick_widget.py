@@ -48,6 +48,12 @@ class StickWidget(QGraphicsObject):
     negative_color = QColor(200, 0, 0)
     positive_color = QColor(0, 200, 0)
 
+    mismatched = pyqtSignal('PyQt_PyObject')
+    misplaced = pyqtSignal('PyQt_PyObject')
+    measurement_corrected = pyqtSignal('PyQt_PyObject')
+    clearly_visible = pyqtSignal('PyQt_PyObject')
+    zero_clicked = pyqtSignal('PyQt_PyObject')
+
     def __init__(self, stick: Stick, parent: Optional[QGraphicsItem] = None):
         QGraphicsObject.__init__(self, parent)
         self.stick = stick
@@ -139,6 +145,44 @@ class StickWidget(QGraphicsObject):
         self.update_tooltip()
         self.show_measurements: bool = False
         self.proposed_snow_height: int = -1
+
+        self.misplace_btn = Button("misplace_btn", "P", parent=self)
+        self.misplace_btn.clicked.connect(lambda: self.misplaced.emit(self))
+        self.misplace_btn.set_is_check_button(True)
+        self.misplace_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+        self.misplace_btn.setVisible(False)
+        #self.misplace_btn.setPos(self.bottom_handle.rect().center().x() - self.misplace_btn.boundingRect().width() * 0.5,
+        #                         self.bottom_handle.pos().y() + 3 * self.misplace_btn.boundingRect().height())
+
+        self.misplace_btn.setPos(self.boundingRect().bottomLeft() + QPoint(0, self.misplace_btn.boundingRect().height()))
+
+        self.mismatch_btn = Button("mismatch_btn", "M", parent=self)
+        self.mismatch_btn.clicked.connect(lambda: self.mismatched.emit(self))
+        self.mismatch_btn.set_is_check_button(True)
+        self.mismatch_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+        self.mismatch_btn.setVisible(False)
+        #self.mismatch_btn.setPos(self.misplace_btn.pos() + QPointF(0,
+        #                                                           self.misplace_btn.boundingRect().height()))
+
+        self.mismatch_btn.setPos(self.misplace_btn.pos() + QPoint(1.5 * self.misplace_btn.boundingRect().width(), 0))
+
+        self.clearly_visible_btn = Button("clearly_visible_btn", "V", parent=self)
+        self.clearly_visible_btn.clicked.connect(lambda: self.clearly_visible.emit(self))
+        self.clearly_visible_btn.set_is_check_button(True)
+        self.clearly_visible_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+        self.clearly_visible_btn.setVisible(False)
+        #self.clearly_visible_btn.setPos(self.mismatch_btn.pos() + QPointF(0,
+        #                                                                  self.mismatch_btn.boundingRect().height()))
+        self.clearly_visible_btn.setPos(self.mismatch_btn.pos() + QPoint(1.5 * self.mismatch_btn.boundingRect().width(), 0))
+
+        self.zero_btn = Button("zero_btn", "0", parent=self)
+        self.zero_btn.set_is_check_button(True)
+        self.zero_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+        self.zero_btn.setVisible(False)
+        #self.zero_btn.setPos(self.mismatch_btn.pos() + QPointF(0,
+        #                                                                  self.mismatch_btn.boundingRect().height()))
+        self.zero_btn.setPos(self.clearly_visible_btn.pos() + QPoint(1.5 * self.clearly_visible_btn.boundingRect().width(), 0))
+        self.zero_btn.clicked.connect(self.handle_zero)
 
     @pyqtSlot()
     def handle_btn_delete_clicked(self):
@@ -272,6 +316,11 @@ class StickWidget(QGraphicsObject):
         elif mode == StickMode.Edit:
             self.set_mode(StickMode.EditDelete)
             self.btn_delete.setVisible(False)
+        elif mode == StickMode.Measurement:
+            self.misplace_btn.setVisible(True)
+            self.mismatch_btn.setVisible(True)
+            self.zero_btn.setVisible(True)
+            self.setVisible(True)
 
         self.mode = mode
         self.update_tooltip()
@@ -302,8 +351,11 @@ class StickWidget(QGraphicsObject):
             return
 
         if self.mode == StickMode.Measurement:
+            old_snow = self.stick.snow_height_px
             self.measured_height = self.proposed_snow_height
             self.stick.set_snow_height_px(self.proposed_snow_height)
+            if abs(old_snow - self.proposed_snow_height) > 0:
+                self.measurement_corrected.emit(self)
             self.proposed_snow_height = -1
 
         if self.mode != StickMode.EditDelete and self.mode != StickMode.Edit:
@@ -574,12 +626,18 @@ class StickWidget(QGraphicsObject):
         self.setToolTip(f'{mark}{self.stick.label}{role}{stick_view_text}\nLength: {self.stick.length_cm} cm\n{snow_txt}')
 
     def set_stick(self, stick: Stick):
+        self.reset_d_btns()
         self.stick = stick
         self.adjust_line()
         self.adjust_handles()
         self.set_snow_height(stick.snow_height_px)
         self.update_tooltip()
-        self.setVisible(self.stick.is_visible)
+        if self.mode == StickMode.Measurement:
+            self.set_frame_color(QColor(200, 100, 0, 100) if not self.stick.is_visible else None)
+            self.setVisible(True)
+            self.clearly_visible_btn.setVisible(not self.stick.is_visible)
+        else:
+            self.setVisible(self.stick.is_visible)
         #self.line.setP1(QPoint(*self.stick.top))
         #self.line.setP2(QPoint(*self.stick.bottom))
         #self.adjust_line()
@@ -588,3 +646,13 @@ class StickWidget(QGraphicsObject):
         self.show_measurements = show
         self.stick_label_text.setVisible(show)
         self.update()
+
+    def handle_zero(self):
+        self.stick.set_snow_height_px(0)
+        self.measurement_corrected.emit(self)
+
+    def reset_d_btns(self):
+        self.misplace_btn.set_default_state()
+        self.mismatch_btn.set_default_state()
+        self.zero_btn.set_default_state()
+        self.clearly_visible_btn.set_default_state()

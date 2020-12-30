@@ -29,7 +29,7 @@
      <x>0</x>
      <y>0</y>
      <width>1046</width>
-     <height>20</height>
+     <height>22</height>
     </rect>
    </property>
   </widget>
@@ -51,6 +51,7 @@
    <addaction name="actionOpen_dataset"/>
    <addaction name="actionSave_dataset"/>
    <addaction name="actionClose_dataset"/>
+   <addaction name="actionExport_to_JSON"/>
   </widget>
   <action name="actionAdd_camera">
    <property name="icon">
@@ -95,6 +96,11 @@
    </property>
    <property name="text">
     <string>Close dataset</string>
+   </property>
+  </action>
+  <action name="actionExport_to_JSON">
+   <property name="text">
+    <string>Export to JSON</string>
    </property>
   </action>
  </widget>
