@@ -21,7 +21,7 @@ PD_ORIG_DATE = 1
 PD_IMAGE_NAME = 2
 PD_IMAGE_STATE = 3
 PD_IMAGE_QUALITY = 4
-PD_IS_SNOWY = 5
+PD_WEATHER_CONDITIONS = 5
 PD_IS_DAY = 6
 
 PD_DAY = 1
@@ -46,6 +46,12 @@ class PhotoState(IntEnum):
     Skipped = -1,
     Unprocessed = 0,
     Processed = 1,
+
+
+class WeatherCondition(IntEnum):
+    Unknown = -1
+    NoSnow = 0
+    Snow = 1
 
 
 class Camera(QObject):
@@ -350,13 +356,15 @@ class Camera(QObject):
         for i, stick in enumerate(self.sticks):
             self.stick_labels_column_ids[stick.label] = PD_STICK_COLUMNS_COUNT * i + PD_FIRST_STICK_COLUMN
 
-    def get_batch(self, batch_count: int = 2, batch_size: int = 50) -> Tuple[List[List[str]], int]:
-        non_processed = self.measurements[self.measurements.iloc[:, PD_IMAGE_STATE] == PhotoState.Unprocessed]['image_name']
+    def get_batch(self, batch_count: int = 2, batch_size: int = 50) -> Tuple[List[List[Tuple[str, WeatherCondition]]], int]:
+        non_processed = self.measurements.loc[self.measurements.iloc[:, PD_IMAGE_STATE] == PhotoState.Unprocessed,
+                                              ['image_name', 'weather_conditions']]
         if batch_size == 0:
             batch_size = min(int(np.ceil(non_processed.shape[0] / batch_count)), non_processed.shape[0])
         batches = []
         for i in range(batch_count):
-            batch = non_processed[i * batch_size: i * batch_size + batch_size].tolist()
+            batch = list(zip(non_processed.iloc[i * batch_size: i * batch_size + batch_size, 0].tolist(),
+                             non_processed.iloc[i * batch_size: i * batch_size + batch_size, 1].tolist()))
             batches.append(batch)
         return batches, len(non_processed)
 
@@ -395,7 +403,7 @@ class Camera(QObject):
     def get_sticks_in_image(self, image: str, output_sticks: Optional[List[Stick]] = None) -> List[Stick]:
         image_id = self.image_names_ids[image]
 
-        if self.measurements.shape[0] == 0 or self.measurements.iloc[image_id]['state'] <= 0: #not self.measurements.iat[image_id, PD_IMAGE_PROCESSED]:
+        if self.measurements.shape[1] <= PD_FIRST_STICK_COLUMN or self.measurements.iloc[image_id]['state'] <= 0: #not self.measurements.iat[image_id, PD_IMAGE_PROCESSED]:
             return self.sticks
         sticks = output_sticks if output_sticks is not None else list(map(lambda s: s.copy(), self.sticks))
         for stick in sticks:
@@ -458,17 +466,23 @@ class Camera(QObject):
         self.needs_to_save = not save_immediately
 
     def initialize_results(self):
-        self.measurements = pd.DataFrame(data=
-        {
-            'image_name': self.image_list,
-            'state': [PhotoState.Unprocessed] * len(self.image_list),
-            'image_quality': [-1.0] * len(self.image_list),
-            'snowy': [False] * len(self.image_list),
-            'is_day': [True] * len(self.image_list),
-        })
-        self.timestamps_available = False
+        if self.measurements.shape[1] > PD_FIRST_STICK_COLUMN:
+            self.measurements = self.measurements.iloc[:, PD_DATE:PD_FIRST_STICK_COLUMN]
+            self.measurements.iloc[:, PD_IMAGE_STATE] = PhotoState.Unprocessed
+            self.measurements.iloc[:, PD_WEATHER_CONDITIONS] = WeatherCondition.Unknown
+        else:
+            self.measurements = pd.DataFrame(data=
+            {
+                'image_name': self.image_list,
+                'state': [PhotoState.Unprocessed] * len(self.image_list),
+                'image_quality': [-1.0] * len(self.image_list),
+                'weather_conditions': [WeatherCondition.Unknown] * len(self.image_list),
+                'is_day': [True] * len(self.image_list),
+            })
+            self.timestamps_available = False
 
     def insert_measurements2(self, measurements: Dict[str, Dict[str, Union[List[Stick], float, PhotoState]]]):
+        self.needs_to_save = True
         for img_name, sticks_photoinfo in measurements.items():
             self.processed_photos_count += 1
             sticks = sticks_photoinfo['sticks']
@@ -476,7 +490,8 @@ class Camera(QObject):
             state = sticks_photoinfo['state']
             self.measurements.iat[image_id, PD_IMAGE_STATE] = state
             self.measurements.iat[image_id, PD_IMAGE_QUALITY] = sticks_photoinfo['image_quality']
-            self.measurements.iat[image_id, PD_IS_SNOWY] = sticks_photoinfo.get('is_snowy', False)
+            self.measurements.iat[image_id, PD_WEATHER_CONDITIONS] = WeatherCondition.Snow if \
+                sticks_photoinfo.get('is_snowy', False) else WeatherCondition.NoSnow
             self.measurements.iat[image_id, PD_IS_DAY] = sticks_photoinfo['is_day']
             self.photos_state[img_name] = state
             for stick in sticks:
@@ -517,7 +532,7 @@ class Camera(QObject):
 
     def is_snowy(self, image: str) -> bool:
         if self.measurements.shape[1] > 5:
-            return self.measurements.iat[self.image_names_ids[image], PD_IS_SNOWY]
+            return self.measurements.iat[self.image_names_ids[image], PD_WEATHER_CONDITIONS] == WeatherCondition.Snow
         return False
 
     def average_snow_height(self, image: str) -> int:
@@ -614,9 +629,11 @@ class Camera(QObject):
 
     def reset_measurements(self):
         self.initialize_results()
-        #self.measurements = self.measurements.iloc[:, PD_DATE:PD_FIRST_STICK_COLUMN]
-        #self.measurements.iloc[:, PD_IMAGE_STATE] = PhotoState.Unprocessed
-        #self.measurements
+
+    def update_stick(self, stick: Stick):
+        self.needs_to_save = True
+        img_id = self.image_names_ids[stick.view]
+        self.measurements.iat[img_id, self.stick_labels_column_ids[stick.label] + PD_STICK_SNOW_HEIGHT] = stick.snow_height_cm
 
     def __hash__(self):
         return self.folder.__hash__()

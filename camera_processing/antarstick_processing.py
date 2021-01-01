@@ -6,17 +6,22 @@ from typing import List, Dict, Tuple, Optional
 import cv2 as cv
 import numpy as np
 from disjoint_set import DisjointSet
+import joblib
+from sklearn.pipeline import Pipeline
 
-from camera import Camera
+from camera import Camera, WeatherCondition
 from camera_processing.stick_detection import boxes_intersection, line_upright_bbox, detect_sticks, \
     merge_lines_with_same_orientation, length_of_line, fit_into_length, fit_into_length_from_bottom, line_vector, \
     find_sticks
 from stick import Stick
 
 STICK_HOG_SVC_FILE = Path(sys.argv[0]).parent / 'camera_processing/stick_hog_desc'
+SNOW_CLASSIFIER_FILE = Path(sys.argv[0]).parent / 'camera_processing/snow_classifier.joblib'
 
 hog_desc = cv.HOGDescriptor()
 hog_desc.load(str(STICK_HOG_SVC_FILE))
+
+snow_classifier: Pipeline = joblib.load(SNOW_CLASSIFIER_FILE)
 
 
 @dataclass
@@ -108,6 +113,7 @@ class Measurement:
 
     sticks_to_confirm: Optional[Stick] = None
     im: Optional[np.ndarray] = None
+    snow_pic_count: int = 0
 
 
 def iou(box1: List[int], box2: List[int]) -> float:
@@ -240,7 +246,7 @@ def match_new_sticks_with_old(old_sticks: List[Stick], new_sticks: List[np.ndarr
                 if old_ == old_stick:
                     continue
                 dist_from_camera2 = np.linalg.norm(old_.bottom - np.array([1000, 1500]))
-                factor = dist_from_camera2 / dist_from_camera
+                factor = 1.0 #dist_from_camera2 / dist_from_camera
                 # Correction due to distance from camera
                 corrected_vector = np.round(factor * vector).astype(np.int32)
                 #print(f'corrected vector is {corrected_vector}')
@@ -304,36 +310,67 @@ def get_stick_area(sticks: List[Stick], width: int = -1) -> np.ndarray: #List[in
     #    break
 
 
-def analyze_photos_with_stick_tracking(images: List[str], folder: Path, sticks: List[Stick], standard_size: Tuple[int, int]) -> Measurement:
+def analyze_photos_with_stick_tracking(images: List[Tuple[str, WeatherCondition]], folder: Path, sticks: List[Stick], standard_size: Tuple[int, int], process_nighttime: bool = True, snow_pic_count: int = 0) -> Measurement:
     update_step = 100
     win_size = (48, 96)
     stick_box = get_stick_area(sticks)
     #stick_box = [0, 0, 0, 0]
     quality_sticks = len(list(filter(lambda s: s.determines_quality, sticks)))
+
     measurement = Measurement()
     measurement.reason = Reason.Update
-    for img_name in images[:update_step]:
+    measurement.snow_pic_count = snow_pic_count
+
+    for img_name, condition in images[:update_step]:
         sticks_: List[Stick] = list(map(lambda s: s.copy(), sticks))
         found_sticks = {stick: False for stick in sticks}
         for s in sticks_:
             s.view = img_name
             s.is_visible = False
             s.set_snow_height_px(0)
-        gray = cv.pyrDown(cv.imread(str(folder / img_name), cv.IMREAD_GRAYSCALE))
-        #gray = cv.cvtColor(bgr, cv.COLOR_BGR2GRAY)
-        #nighttime = is_night(bgr)
+        if condition == WeatherCondition.Snow:
+            gray = cv.pyrDown(cv.imread(str(folder / img_name), cv.IMREAD_GRAYSCALE))
+            snowy = True
+        else:
+            bgr = cv.pyrDown(cv.imread(str(folder / img_name)))
+            gray = cv.cvtColor(bgr, cv.COLOR_BGR2GRAY)
+            bgr = cv.pyrDown(bgr)
+            avg_color = np.mean(bgr[370:720, :], axis=(0, 1))
+            snowy = snow_classifier.predict([avg_color])[0] > 0
         daytime = is_day(gray)
-        gray_crop = cv.GaussianBlur(gray, (3, 3), sigmaX=1.0)[stick_box[0, 1]:stick_box[1, 1], :]
-        #gray_crop = cv.copyMakeBorder(gray_crop, 0, 0, 24, 24, cv.BORDER_REPLICATE)
-        gray_h = cv.resize(gray_crop, (0, 0), fx=0.5, fy=0.5, interpolation=cv.INTER_LINEAR)
-        snowy = is_snow(gray)
-        if not snowy and daytime:
+
+        if snowy and daytime:
+            measurement.snow_pic_count = min(measurement.snow_pic_count + 3, 5)
+        elif daytime:
+            measurement.snow_pic_count = max(measurement.snow_pic_count - 1, 0)
+
+        if not daytime and not process_nighttime:
+            measurement.measurements[img_name] = {'sticks': sticks_,
+                                                  'image_quality': 1.0,
+                                                  'is_day': False,
+                                                  'state': -1,
+                                                  'is_snowy': False}
+            continue
+
+        if not snowy and measurement.snow_pic_count < 3 and daytime:
             measurement.measurements[img_name] = {'sticks': sticks_,
                                                   'image_quality': 1.0,
                                                   'is_day': True,
                                                   'state': 1,
                                                   'is_snowy': False}
             continue
+
+        if not daytime and measurement.snow_pic_count < 3:
+            measurement.measurements[img_name] = {'sticks': sticks_,
+                                                  'image_quality': 1.0,
+                                                  'is_day': False,
+                                                  'state': 1,
+                                                  'is_snowy': False}
+            continue
+
+        gray_crop = cv.GaussianBlur(gray, (3, 3), sigmaX=1.0)[stick_box[0, 1]:stick_box[1, 1], :]
+        #gray_crop = cv.copyMakeBorder(gray_crop, 0, 0, 24, 24, cv.BORDER_REPLICATE)
+        gray_h = cv.resize(gray_crop, (0, 0), fx=0.5, fy=0.5, interpolation=cv.INTER_LINEAR)
         found, weights = hog_desc.detect(gray_crop)
         found_, weights_ = hog_desc.detect(gray_h)
         if len(weights) > 0:
@@ -358,6 +395,8 @@ def analyze_photos_with_stick_tracking(images: List[str], folder: Path, sticks: 
         matches, vector = match_new_sticks_with_old(sticks_, grouped)
         detected_sticks = 0
         if matches is not None:
+            if condition != WeatherCondition.Snow:
+                bgr = cv.pyrUp(bgr)
             for match in matches:
                 if match[0] is None:
                     continue
@@ -389,7 +428,7 @@ def analyze_photos_with_stick_tracking(images: List[str], folder: Path, sticks: 
                     line_ = fit_into_length(line, stick.length_px)
                     stick.set_top(line_[0] + box[0])
                     stick.set_bottom(line_[1] + box[0])
-                    stick.set_snow_height_px(stick.length_px - length_of_line(line))
+                    stick.set_snow_height_px(max(stick.length_px - length_of_line(line), 0))
                     #line = np.round((1.0 / scale) * line).astype(np.int32) + box[0]
                     #snow_height = np.linalg.norm(line[1] - stick.bottom)
                     #stick.is_visible = True
@@ -400,6 +439,11 @@ def analyze_photos_with_stick_tracking(images: List[str], folder: Path, sticks: 
                     #stick.set_top(line_[0])
                     #stick.set_bottom(line_[1])
                     #stick.set_snow_height_px(snow_height)  # stick.length_px - length_of_line(line))
+                    if condition != WeatherCondition.Snow:
+                        bgr_roi = bgr[box[0, 1]:box[1, 1], box[0, 0]:box[1, 0]]
+                        mean_color = np.mean(bgr_roi[int(np.round(0.7 * bgr_roi.shape[0])):, :], axis=(0, 1))
+                        if daytime and not (snow_classifier.predict([mean_color])[0] > 0):
+                            stick.set_snow_height_px(0)
             measurement.measurements[img_name] = {'sticks': sticks_,
                                                   'image_quality': min(detected_sticks / quality_sticks, 1.0),
                                                   'is_day': daytime,
@@ -413,8 +457,8 @@ def analyze_photos_with_stick_tracking(images: List[str], folder: Path, sticks: 
                                                   'is_snowy': False}
 
     measurement.remaining_photos = images[update_step:]
-    if len(measurement.remaining_photos) == 0:
-        measurement.reason = Reason.FinishedQueue
+    #if len(measurement.remaining_photos) == 0:
+    #    measurement.reason = Reason.FinishedQueue
     return measurement
 
 
