@@ -9,6 +9,7 @@ class CamGraphicsView(QGraphicsView):
 
     view_changed = pyqtSignal()
     rubber_band_started = pyqtSignal()
+    mouse_move = pyqtSignal(QPointF)
 
     def __init__(self, link_manager: StickLinkingStrategy, link2: StickLinkingStrategy, parent: QWidget = None):
         QGraphicsView.__init__(self, parent)
@@ -110,6 +111,7 @@ class CamGraphicsView(QGraphicsView):
         #if not self.stick_link_manager.anchored:
         self.stick_link_manager.set_target(self.mapToScene(event.pos()))
         self.link2.set_target(self.mapToScene(event.pos()))
+        self.mouse_move.emit(self.mapToScene(event.pos()))
         QGraphicsView.mouseMoveEvent(self, event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:

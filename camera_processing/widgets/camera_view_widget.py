@@ -25,7 +25,7 @@ import exifread
 import camera_processing.antarstick_processing
 import camera_processing.stick_detection as antar
 import camera_processing.antarstick_processing as snow
-from camera import Camera, PD_IMAGE_STATE, PhotoState
+from camera import Camera, PD_IMAGE_STATE, PhotoState, PD_WEATHER_CONDITIONS, WeatherCondition
 from camera_processing import antarstick_processing
 from camera_processing.widgets import ui_camera_view
 from camera_processing.widgets.button import Button, ButtonColor
@@ -68,6 +68,7 @@ class CameraViewWidget(QtWidgets.QWidget):
     processing_stopped = pyqtSignal('PyQt_PyObject')
     stick_verification_needed = pyqtSignal('PyQt_PyObject')
     timestamps_extracted = pyqtSignal('PyQt_PyObject')
+    available_for_linking = pyqtSignal('PyQt_PyObject')
 
     BTN_LEFT_ADD = 'btn_left_add'
     BTN_LEFT_SHOW = 'btn_left_show'
@@ -129,6 +130,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.graphics_view.setScene(self.graphics_scene)
         self.graphics_view.rubberBandChanged.connect(self.handle_cam_view_rubber_band_changed)
         self.graphics_view.rubber_band_started.connect(self.handle_cam_view_rubber_band_started)
+        self.graphics_view.mouse_move.connect(self.handle_mouse_move)
 
         self.current_viewed_image: Optional[np.ndarray] = None
         self.scaling = 2.0
@@ -140,6 +142,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.camera_view.control_widget.show_sync_button(False)
         self.camera_view.next_photo_clicked.connect(self.handle_next_photo_clicked)
         self.camera_view.previous_photo_clicked.connect(self.handle_previous_photo_clicked)
+        self.camera_view.enter_pressed.connect(lambda: self.results_comp.to_csv('/home/radoslav/compare.csv'))
 
         self.graphics_scene.addItem(self.camera_view)
 
@@ -168,9 +171,12 @@ class CameraViewWidget(QtWidgets.QWidget):
         #self.overlay_gui.save_measurements.connect(self.handle_save_measurements)
         self.overlay_gui.process_stop_clicked.connect(self.handle_process_stop_clicked)
         self.overlay_gui.show_measurements.connect(self.handle_show_measurements)
-        self.overlay_gui.exclude_photos.connect(self.handle_exclude_photos_clicked)
+        self.overlay_gui.exclude_photos_no_snow.connect(self.handle_exclude_photos_clicked)
+        self.overlay_gui.exclude_photos_bad_quality.connect(self.handle_exclude_photos_clicked)
         self.overlay_gui.include_photos.connect(self.handle_include_photos_clicked)
         self.overlay_gui.measurement_mode_toggle.connect(self.handle_measurement_mode_toggled)
+        self.overlay_gui.reset_measurements_clicked.connect(self.handle_reset_measurements_clicked)
+        self.overlay_gui.low_quality_clicked.connect(self.handle_low_quality_clicked)
         self.processing_updated.connect(self.overlay_gui.handle_process_count_changed)
         self.processing_stopped.connect(self.overlay_gui.handle_processing_stopped)
         #self.overlay_gui.set_stick_label.connect(self.handle_set_stick_label_clicked)
@@ -241,6 +247,12 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.use_single_proc.connect(self.handle_use_single)
         self.sync: Dict[CameraSide, CameraSynchronization] = {}
         self.timestamps_extracted.connect(self.handle_timestamps_extracted)
+        self.process_nighttime: bool = True
+        self.sticks_confirmed = False
+        self.results_comp = pd.DataFrame()
+        self.current_image_name: str = ''
+        self.camera_timestamp_lock = QMutex()
+        self.current_batch: List[Tuple[str, WeatherCondition]] = []
 
     def _setup_buttons(self):
         self.left_add_button.set_label('Link camera', direction='vertical')
@@ -311,9 +323,15 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.camera_view.show_status_message("Extracting timestamps...")
             self.worker_pool.apply_async(self.extract_timestamps, args=(self.camera.image_list, self.camera.folder),
                                          callback=self.timestamps_extracted.emit)
+        self.sticks_confirmed = self.camera.measurements_initialized()
 
     def initialize_rest_of_gui(self):
         self.overlay_gui.initialize()
+        #self.overlay_gui.process_menu.get_button("confirm_sticks").set_on(self.sticks_confirmed)
+        if self.sticks_confirmed:
+            self.overlay_gui.check_confirm_sticks_button()
+            self.overlay_gui.enable_reset_measurements(True)
+
         viewport_rect = self.graphics_view.viewport().rect()
         _re = self.graphics_view.mapToScene(viewport_rect)
         self.graphics_scene.setSceneRect(QRectF(_re.boundingRect()))
@@ -356,6 +374,10 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.process_photos_with_jobs_clicked.connect(self.handle_process_photos_clicked_mp)
         self.overlay_gui.handle_cam_view_changed()
         self.initialization_done.emit(self.camera)
+        if self.camera.timestamps_available:
+            self.available_for_linking.emit(self)
+        else:
+            self.link_cameras_enabled(False)
         self.recenter_view()
         self.graphics_view.view_changed.emit()
         self.fix_timer.setSingleShot(True)
@@ -402,6 +424,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         half = (int(round(0.5 * self.camera.standard_image_size[0])),
                 int(round(0.5 * self.camera.standard_image_size[1])))
         img = cv.imread(str(image_path))
+        self.current_image_name = image_path.name
         if img.shape == self.camera.standard_image_size:
             self.current_viewed_image = cv.pyrDown(img)
         else:
@@ -453,15 +476,15 @@ class CameraViewWidget(QtWidgets.QWidget):
 
     def handle_image_selection_changed(self, sel: QItemSelection, des: QItemSelection):
         indexes = self.ui.image_list.selectedIndexes()
-        if len(indexes) > 3: # greater than 3 because I'm using TableView with 3 columns, so this is equivalent of one selected row
+        if len(indexes) > 1:
             first_idx = indexes[0]
             last_idx = indexes[-1]
             tags = set(self.camera.measurements.iloc[first_idx.row():last_idx.row(), PD_IMAGE_STATE].to_list())
-            if PhotoState.Skipped in tags:
-                self.overlay_gui.show_include_button()
-            else:
-                self.overlay_gui.hide_include_button()
-            if PhotoState.Unprocessed in tags:
+            #if PhotoState.Skipped in tags or PhotoState.Processed in tags:
+            self.overlay_gui.show_include_button()
+            #else:
+            #    self.overlay_gui.hide_include_button()
+            if PhotoState.Unprocessed in tags or PhotoState.Processed in tags:
                 self.overlay_gui.show_exclude_button()
             else:
                 self.overlay_gui.hide_exclude_button()
@@ -482,8 +505,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         edit_sticks_on = self.overlay_gui.edit_sticks_button_pushed()
         if self.viewed == 'camera':
             if edit_sticks_on:
-                self.overlay_gui.uncheck_confirm_sticks_button()
-                self.camera_view.set_stick_widgets_mode(StickMode.EditDelete)
+                #self.overlay_gui.uncheck_confirm_sticks_button()
+                self.camera_view.set_stick_widgets_mode(StickMode.Edit if self.sticks_confirmed else StickMode.EditDelete)
             else:
                 self.camera_view.set_stick_widgets_mode(StickMode.Display)
                 if len(self.camera_view.sticks_without_width) > 0:
@@ -713,6 +736,9 @@ class CameraViewWidget(QtWidgets.QWidget):
         else:
             btn.set_pixmap(pixmap)
             self.link_menu.set_layout_direction(self.link_menu.layout_direction)
+        self.camera_timestamp_lock.lock()
+        self.link_cameras_enabled(self.camera.timestamps_available and len(self.link_menu.buttons) > 0)
+        self.camera_timestamp_lock.unlock()
         self.adjust_link_menu_position()
 
     def handle_camera_removed(self, camera: Camera):
@@ -824,21 +850,30 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.enable_measurement_mode_button(btn_info['checked'])
         if btn_info['checked']:
             self.camera.initialize_measurements(False)
+        self.sticks_confirmed = btn_info['checked']
 
     def handle_process_photos_clicked_mp(self, batch_count: int):
         self.processing_should_continue = True
-        photos, count = self.camera.get_batch(batch_count, 0)
+        batches, count = self.camera.get_batch(1, 0)
+        self.current_batch = batches[0]
         #photos = [list(itertools.dropwhile(lambda img_name: img_name != "IMAG5000.JPG", photos))]
         self.processing_started.emit(self, count)
         self.job_counter_lock.lock() # this should not be needed, better safe than sorry
-        self.running_jobs = batch_count
+        self.running_jobs = 0
         self.job_counter_lock.unlock()
+        self.process_nighttime = self.overlay_gui.process_menu.get_button("process_nighttime").is_on()
         for i in range(batch_count):
             #self.worker_pool.apply_async(antar.analyze_photos, args=(photos[i], self.camera.folder, self.camera.sticks,
             #                                                         self.camera.stick_to_stick_vectors),
             #                             callback=self.handle_worker_returned)
-            self.worker_pool.apply_async(snow.analyze_photos_with_stick_tracking, args=(photos[i], self.camera.folder, self.camera.sticks, self.camera.standard_image_size),
+            if len(self.current_batch) == 0:
+                break
+            self.worker_pool.apply_async(snow.analyze_photos_with_stick_tracking,
+                                         args=(self.current_batch[:100], self.camera.folder, self.camera.sticks,
+                                               self.camera.standard_image_size, self.process_nighttime, 0),
                                          callback=self.handle_worker_returned)
+            self.current_batch = self.current_batch[100:]
+            self.running_jobs += 1
             #self.worker_pool.apply_async(snow.analyze_photos_ip, args=(
             #    photos[i], self.camera.folder, self.camera.sticks, self.camera.standard_image_size),
             #                             callback=self.handle_worker_returned)
@@ -1009,89 +1044,89 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.stick_length_input.set_label(f'{sw.get_stick_label()} length:')
         self.overlay_gui.show_stick_length_input()
 
-    def handle_moved_sticks_confirmed(self):
-        links = self.link_manager2.stick_links_list
-        for link in links:
-            stick1 = link.stick1.stick
-            stick2 = link.stick2.stick
-            stick2.id = stick1.id
-            stick2.local_id = stick1.local_id
-            stick2.label = stick1.label
-            stick2.camera_id = stick1.camera_id
-        sticks = list(map(lambda sw: sw.stick, self.split_view.target_widgets))
-        res = self.split_view.measurement
-        self.graphics_scene.removeItem(self.split_view)
-        self.split_view.deleteLater()
-        self.split_view = None
-        self._set_view_mode('camera')
-        self.moved_sticks_linking.reset()
-        self.camera.insert_measurements2({res.remaining_photos[0]: {'sticks': sticks, 'image_quality': 1.0,
-                                                                    'state': -1,
-                                                                    'is_day': True}})
-        self.job_counter_lock.lock()
-        if self.single_proc:
-            self.skip = True
-            self.s_sticks = sticks
-            self.queue_lock.unlock()
-            return
-        if self.processing_should_continue:
-            stick_to_stick = {}
-            for s1 in sticks:
-                for s2 in sticks:
-                    if s1 == s2:
-                        continue
-                    s1_to = stick_to_stick.setdefault(s1, {})
-                    s1_to[s2] = s1.bottom - s2.bottom
-            self.worker_pool.apply_async(antar.analyze_photos, args=(res.remaining_photos[1:], self.camera.folder, sticks,
-                                                                     stick_to_stick), callback=self.handle_worker_returned)
-            self.paused_jobs -= 1
-            self.running_jobs += 1
-        else:
-            self.paused_jobs -= 1
+    #def handle_moved_sticks_confirmed(self):
+    #    links = self.link_manager2.stick_links_list
+    #    for link in links:
+    #        stick1 = link.stick1.stick
+    #        stick2 = link.stick2.stick
+    #        stick2.id = stick1.id
+    #        stick2.local_id = stick1.local_id
+    #        stick2.label = stick1.label
+    #        stick2.camera_id = stick1.camera_id
+    #    sticks = list(map(lambda sw: sw.stick, self.split_view.target_widgets))
+    #    res = self.split_view.measurement
+    #    self.graphics_scene.removeItem(self.split_view)
+    #    self.split_view.deleteLater()
+    #    self.split_view = None
+    #    self._set_view_mode('camera')
+    #    self.moved_sticks_linking.reset()
+    #    self.camera.insert_measurements2({res.remaining_photos[0]: {'sticks': sticks, 'image_quality': 1.0,
+    #                                                                'state': -1,
+    #                                                                'is_day': True}})
+    #    self.job_counter_lock.lock()
+    #    if self.single_proc:
+    #        self.skip = True
+    #        self.s_sticks = sticks
+    #        self.queue_lock.unlock()
+    #        return
+    #    if self.processing_should_continue:
+    #        stick_to_stick = {}
+    #        for s1 in sticks:
+    #            for s2 in sticks:
+    #                if s1 == s2:
+    #                    continue
+    #                s1_to = stick_to_stick.setdefault(s1, {})
+    #                s1_to[s2] = s1.bottom - s2.bottom
+    #        self.worker_pool.apply_async(antar.analyze_photos, args=(res.remaining_photos[1:], self.camera.folder, sticks,
+    #                                                                 stick_to_stick), callback=self.handle_worker_returned)
+    #        self.paused_jobs -= 1
+    #        self.running_jobs += 1
+    #    else:
+    #        self.paused_jobs -= 1
 
-        if self.running_jobs + self.paused_jobs > 0:
-            self.processing_updated.emit(self.camera.processed_photos_count, self.camera.get_photo_count(),
-                                         self.running_jobs + self.paused_jobs, not self.processing_should_continue)
-        else:
-            self.processing_stopped.emit(self)
+    #    if self.running_jobs + self.paused_jobs > 0:
+    #        self.processing_updated.emit(self.camera.processed_photos_count, self.camera.get_photo_count(),
+    #                                     self.running_jobs + self.paused_jobs, not self.processing_should_continue)
+    #    else:
+    #        self.processing_stopped.emit(self)
 
-        self.job_counter_lock.unlock()
-        self.queue_lock.unlock()
+    #    self.job_counter_lock.unlock()
+    #    self.queue_lock.unlock()
 
-    def handle_moved_sticks_skipped(self, skip_batch: bool):
-        sticks = list(map(lambda sw: sw.stick, self.split_view.source_widgets))
-        res: camera_processing.antarstick_processing.Measurement = self.split_view.measurement
-        self.graphics_scene.removeItem(self.split_view)
-        self.split_view.deleteLater()
-        self.camera.skipped_image(res.current_img)
-        if skip_batch:
-            for img in res.remaining_photos:
-                self.camera.skipped_image(img)
-        self.split_view = None
-        self._set_view_mode('camera')
-        self.job_counter_lock.lock()
-        if self.processing_should_continue and not skip_batch:
-            #stick_to_stick = {}
-            #for s1 in sticks:
-            #    for s2 in sticks:
-            #        s1_to = stick_to_stick.setdefault(s1, {})
-            #        s1_to[s2] = s1.bottom - s2.bottom
-            self.worker_pool.apply_async(antar.analyze_photos, args=(res.remaining_photos[1:], self.camera.folder, sticks,
-                                                                     self.camera.stick_to_stick_vectors), callback=self.handle_worker_returned)
-            self.paused_jobs -= 1
-            self.running_jobs += 1
-        else:
-            self.paused_jobs -= 1
+    #def handle_moved_sticks_skipped(self, skip_batch: bool):
+    #    sticks = list(map(lambda sw: sw.stick, self.split_view.source_widgets))
+    #    res: camera_processing.antarstick_processing.Measurement = self.split_view.measurement
+    #    self.graphics_scene.removeItem(self.split_view)
+    #    self.split_view.deleteLater()
+    #    self.camera.skipped_image(res.current_img)
+    #    if skip_batch:
+    #        for img in res.remaining_photos:
+    #            self.camera.skipped_image(img)
+    #    self.split_view = None
+    #    self._set_view_mode('camera')
+    #    self.job_counter_lock.lock()
+    #    if self.processing_should_continue and not skip_batch:
+    #        #stick_to_stick = {}
+    #        #for s1 in sticks:
+    #        #    for s2 in sticks:
+    #        #        s1_to = stick_to_stick.setdefault(s1, {})
+    #        #        s1_to[s2] = s1.bottom - s2.bottom
+    #        self.worker_pool.apply_async(antar.analyze_photos, args=(res.remaining_photos[1:], self.camera.folder, sticks,
+    #                                                                 self.camera.stick_to_stick_vectors), callback=self.handle_worker_returned)
+    #        self.paused_jobs -= 1
+    #        self.running_jobs += 1
+    #    else:
+    #        self.paused_jobs -= 1
 
-        if self.running_jobs + self.paused_jobs > 0:
-            self.processing_updated.emit(self.camera.processed_photos_count, self.camera.get_photo_count(),
-                                         self.running_jobs + self.paused_jobs, not self.processing_should_continue)
-        else:
-            self.processing_stopped.emit(self)
+    #    if self.running_jobs + self.paused_jobs > 0:
+    #        self.processing_updated.emit(self.camera.processed_photos_count, self.camera.get_photo_count(),
+    #                                     self.running_jobs + self.paused_jobs, not self.processing_should_continue)
+    #    else:
+    #        self.processing_stopped.emit(self)
 
-        self.job_counter_lock.unlock()
-        self.moved_sticks_linking.reset()
-        self.queue_lock.unlock()
+    #    self.job_counter_lock.unlock()
+    #    self.moved_sticks_linking.reset()
+    #    self.queue_lock.unlock()
 
     def handle_worker_returned(self, result: camera_processing.antarstick_processing.Measurement):
         self.return_queue.put_nowait(result)
@@ -1150,7 +1185,9 @@ class CameraViewWidget(QtWidgets.QWidget):
             processed = sorted(result.measurements.keys())
             self.image_list.update_items(processed[0], processed[-1])
         self.job_counter_lock.lock()
-        if result.reason == camera_processing.antarstick_processing.Reason.FinishedQueue:
+        #if result.reason == camera_processing.antarstick_processing.Reason.FinishedQueue:
+        #    self.running_jobs -= 1
+        if len(self.current_batch) == 0:
             self.running_jobs -= 1
         else:
             if result.reason == camera_processing.antarstick_processing.Reason.Update:
@@ -1173,23 +1210,27 @@ class CameraViewWidget(QtWidgets.QWidget):
                     #                                                         self.camera.sticks,
                     #                                                         self.camera.standard_image_size),
                     #                             callback=self.handle_worker_returned)
-                    self.worker_pool.apply_async(snow.analyze_photos_with_stick_tracking, args=(result.remaining_photos,
+                    self.worker_pool.apply_async(snow.analyze_photos_with_stick_tracking, args=(self.current_batch[:100],
                                                                                                 self.camera.folder,
                                                                                                 self.camera.sticks,
-                                                                                                self.camera.standard_image_size),
+                                                                                                self.camera.standard_image_size,
+                                                                                                self.process_nighttime,
+                                                                                                result.snow_pic_count),
                                                  callback=self.handle_worker_returned)
+                    self.current_batch = self.current_batch[100:]
                 else:
                     self.running_jobs -= 1
-            else:
-                self.running_jobs -= 1
-                self.paused_jobs += 1
-                self.confirmation_queue.put_nowait(result)
+            #else:
+            #    self.running_jobs -= 1
+            #    self.paused_jobs += 1
+            #    self.confirmation_queue.put_nowait(result)
 
         if self.running_jobs + self.paused_jobs > 0:
             self.processing_updated.emit(self.camera.processed_photos_count, self.camera.get_photo_count(),
                                          self.running_jobs + self.paused_jobs, not self.processing_should_continue)
         else:
             self.processing_stopped.emit(self)
+            self.overlay_gui.enable_reset_measurements(True)
         self.job_counter_lock.unlock()
 
     def handle_process_stop_clicked(self):
@@ -1252,10 +1293,15 @@ class CameraViewWidget(QtWidgets.QWidget):
         return pd.Series(data=timestamps)
 
     def handle_timestamps_extracted(self, timestamps: pd.Series):
+        self.camera_timestamp_lock.lock()
         self.camera.insert_timestamps(timestamps)
         self.camera_view.show_status_message(None)
         if len(self.camera.sticks) > 0:
             self.overlay_gui.enable_confirm_sticks_button(True)
+        self.available_for_linking.emit(self)
+        if len(self.link_menu.buttons) > 0:
+            self.link_cameras_enabled(True)
+        self.camera_timestamp_lock.unlock()
 
     def handle_synchronize_clicked(self, cam_view: CameraView):
         cam_view.control_widget.set_mode('sync')
@@ -1269,7 +1315,6 @@ class CameraViewWidget(QtWidgets.QWidget):
         else:
             self.right_add_button.set_disabled(True)
             self.right_show_button.set_disabled(True)
-
 
     def handle_previous_photo_clicked(self, cam_view: CameraView):
         if cam_view.control_widget.mode == 'sync':
@@ -1405,10 +1450,13 @@ class CameraViewWidget(QtWidgets.QWidget):
         index = self.image_list.index(img_id, 0)
         self.ui.image_list.setCurrentIndex(index)
 
-    def handle_exclude_photos_clicked(self):
+    def handle_exclude_photos_clicked(self, btn_info: Dict[str, Any]):
         sel = self.ui.image_list.selectionModel().selection()
+        no_snow = btn_info['btn_id'] == "exclude_photos_no_snow"
         for index in sel.indexes():
-            self.camera.measurements.iat[index.row(), PD_IMAGE_STATE] = PhotoState.Skipped
+            self.camera.measurements.iat[index.row(), PD_IMAGE_STATE] = PhotoState.Processed if no_snow else PhotoState.Skipped
+            if no_snow:
+                self.camera.measurements.iat[index.row(), PD_WEATHER_CONDITIONS] = WeatherCondition.NoSnow
         first = self.camera.image_list[sel.indexes()[0].row()]
         last = self.camera.image_list[sel.indexes()[-1].row()]
         self.image_list.update_items(first, last)
@@ -1419,6 +1467,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         sel = self.ui.image_list.selectionModel().selection()
         for index in sel.indexes():
             self.camera.measurements.iat[index.row(), PD_IMAGE_STATE] = PhotoState.Unprocessed
+            self.camera.measurements.iat[index.row(), PD_WEATHER_CONDITIONS] = WeatherCondition.Snow
         first = self.camera.image_list[sel.indexes()[0].row()]
         last = self.camera.image_list[sel.indexes()[-1].row()]
         self.image_list.update_items(first, last)
@@ -1426,6 +1475,35 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.hide_include_button()
 
     def handle_measurement_mode_toggled(self, shown: bool):
+        if shown:
+            self.results_comp = pd.DataFrame(data=self.camera.measurements[['date_time', 'image_name', 'state', 'image_quality']])
+            self.results_comp.insert(self.results_comp.shape[1], 'misplaced_sticks_count', [0] * self.results_comp.shape[0])
+            self.results_comp.insert(self.results_comp.shape[1], 'mismatched_sticks_count', [0] * self.results_comp.shape[0])
+            self.results_comp.insert(self.results_comp.shape[1], 'low_quality', [False] * self.results_comp.shape[0])
+            self.results_comp.set_index('image_name', inplace=True, drop=False)
+            for stick in self.camera.sticks:
+                stick_id = self.camera.stick_labels_column_ids[stick.label]
+                self.results_comp.insert(self.results_comp.shape[1], f'{stick.label}_snow_height',
+                                         self.camera.measurements.iloc[:, stick_id + 3].to_numpy())
+                self.results_comp.insert(self.results_comp.shape[1], f'{stick.label}_visible',
+                                         self.camera.measurements.iloc[:, stick_id + 4].to_list())
+                self.results_comp.insert(self.results_comp.shape[1], f'{stick.label}_snow_manual',
+                                         self.camera.measurements.iloc[:, stick_id + 3].to_numpy())
+                self.results_comp.insert(self.results_comp.shape[1], f'{stick.label}_should_be_detected',
+                                         self.camera.measurements.iloc[:, stick_id + 4].to_list())
+            for sw in self.camera_view.stick_widgets:
+                sw.misplaced.connect(self.handle_misplaced_stick)
+                sw.mismatched.connect(self.handle_mismatched_stick)
+                sw.clearly_visible.connect(self.handle_stick_clearly_visible_clicked)
+                sw.measurement_corrected.connect(self.handle_measurement_corrected)
+            self.camera_view.grabKeyboard()
+        else:
+            for sw in self.camera_view.stick_widgets:
+                sw.misplaced.disconnect(self.handle_misplaced_stick)
+                sw.mismatched.disconnect(self.handle_mismatched_stick)
+                sw.measurement_corrected.disconnect(self.handle_measurement_corrected)
+                sw.clearly_visible.disconnect(self.handle_stick_clearly_visible_clicked)
+            self.camera_view.ungrabKeyboard()
         mode = StickMode.Measurement if shown else StickMode.Display
         for sw in self.camera_view.stick_widgets:
             sw.set_mode(mode)
@@ -1434,3 +1512,59 @@ class CameraViewWidget(QtWidgets.QWidget):
         first_idx = self.ui.image_list.indexAt(QPoint(0, 0))
         last_idx = self.ui.image_list.indexAt(self.ui.image_list.viewport().rect().bottomLeft())
         self.image_list.handle_slider_released(first_idx, last_idx)
+
+    def handle_reset_measurements_clicked(self):
+        self.camera.reset_measurements()
+        self.overlay_gui.enable_reset_measurements(False)
+        self.overlay_gui.uncheck_confirm_sticks_button()
+
+    def handle_misplaced_stick(self, sw: StickWidget):
+        img = sw.stick.view
+        img_id = self.camera.image_names_ids[img]
+        self.results_comp.iat[img_id, 4] += 1 if sw.misplace_btn.is_on() else -1
+
+    def handle_mismatched_stick(self, sw: StickWidget):
+        img = sw.stick.view
+        img_id = self.camera.image_names_ids[img]
+        self.results_comp.iat[img_id, 5] += 1 if sw.mismatch_btn.is_on() else -1
+
+    def handle_measurement_corrected(self, sw: StickWidget):
+        img = sw.stick.view
+        img_id = self.camera.image_names_ids[img]
+        #stick_id = self.camera.stick_labels_column_ids[sw.stick.label]
+        #self.results_comp.loc[img, f'{sw.stick.label}_snow_manual'] = sw.stick.snow_height_cm
+        self.camera.update_stick(sw.stick)
+        pass
+
+    def handle_stick_clearly_visible_clicked(self, sw: StickWidget):
+        img = sw.stick.view
+        self.results_comp.loc[img, f'{sw.stick.label}_should_be_detected'] = sw.clearly_visible_btn.is_on()
+        pass
+
+    def handle_mouse_move(self, pos: QPointF):
+        if True or not self.overlay_gui.top_menu.get_button("measurement_mode").is_on():
+            return
+        ipos = self.camera_view.mapFromScene(pos)
+        closest_sw = self.camera_view.stick_widgets[0]
+        dist = QPointF.dotProduct(ipos - closest_sw.pos(), ipos - closest_sw.pos())
+
+        for sw in self.camera_view.stick_widgets:
+            sw.mismatch_btn.setVisible(False)
+            sw.misplace_btn.setVisible(False)
+            sw.zero_btn.setVisible(False)
+            sw.clearly_visible_btn.setVisible(False)
+            kdist = QPointF.dotProduct(ipos - sw.pos(), ipos - sw.pos())
+            if kdist < dist:
+                dist = kdist
+                closest_sw = sw
+        dist = np.sqrt(dist)
+        if dist > 500:
+            return
+        closest_sw.mismatch_btn.setVisible(True)
+        closest_sw.misplace_btn.setVisible(True)
+        closest_sw.zero_btn.setVisible(True)
+        if not closest_sw.stick.is_visible:
+            closest_sw.clearly_visible_btn.setVisible(True)
+
+    def handle_low_quality_clicked(self):
+        self.results_comp.loc[self.current_image_name, 'low_quality'] = True

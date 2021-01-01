@@ -41,6 +41,7 @@ class MainWindow(QMainWindow):
         self.ui.actionOpen_dataset.triggered.connect(self.handle_open_dataset_triggered)
         self.ui.actionSave_dataset.triggered.connect(self.handle_save_dataset_triggered)
         self.ui.actionClose_dataset.triggered.connect(self.handle_close_dataset_triggered)
+        self.ui.actionExport_to_JSON.triggered.connect(self.handle_export_to_json_triggered)
 
         self.startup_page = QWidget()
         self.startup_page_ui = Ui_StartupPage()
@@ -146,7 +147,7 @@ class MainWindow(QMainWindow):
         indicator_box = QHBoxLayout()
 
         self.statusBar().hide()
-        indicator_box.addWidget(QLabel("Image quality:\t"))
+        indicator_box.addWidget(QLabel("Stick visibility:\t"))
         indicator_box.addWidget(skipped_label)
         indicator_box.addWidget(QLabel(" Skipped  "))
         indicator_box.addWidget(bad_label)
@@ -403,6 +404,11 @@ class MainWindow(QMainWindow):
         self.ui.stackedWidget.setCurrentIndex(0)
         self.ui.toolBar.hide()
         self.statusBar().hide()
+
+    def handle_export_to_json_triggered(self):
+        dat = self.processing_widget.dataset.get_json_data()
+        with open("/home/radoslav/datajson.json", "w") as f:
+            f.write(dat)
 
 
 class TooltipProxyStyle(QProxyStyle):

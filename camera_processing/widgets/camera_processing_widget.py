@@ -101,8 +101,8 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
     def __init__(self):
         QtWidgets.QTabWidget.__init__(self)
-        self.tab_style = TabProxyStyle('')
-        self.tabBar().setStyle(self.tab_style)
+        #self.tab_style = TabProxyStyle('')
+        #self.tabBar().setStyle(self.tab_style)
         self.setTabsClosable(True)
         self.tabCloseRequested.connect(self.handle_tab_close_requested)
         self.currentChanged.connect(self.handle_current_tab_changed)
@@ -134,6 +134,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
         self.active_camera: Optional[Camera] = None
         self.closing = False
+        self.cameras_for_linking: typing.Set[Camera] = set()
 
     camera_link_available = Signal(bool)
     camera_added = Signal(Camera)
@@ -143,6 +144,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         camera_widget = CameraViewWidget(self.dataset)
 
         self.camera_link_available.connect(camera_widget.link_cameras_enabled)
+        camera_widget.available_for_linking.connect(self.handle_available_for_linking)
         self._camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
         self.setCurrentIndex(self._camera_tab_map[camera.id])
         self.setTabToolTip(self.currentIndex(), str(camera.folder))
@@ -176,8 +178,9 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
             camera_widget = self.widget(self._camera_tab_map[camera.id])
             self.removeTab(self._camera_tab_map[camera.id])
             camera_widget.deleteLater()
-        if len(self.dataset.cameras) < 2:
-            self.camera_link_available.emit(False)
+        #if len(self.dataset.cameras) < 2:
+        #    self.camera_link_available.emit(False)
+        self.cameras_for_linking.remove(camera)
         if self.count() == 0:
             self.no_cameras_open.emit()
 
@@ -203,14 +206,15 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
     @Slot(Camera)
     def handle_camera_widget_initialization_done(self, camera: Camera):
-        if len(self.dataset.cameras) > 1:
-            self.camera_link_available.emit(True)
+        pass
+        #if len(self.dataset.cameras) > 1:
+        #    self.camera_link_available.emit(True)
 
-        for cam_id, widget_id in self._camera_tab_map.items():
-            if cam_id == camera.id:
-                continue
-            cam_widget: CameraViewWidget = self.widget(widget_id)
-            cam_widget.handle_camera_added(camera)
+        #for cam_id, widget_id in self._camera_tab_map.items():
+        #    if cam_id == camera.id:
+        #        continue
+        #    cam_widget: CameraViewWidget = self.widget(widget_id)
+        #    cam_widget.handle_camera_added(camera)
 
     def cleanup(self):
         #if self.process is not None and self.process.is_alive():
@@ -371,5 +375,15 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
                                f'If you wish to adjust the synchronization, you can do so by manually defining the synchronization point by clicking on <b>Synchronize</b> under the secondary camera.')
         msg.setStandardButtons(QMessageBox.Ok)
         msg.exec()
+
+    def handle_available_for_linking(self, cam_widget: CameraViewWidget):
+        camera = cam_widget.camera
+        self.cameras_for_linking.add(camera)
+
+        for cam_id, widget_id in self._camera_tab_map.items():
+            if cam_id == camera.id:
+                continue
+            cam_widget: CameraViewWidget = self.widget(widget_id)
+            cam_widget.handle_camera_added(camera)
 
 
