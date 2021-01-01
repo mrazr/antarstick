@@ -12,15 +12,17 @@ from queue import Empty
 import cv2 as cv
 import numpy as np
 from PyQt5 import QtWidgets, QtGui
-from PyQt5.QtCore import pyqtSignal as Signal, QRunnable, QThreadPool, QTimer, pyqtSignal
+from PyQt5.QtCore import pyqtSignal as Signal, QRunnable, QThreadPool, QTimer, pyqtSignal, Qt
 from PyQt5.QtCore import pyqtSlot as Slot
 from PyQt5.QtGui import QIcon, QColor, QBrush, QPalette
-from PyQt5.QtWidgets import QPushButton, QProxyStyle, QStyle, QWidget, QStyleOption, QStyleOptionTab, QTabBar
+from PyQt5.QtWidgets import QPushButton, QProxyStyle, QStyle, QWidget, QStyleOption, QStyleOptionTab, QTabBar, \
+    QProgressDialog, QMessageBox
 
-import camera_processing.antarstick_processing as antar
+import camera_processing.stick_detection as antar
 from camera import Camera
 from camera_processing.widgets.camera_view_widget import CameraViewWidget
-from dataset import Dataset
+from dataset import Dataset, CameraSynchronization
+
 
 #logging_start = time()
 #logging.basicConfig(filename='process.log', level=logging.DEBUG)
@@ -99,8 +101,8 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
     def __init__(self):
         QtWidgets.QTabWidget.__init__(self)
-        self.tab_style = TabProxyStyle('')
-        self.tabBar().setStyle(self.tab_style)
+        #self.tab_style = TabProxyStyle('')
+        #self.tabBar().setStyle(self.tab_style)
         self.setTabsClosable(True)
         self.tabCloseRequested.connect(self.handle_tab_close_requested)
         self.currentChanged.connect(self.handle_current_tab_changed)
@@ -131,6 +133,8 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         self.pause_button.setChecked(False)
 
         self.active_camera: Optional[Camera] = None
+        self.closing = False
+        self.cameras_for_linking: typing.Set[Camera] = set()
 
     camera_link_available = Signal(bool)
     camera_added = Signal(Camera)
@@ -140,6 +144,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         camera_widget = CameraViewWidget(self.dataset)
 
         self.camera_link_available.connect(camera_widget.link_cameras_enabled)
+        camera_widget.available_for_linking.connect(self.handle_available_for_linking)
         self._camera_tab_map[camera.id] = self.addTab(camera_widget, camera.get_folder_name())
         self.setCurrentIndex(self._camera_tab_map[camera.id])
         self.setTabToolTip(self.currentIndex(), str(camera.folder))
@@ -173,8 +178,9 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
             camera_widget = self.widget(self._camera_tab_map[camera.id])
             self.removeTab(self._camera_tab_map[camera.id])
             camera_widget.deleteLater()
-        if len(self.dataset.cameras) < 2:
-            self.camera_link_available.emit(False)
+        #if len(self.dataset.cameras) < 2:
+        #    self.camera_link_available.emit(False)
+        self.cameras_for_linking.remove(camera)
         if self.count() == 0:
             self.no_cameras_open.emit()
 
@@ -192,19 +198,6 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
             camera_widget: CameraViewWidget = self.widget(i)
             self._camera_tab_map[camera_widget.camera.id] = i
 
-    def find_non_snow_pics_in_camera(self, camera: Camera, count: int) -> List[np.ndarray]:
-        images = []
-        for entry in scandir(camera.folder):
-            if entry.is_dir():
-                continue
-            img = cv.pyrDown(cv.imread(entry.path))
-            hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
-            if antar.is_non_snow(hsv):
-                images.append(cv.pyrDown(img))
-                if len(images) == count:
-                    break
-        return images
-
     @Slot()
     def handle_dataset_loading_finished(self):
         for i in range(self.count()):
@@ -213,18 +206,20 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
     @Slot(Camera)
     def handle_camera_widget_initialization_done(self, camera: Camera):
-        if len(self.dataset.cameras) > 1:
-            self.camera_link_available.emit(True)
+        pass
+        #if len(self.dataset.cameras) > 1:
+        #    self.camera_link_available.emit(True)
 
-        for cam_id, widget_id in self._camera_tab_map.items():
-            if cam_id == camera.id:
-                continue
-            cam_widget: CameraViewWidget = self.widget(widget_id)
-            cam_widget.handle_camera_added(camera)
+        #for cam_id, widget_id in self._camera_tab_map.items():
+        #    if cam_id == camera.id:
+        #        continue
+        #    cam_widget: CameraViewWidget = self.widget(widget_id)
+        #    cam_widget.handle_camera_added(camera)
 
     def cleanup(self):
         #if self.process is not None and self.process.is_alive():
         #    self.process.terminate()
+        self.closing = True
         if self.dataset is None:
             return
         self.dataset.save()
@@ -244,12 +239,14 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
     def set_dataset(self, dataset: Dataset):
         self.cleanup()
+        self.closing = False
         self.dataset = dataset
         self.dataset.camera_added.connect(self.handle_camera_added)
         self.dataset.camera_removed.connect(self.handle_camera_removed)
         self.dataset.loading_finished.connect(self.handle_dataset_loading_finished)
         self.dataset.cameras_linked.connect(self.handle_cameras_linked)
         self.dataset.cameras_unlinked.connect(self.handle_cameras_unlinked)
+        self.dataset.synchronization_finished.connect(self.handle_synchronization_finished)
         self._camera_tab_map: Dict[int, int] = dict({})
 
     def handle_timeout(self):
@@ -287,6 +284,8 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         cam_widget: CameraViewWidget = self.widget(idx)
         if cam_widget is not None and isinstance(cam_widget, CameraViewWidget):
             self.active_camera = cam_widget.camera
+            if not self.closing:
+                cam_widget.recenter_view()
 
     def handle_pause_button_toggled(self, checked: bool):
         if not checked:
@@ -301,7 +300,7 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
             self.fetch_next_batch()
             self.timer.start(1000)
 
-    def handle_cameras_linked(self, cam1: Camera, cam2: Camera):
+    def handle_cameras_linked(self, cam1: Camera, cam2: Camera, sync: CameraSynchronization):
         separator = '|'
         cam1_tab = self._camera_tab_map[cam1.id]
         cam1_tab_text = self.tabText(cam1_tab)
@@ -347,9 +346,9 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
         self.tabBar().update()
 
-    def handle_camera_processing_started(self, widget: CameraViewWidget):
+    def handle_camera_processing_started(self, widget: CameraViewWidget, unprocessed_count: int):
         cam = widget.camera
-        self.processing_started.emit(str(cam.folder.name), cam.get_photo_count())
+        self.processing_started.emit(str(cam.folder.name), unprocessed_count)
 
     def handle_camera_processing_updated(self, processed: int, total: int, job_count: int, processing_stopped: bool):
         self.processing_updated.emit(processed)
@@ -362,24 +361,29 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
         cam = widget.camera
         self.stick_verification_needed.emit(str(cam.folder.name))
 
+    def handle_synchronization_finished(self, sync: CameraSynchronization):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
 
-def analyze_daytime_snow(to_process: Queue, result_queue: Queue, channel: Connection, logging_start: int):
-    keep_processing, items = channel.recv() # Tuple[bool, List[Tuple[int, List[Path]]]]
+        left_img = sync.left_camera.measurements.loc[sync.left_timestamp]['image_name']
+        right_img = sync.right_camera.measurements.loc[sync.right_timestamp]['image_name']
 
-    while keep_processing:
-        results: List[Tuple[int, List[Tuple[Path, bool, bool]]]] = []
-        for item in items:  # item: Tuple[int, List[Path]]
-            cam_id, img_paths = item
-            res: List[Tuple[Path, bool, bool]] = []
-            for img_path in img_paths:
-                img = cv.imread(str(img_path))
-                img = cv.resize(img, (0, 0), fx=0.25, fy=0.25, interpolation=cv.INTER_NEAREST)
-                gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-                daytime = not antar.is_night(img)
-                snow = antar.is_snow(gray, img)
-                res.append((img_path.name, daytime, snow))
-            results.append((cam_id, res))
+        msg.setWindowTitle('Synchronization complete')
+        msg.setTextFormat(Qt.RichText)
+        msg.setText(f'Cameras {sync.left_camera.folder.name} and {sync.right_camera.folder.name} have been synchronized.')
+        msg.setInformativeText(f'The synchronization point is<br><b>{sync.left_camera.folder.name}: {str(sync.left_timestamp)}({left_img})</b>\n\t<->\n<b>{sync.right_camera.folder.name}: {str(sync.right_timestamp)}({right_img})</b>.<br>'
+                               f'If you wish to adjust the synchronization, you can do so by manually defining the synchronization point by clicking on <b>Synchronize</b> under the secondary camera.')
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec()
 
-        channel.send(results)
-        keep_processing, items = channel.recv()
+    def handle_available_for_linking(self, cam_widget: CameraViewWidget):
+        camera = cam_widget.camera
+        self.cameras_for_linking.add(camera)
+
+        for cam_id, widget_id in self._camera_tab_map.items():
+            if cam_id == camera.id:
+                continue
+            cam_widget: CameraViewWidget = self.widget(widget_id)
+            cam_widget.handle_camera_added(camera)
+
 

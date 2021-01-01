@@ -85,7 +85,7 @@ class Stick:
                      camera_id=self.camera_id, id=self.id, primary=self.primary,
                      camera_folder=self.camera_folder, alternative_view=self.alternative_view,
                      bbox_left_range=self.bbox_left_range, bbox_right_range=self.bbox_right_range,
-                     determines_quality=self.determines_quality)
+                     determines_quality=self.determines_quality, is_visible=self.is_visible)
     
     def set_endpoints(self, x1: int, y1: int, x2: int, y2: int):
         self.top = np.array([x1, y1], np.int32)

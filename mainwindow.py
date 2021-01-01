@@ -41,6 +41,7 @@ class MainWindow(QMainWindow):
         self.ui.actionOpen_dataset.triggered.connect(self.handle_open_dataset_triggered)
         self.ui.actionSave_dataset.triggered.connect(self.handle_save_dataset_triggered)
         self.ui.actionClose_dataset.triggered.connect(self.handle_close_dataset_triggered)
+        self.ui.actionExport_to_JSON.triggered.connect(self.handle_export_to_json_triggered)
 
         self.startup_page = QWidget()
         self.startup_page_ui = Ui_StartupPage()
@@ -124,6 +125,11 @@ class MainWindow(QMainWindow):
         self.progress_bar = QProgressBar()
         self.progress_bar.hide()
 
+        skipped_q_indicator = QPixmap(24, 24)
+        skipped_q_indicator.fill(QColor(150, 150, 150))
+        skipped_label = QLabel()
+        skipped_label.setPixmap(skipped_q_indicator)
+
         bad_q_indicator = QPixmap(24, 24)
         bad_q_indicator.fill(QColor(200, 0, 0))
         bad_label = QLabel()
@@ -141,7 +147,9 @@ class MainWindow(QMainWindow):
         indicator_box = QHBoxLayout()
 
         self.statusBar().hide()
-        indicator_box.addWidget(QLabel("Image quality:\t"))
+        indicator_box.addWidget(QLabel("Stick visibility:\t"))
+        indicator_box.addWidget(skipped_label)
+        indicator_box.addWidget(QLabel(" Skipped  "))
         indicator_box.addWidget(bad_label)
         indicator_box.addWidget(QLabel(" Bad  "))
         indicator_box.addWidget(ok_label)
@@ -396,6 +404,11 @@ class MainWindow(QMainWindow):
         self.ui.stackedWidget.setCurrentIndex(0)
         self.ui.toolBar.hide()
         self.statusBar().hide()
+
+    def handle_export_to_json_triggered(self):
+        dat = self.processing_widget.dataset.get_json_data()
+        with open("/home/radoslav/datajson.json", "w") as f:
+            f.write(dat)
 
 
 class TooltipProxyStyle(QProxyStyle):

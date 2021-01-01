@@ -1,11 +1,9 @@
 <RCC>
   <qresource>
     <file>icons/sun.svg</file>
+    <file>icons/thumbnail.png</file>
     <file>icons/snowflake.svg</file>
     <file>icons/moon.svg</file>
-    <file>icons/moon.png</file>
-    <file>icons/snowflake.png</file>
-    <file>icons/sun.png</file>
     <file>icons/dialog-close.svg</file>
     <file>icons/camera-photo.svg</file>
     <file>icons/camera.svg</file>

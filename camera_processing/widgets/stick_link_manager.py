@@ -614,7 +614,7 @@ class CameraToCameraStickLinkingStrategy(StickLinkingStrategy):
 
     def handle_stick_widgets_out_of_sync(self, cam: CameraView):
         for sw in cam.stick_widgets:
-            sw.hovered.connect(self.view.handle_stick_widget_hover)
+            sw.hovered.connect(self.handle_stick_widget_hovered)
 
     def highlight_source_sticks(self, highlight):
         for cam in self.secondary_cameras:

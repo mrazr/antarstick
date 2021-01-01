@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 import os
 
 from PyQt5.Qt import QBrush, QColor, QPen
@@ -27,14 +27,23 @@ class OverlayGui(QGraphicsObject):
     find_sticks_clicked = pyqtSignal()
     detect_thin_sticks_set = pyqtSignal('PyQt_PyObject')
     sticks_length_clicked = pyqtSignal('PyQt_PyObject')
-    confirm_sticks_clicked = pyqtSignal()
+    confirm_sticks_clicked = pyqtSignal('PyQt_PyObject')
     set_stick_label_clicked = pyqtSignal('PyQt_PyObject')
     set_stick_length_clicked = pyqtSignal('PyQt_PyObject')
     process_stop_clicked = pyqtSignal()
     mes = pyqtSignal()
+    measure_all = pyqtSignal()
     save_measurements = pyqtSignal()
     show_measurements = pyqtSignal('PyQt_PyObject')
     use_single_proc = pyqtSignal('PyQt_PyObject')
+    exclude_photos_no_snow = pyqtSignal('PyQt_PyObject')
+    exclude_photos_bad_quality = pyqtSignal('PyQt_PyObject')
+    include_photos = pyqtSignal()
+    vertical_offset_clicked = pyqtSignal()
+    process_from_this_and_next = pyqtSignal()
+    measurement_mode_toggle = pyqtSignal(bool)
+    reset_measurements_clicked = pyqtSignal()
+    low_quality_clicked = pyqtSignal()
 
     def __init__(self, view: CamGraphicsView, parent: QGraphicsItem = None):
         QGraphicsObject.__init__(self, parent)
@@ -47,6 +56,13 @@ class OverlayGui(QGraphicsObject):
         self.top_menu = ButtonMenu(1.0, self)
         self.find_sticks_menu = ButtonMenu(1.0, self.top_menu)
         self.find_sticks_menu.setVisible(False)
+
+        self.exclude_include_menu = ButtonMenu(1.0, self)
+        self.exclude_include_menu.setVisible(False)
+
+        self.process_menu = ButtonMenu(1.0, self)
+        self.process_menu.setVisible(False)
+
         self.mouse_zoom_pic = QPixmap()
         self.mouse_pan_pic = QPixmap()
         self.icons_rect = QRectF(0, 0, 0, 0)
@@ -78,6 +94,11 @@ class OverlayGui(QGraphicsObject):
         self.stick_widget_menu.show_close_button(True)
         self.stick_widget_menu.setVisible(False)
 
+        self.measurement_menu = ButtonMenu(1.0, self)
+        self.measurement_menu.setVisible(False)
+
+        self.submenus: List[ButtonMenu] = [self.measurement_menu, self.process_menu, self.exclude_include_menu]
+
     def initialize(self):
         path = Path(sys.argv[0]).parent / "camera_processing/gui_resources/"
 
@@ -91,8 +112,6 @@ class OverlayGui(QGraphicsObject):
         # self.top_menu.add_button("find_sticks", "Find sticks",
         #                          call_back=lambda: self.find_sticks_menu.setVisible(not self.find_sticks_menu.isVisible()),
         #                          is_checkable=True)
-        self.top_menu.add_button('confirm_sticks', 'Confirm sticks', call_back=self.handle_confirm_sticks_clicked,
-                                 is_checkable=True)
         self.top_menu.add_button("edit_sticks", "Edit sticks", is_checkable=True,
                                  call_back=self.edit_sticks_clicked.emit)
         button = self.top_menu.add_button('sticks_length', 'Sticks length', is_checkable=True,
@@ -105,19 +124,45 @@ class OverlayGui(QGraphicsObject):
         self.top_menu.add_button("reset_view", "Reset view", call_back=self.reset_view_requested.emit)
         self.top_menu.add_button("delete_sticks", "Delete selected sticks", call_back=self.delete_sticks_clicked.emit, base_color=ButtonColor.RED)
         self.top_menu.hide_button("delete_sticks")
-        process_btn = self.top_menu.add_button("process_photos", "Process photos", is_checkable=True,
-                                               call_back=self.handle_process_photos_clicked)
+        self.top_menu.add_button("photo_analysis", "Photo analysis", is_checkable=True,
+                                 call_back=self.handle_photo_analysis_clicked)
+        self.process_menu.add_button('confirm_sticks', 'Confirm sticks', call_back=self.handle_confirm_sticks_clicked,
+                                     is_checkable=True)
+        nighttime_btn = self.process_menu.add_button("process_nighttime", "Process nighttime photos: Yes",
+                                                     is_checkable=True, call_back=self.handle_process_nighttime_clicked)
+        nighttime_btn.set_on(True)
+        process_btn = self.process_menu.add_button("process_photos", "Process photos", is_checkable=True,
+                                                   call_back=self.handle_process_photos_clicked)
         process_btn.set_disabled(True)
-        self.top_menu.add_button("process_stop", "Stop processing", ButtonColor.RED,
+        btn = self.process_menu.add_button("reset_measurements", "Reset measurements", ButtonColor.RED,
+                                     call_back=self.reset_measurements_clicked.emit)
+        btn.set_disabled(True)
+        self.process_menu.add_button("process_stop", "Stop processing", ButtonColor.RED,
                                  call_back=self.process_stop_clicked.emit)
-        self.top_menu.hide_button("process_stop")
+        self.process_menu.hide_button("process_stop")
         #self.top_menu.add_button("measure_snow", "Measure", call_back=self.mes.emit)
         #self.top_menu.add_button("save_measurements", "Save measurements", call_back=self.save_measurements.emit)
         btn = self.top_menu.add_button("show_measurements", "Show measurements", call_back=self.show_measurements.emit,
                                  is_checkable=True)
         btn.set_base_color([ButtonColor.GRAY, ButtonColor.GREEN])
-        self.top_menu.add_button("use_single_proc", "Use single process", call_back=self.use_single_proc.emit,
-                                 is_checkable=True)
+
+        #self.top_menu.add_button("use_single_proc", "Use single process", call_back=self.use_single_proc.emit,
+        #                         is_checkable=True)
+
+        self.top_menu.add_button("measurement_mode", "Measurement mode",  is_checkable=True,
+                                 call_back=self.toggle_measurement_mode)
+
+        self.enable_measurement_mode_button(False)
+
+        self.exclude_include_menu.add_button("exclude_photos_no_snow", "Mark as 'no snow'", ButtonColor.RED,
+                                             call_back=self.exclude_photos_no_snow.emit)
+        self.exclude_include_menu.add_button("exclude_photos_bad", "Mark as 'bad quality'", ButtonColor.RED,
+                                             call_back=self.exclude_photos_bad_quality.emit)
+        self.exclude_include_menu.add_button("include_photos", "Mark as 'snowy'", ButtonColor.GREEN,
+                                             call_back=self.include_photos.emit)
+        self.exclude_include_menu.center_buttons()
+
+        #self.top_menu.add_button("measure_all", "Measure snow", call_back=self.measure_all.emit)
         self.top_menu.set_height(12)
         self.top_menu.center_buttons()
 
@@ -145,6 +190,14 @@ class OverlayGui(QGraphicsObject):
         #self.top_menu.set_height(12)
         self.stick_widget_menu.set_layout_direction('vertical')
         #self.stick_widget_menu.center_buttons()
+
+        self.measurement_menu.add_button("vertical_offset", "Vertical offset in this picture",
+                                         call_back=self.vertical_offset_clicked.emit)
+        self.measurement_menu.add_button("process_from_this_photo", "Start processing from this photo",
+                                         call_back=self.process_from_this_and_next.emit)
+        self.measurement_menu.add_button("low_quality", "Low quality",
+                                         call_back=self.low_quality_clicked.emit)
+
         self.initialize_process_photos_popup()
 
     @pyqtSlot()
@@ -152,6 +205,9 @@ class OverlayGui(QGraphicsObject):
         self.prepareGeometryChange()
         self.setPos(self.view.mapToScene(QPoint(0, 0)))
         self.top_menu.setPos(self.boundingRect().width() / 2.0 - self.top_menu.boundingRect().width() / 2.0, 2)
+        self.exclude_include_menu.setPos(
+            self.boundingRect().width() / 2.0 - self.exclude_include_menu.boundingRect().width() / 2.0,
+            self.top_menu.pos().y() + self.top_menu.boundingRect().height())
         #self.process_photo_popup.setPos(self.boundingRect().width() / 2.0 - self.process_photo_popup.boundingRect().width() / 2.0,
         #                                self.boundingRect().height() / 2.0 - self.process_photo_popup.boundingRect().height() / 2.0)
         self.sticks_length_input.setPos(self.view.size().width() * 0.5, self.view.size().height() * 0.5)
@@ -214,30 +270,32 @@ class OverlayGui(QGraphicsObject):
 
     def handle_process_photos_count_cancel_clicked(self):
         self.process_photo_popup.setVisible(False)
-        self.top_menu.get_button('process_photos').click_button(True)
+        self.process_menu.get_button('process_photos').click_button(True)
         self.process_photo_popup.reset_button_states()
 
     def handle_process_jobs_count_clicked(self, btn_data: Dict[str, Any]):
         self.process_photo_popup.setVisible(False)
         self.process_photo_popup.reset_button_states()
-        btn = self.top_menu.get_button('process_photos')
+        btn = self.process_menu.get_button('process_photos')
         btn.click_button(True)
+        self.process_menu.get_button("confirm_sticks").set_disabled(True)
+        self.process_menu.get_button("process_nighttime").set_disabled(True)
         self.process_photos_with_jobs_clicked.emit(int(btn_data['btn_id']))
 
     def handle_process_photos_clicked(self):
         self.process_photo_popup.setPos(self.boundingRect().width() / 2.0 - self.process_photo_popup.boundingRect().width() / 2.0,
                                         self.boundingRect().height() / 2.0 - self.process_photo_popup.boundingRect().height() / 2.0)
-        is_down = self.top_menu.get_button('process_photos').is_on()
+        is_down = self.process_menu.get_button('process_photos').is_on()
         self.process_photo_popup.setVisible(is_down)
 
     def enable_process_photos_button(self, enable: bool):
-        self.top_menu.get_button('process_photos').set_disabled(not enable)
+        self.process_menu.get_button('process_photos').set_disabled(not enable)
 
     def enable_link_sticks_button(self, enable: bool):
         self.top_menu.get_button('link_sticks').set_disabled(not enable)
 
     def enable_confirm_sticks_button(self, enable: bool):
-        self.top_menu.get_button('confirm_sticks').set_disabled(not enable)
+        self.process_menu.get_button('confirm_sticks').set_disabled(not enable)
 
     #def handle_sticks_length_clicked(self, btn_state: Dict[str, Any]):
     #    self.sticks_length_input.setVisible(btn_state['checked'])
@@ -252,9 +310,11 @@ class OverlayGui(QGraphicsObject):
     #    event.ignore()
 
     def handle_confirm_sticks_clicked(self, btn_info: Dict[str, Any]):
-        if btn_info['checked']:
-            self.confirm_sticks_clicked.emit()
-        self.top_menu.get_button('process_photos').set_disabled(not btn_info['checked'])
+        #if btn_info['checked']:
+        self.confirm_sticks_clicked.emit(btn_info)
+        btn = self.process_menu.get_button('process_photos')
+        if btn is not None:
+            self.process_menu.get_button('process_photos').set_disabled(not btn_info['checked'])
 
     def show_stick_context_menu_at(self, pos: QPoint):
         self.stick_widget_menu.setPos(pos)
@@ -294,45 +354,118 @@ class OverlayGui(QGraphicsObject):
         self.sticks_length_input.setVisible(False)
 
     def hide_process_photos(self):
-        self.top_menu.hide_button("process_photos")
+        self.process_menu.hide_button("process_photos")
 
     def show_process_photos(self):
-        self.top_menu.show_button("process_photos")
+        self.process_menu.show_button("process_photos")
 
     def hide_process_stop(self):
-        self.top_menu.hide_button("process_stop")
+        self.process_menu.hide_button("process_stop")
 
     def show_process_stop(self):
-        self.top_menu.show_button("process_stop")
+        self.process_menu.show_button("process_stop")
 
     def handle_process_count_changed(self, _: int, _i: int, job_count: int, processing_stopped: bool):
-        btn = self.top_menu.get_button("process_stop")
+        btn = self.process_menu.get_button("process_stop")
         if processing_stopped:
             if job_count > 0:
                 btn.set_disabled(True)
                 btn.set_label(f'Waiting on {job_count} job(s)')
                 btn.fit_to_contents()
-                self.top_menu.center_buttons()
+                self.process_menu.center_buttons()
             else:
                 self.handle_processing_stopped()
         self.update()
 
     def handle_processing_stopped(self):
-        btn = self.top_menu.get_button("process_stop")
+        btn = self.process_menu.get_button("process_stop")
         self.hide_process_stop()
         if btn is None:
             return
         btn.set_disabled(False)
         btn.set_label("Stop processing")
         self.show_process_photos()
-        self.top_menu.center_buttons()
+        self.process_menu.center_buttons()
+        self.process_menu.get_button("confirm_sticks").set_disabled(False)
+        self.process_menu.get_button("process_nighttime").set_disabled(False)
         self.update()
 
     def toggle_edit_sticks_button(self):
         self.top_menu.get_button("edit_sticks").click_button(artificial_emit=True)
 
     def uncheck_confirm_sticks_button(self):
-        btn = self.top_menu.get_button("confirm_sticks")
-        if btn.is_on():
-            btn.click_button(artificial_emit=True)
+        btn = self.process_menu.get_button("confirm_sticks")
+        if btn is not None:
+            if btn.is_on():
+                btn.click_button(artificial_emit=True)
 
+    def check_confirm_sticks_button(self):
+        btn = self.process_menu.get_button("confirm_sticks")
+        if btn is not None:
+            if not btn.is_on():
+                btn.click_button(artificial_emit=True)
+
+    def show_exclude_button(self):
+        if not self.exclude_include_menu.isVisible():
+            self.exclude_include_menu.setVisible(True)
+        self.exclude_include_menu.show_button("exclude_photos_no_snow")
+        self.exclude_include_menu.show_button("exclude_photos_bad_quality")
+        self.exclude_include_menu.setPos(
+            self.boundingRect().width() / 2.0 - self.exclude_include_menu.boundingRect().width() / 2.0,
+            self.top_menu.pos().y() + self.top_menu.boundingRect().height())
+
+    def hide_exclude_button(self):
+        self.exclude_include_menu.hide_button("exclude_photos_no_snow")
+        self.exclude_include_menu.hide_button("exclude_photos_bad_quality")
+
+    def show_include_button(self):
+        if not self.exclude_include_menu.isVisible():
+            self.exclude_include_menu.setVisible(True)
+        self.exclude_include_menu.show_button("include_photos")
+        self.exclude_include_menu.setPos(
+            self.boundingRect().width() / 2.0 - self.exclude_include_menu.boundingRect().width() / 2.0,
+            self.top_menu.pos().y() + self.top_menu.boundingRect().height())
+
+    def hide_include_button(self):
+        self.exclude_include_menu.hide_button("include_photos")
+
+    def hide_exclude_include_menu(self):
+        self.exclude_include_menu.hide_button("exclude_photos_no_snow")
+        self.exclude_include_menu.hide_button("exclude_photos_bad_quality")
+        self.exclude_include_menu.hide_button("include_photos")
+        self.exclude_include_menu.setVisible(False)
+
+    def toggle_measurement_mode(self):
+        if self.top_menu.get_button("measurement_mode").is_on():
+            self.measurement_menu.setVisible(True)
+            self.measurement_menu.center_buttons()
+            self.measurement_menu.setPos(self.boundingRect().width() / 2.0 - self.measurement_menu.boundingRect().width() / 2.0,
+                                         self.top_menu.pos().y() + self.top_menu.boundingRect().height())
+            self.measurement_mode_toggle.emit(True)
+        else:
+            self.measurement_menu.setVisible(False)
+            self.measurement_mode_toggle.emit(False)
+
+    def enable_measurement_mode_button(self, enable: bool):
+        self.top_menu.get_button("measurement_mode").set_disabled(not enable)
+        if not enable:
+            self.measurement_menu.setVisible(False)
+
+    def handle_photo_analysis_clicked(self):
+        is_on = self.top_menu.get_button("photo_analysis").is_on()
+        if is_on:
+            for menu in self.submenus:
+                menu.setVisible(False)
+            self.process_menu.setPos(
+                self.boundingRect().width() / 2.0 - self.process_menu.boundingRect().width() / 2.0,
+                self.top_menu.pos().y() + self.top_menu.boundingRect().height())
+        self.process_menu.setVisible(is_on)
+
+    def handle_process_nighttime_clicked(self, btn_info: Dict[str, Any]):
+        is_on = btn_info['checked']
+        btn = self.process_menu.get_button("process_nighttime")
+        btn.set_label(f'Process nighttime photos: {"Yes" if is_on else "No"}')
+        self.process_menu.center_buttons()
+
+    def enable_reset_measurements(self, enable: bool):
+        self.process_menu.get_button("reset_measurements").set_disabled(not enable)
