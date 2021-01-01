@@ -20,6 +20,9 @@
       <enum>QLayout::SetMinimumSize</enum>
      </property>
      <item>
+      <widget class="QComboBox" name="viewFilter"/>
+     </item>
+     <item>
       <widget class="QListView" name="image_list">
        <property name="sizePolicy">
         <sizepolicy hsizetype="Preferred" vsizetype="Expanding">

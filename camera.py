@@ -630,6 +630,11 @@ class Camera(QObject):
     def reset_measurements(self):
         self.initialize_results()
 
+    def photo_state(self, img_id: int) -> PhotoState:
+        if not self.timestamps_available:
+            return PhotoState.Unprocessed
+        return self.measurements.iat[img_id, PD_IMAGE_STATE]
+
     def update_stick(self, stick: Stick):
         self.needs_to_save = True
         img_id = self.image_names_ids[stick.view]

@@ -121,7 +121,7 @@ class ThumbnailDelegate(QStyledItemDelegate):
                            pic_rect.width(), self.snow_indicator.height())
         painter.setRenderHint(painter.SmoothPixmapTransform, True)
         painter.drawImage(pic_rect, thumbnail)
-        quality_color = QColor(100, 100, 100, 200) if quality_color is None else quality_color
+        quality_color = QColor(00, 00, 00, 200) if quality_color is None else quality_color
         painter.fillRect(text_rect, quality_color)
         painter.setPen(QColor(255, 255, 255, 255))
         if index.data(Qt.UserRole + 1):

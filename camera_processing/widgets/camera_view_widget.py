@@ -13,10 +13,10 @@ import cv2 as cv
 import numpy as np
 from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtCore import (QMarginsF, QModelIndex, QPointF, QRectF, Qt,
-                          pyqtSignal, QByteArray, QRect, QItemSelection, QPoint)
+                          pyqtSignal, QByteArray, QRect, QItemSelection, QPoint, QSortFilterProxyModel)
 from PyQt5.QtCore import pyqtSlot as Slot, QTimer, QMutex
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QBrush, QColor, QFont, QPen
-from PyQt5.QtWidgets import QGraphicsScene, QGraphicsItem, QSizePolicy, QAbstractScrollArea, QMessageBox
+from PyQt5.QtWidgets import QGraphicsScene, QGraphicsItem, QSizePolicy, QAbstractScrollArea, QMessageBox, QComboBox
 import matplotlib.pyplot as plt
 import skimage.filters as fil
 import pandas as pd
@@ -83,11 +83,15 @@ class CameraViewWidget(QtWidgets.QWidget):
 
         self.image_list = ImageListModel()
         thumbnail_delegate = ThumbnailDelegate(self.image_list.thumbnails)
+        self.image_list_filter = QSortFilterProxyModel(self)
+        self.image_list_filter.setFilterRole(Qt.UserRole + 2)
+        self.image_list_filter.setSourceModel(self.image_list)
         #self.ui.image_list.setHorizontalHeader(None)
         #self.ui.image_list.setVerticalHeader(None)
-        self.ui.image_list.setSpacing(10)
-        self.ui.image_list.setUniformItemSizes(False)
-        self.ui.image_list.setModel(self.image_list)
+        #self.ui.image_list.setSpacing(10)
+        self.ui.image_list.setUniformItemSizes(True)
+        #self.ui.image_list.setModel(self.image_list)
+        self.ui.image_list.setModel(self.image_list_filter)
         self.ui.image_list.verticalScrollBar().sliderPressed.connect(self.image_list.handle_slider_pressed)
         self.ui.image_list.verticalScrollBar().sliderReleased.connect(self.handle_image_list_slider_released)
         #self.ui.image_list.verticalHeader().setDefaultSectionSize(self.image_list.thumb.height())
@@ -96,6 +100,13 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.ui.image_list.setEnabled(False)
         self.ui.image_list.setItemDelegate(thumbnail_delegate)
         self.ui.image_list.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred))
+
+        self.ui.viewFilter.addItem("All photos", 0)
+        self.ui.viewFilter.addItem("Snow photos", 1)
+        self.ui.viewFilter.addItem("No-snow photos", 2)
+        self.ui.viewFilter.currentIndexChanged.connect(self.handle_view_filter_changed)
+        self.ui.viewFilter.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        #self.ui.viewFilter.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
 
         self.dataset = dataset
         self.dataset.cameras_linked.connect(self.handle_cameras_linked)
@@ -312,7 +323,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.stick_link_manager_strat.update_links()
         self.image_list.initialize(self.camera, self.camera.get_processed_count())
         self.ui.image_list.setEnabled(True)
-        self.ui.image_list.setModel(self.image_list)
+        #self.ui.image_list.setModel(self.image_list)
+        self.ui.image_list.setModel(self.image_list_filter)
         self.ui.image_list.setSpacing(0)
         self.ui.image_list.updateGeometry()
         select_index = self.image_list.index(0, 0)
@@ -419,7 +431,10 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.link_menu.set_layout_direction('vertical')
 
     @Slot(QModelIndex, QModelIndex)
-    def handle_list_model_current_changed(self, current: QModelIndex, previous: QModelIndex):
+    def handle_list_model_current_changed(self, current_: QModelIndex, previous: QModelIndex):
+        if current_.row() < 0:
+            return
+        current = self.image_list_filter.mapToSource(current_)
         image_path = self.image_list.data(current, Qt.UserRole)
         half = (int(round(0.5 * self.camera.standard_image_size[0])),
                 int(round(0.5 * self.camera.standard_image_size[1])))
@@ -1568,3 +1583,11 @@ class CameraViewWidget(QtWidgets.QWidget):
 
     def handle_low_quality_clicked(self):
         self.results_comp.loc[self.current_image_name, 'low_quality'] = True
+
+    def handle_view_filter_changed(self, current_idx: int):
+        view = self.ui.viewFilter.currentData(Qt.UserRole)
+        if view == 0:
+            self.image_list_filter.setFilterFixedString('')
+        else:
+            self.image_list_filter.setFilterFixedString('snow' if view == 1 else 'ground')
+
