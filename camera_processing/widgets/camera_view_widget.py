@@ -859,18 +859,21 @@ class CameraViewWidget(QtWidgets.QWidget):
         #photos = [list(itertools.dropwhile(lambda img_name: img_name != "IMAG5000.JPG", photos))]
         self.processing_started.emit(self, count)
         self.job_counter_lock.lock() # this should not be needed, better safe than sorry
-        self.running_jobs = batch_count
+        self.running_jobs = 0
         self.job_counter_lock.unlock()
         self.process_nighttime = self.overlay_gui.process_menu.get_button("process_nighttime").is_on()
         for i in range(batch_count):
             #self.worker_pool.apply_async(antar.analyze_photos, args=(photos[i], self.camera.folder, self.camera.sticks,
             #                                                         self.camera.stick_to_stick_vectors),
             #                             callback=self.handle_worker_returned)
+            if len(self.current_batch) == 0:
+                break
             self.worker_pool.apply_async(snow.analyze_photos_with_stick_tracking,
                                          args=(self.current_batch[:100], self.camera.folder, self.camera.sticks,
                                                self.camera.standard_image_size, self.process_nighttime, 0),
                                          callback=self.handle_worker_returned)
             self.current_batch = self.current_batch[100:]
+            self.running_jobs += 1
             #self.worker_pool.apply_async(snow.analyze_photos_ip, args=(
             #    photos[i], self.camera.folder, self.camera.sticks, self.camera.standard_image_size),
             #                             callback=self.handle_worker_returned)
@@ -1513,6 +1516,7 @@ class CameraViewWidget(QtWidgets.QWidget):
     def handle_reset_measurements_clicked(self):
         self.camera.reset_measurements()
         self.overlay_gui.enable_reset_measurements(False)
+        self.overlay_gui.uncheck_confirm_sticks_button()
 
     def handle_misplaced_stick(self, sw: StickWidget):
         img = sw.stick.view
