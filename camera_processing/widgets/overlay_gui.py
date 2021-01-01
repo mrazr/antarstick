@@ -154,11 +154,11 @@ class OverlayGui(QGraphicsObject):
 
         self.enable_measurement_mode_button(False)
 
-        self.exclude_include_menu.add_button("exclude_photos_no_snow", "Remove from queue: no snow", ButtonColor.RED,
+        self.exclude_include_menu.add_button("exclude_photos_no_snow", "Mark as 'no snow'", ButtonColor.RED,
                                              call_back=self.exclude_photos_no_snow.emit)
-        self.exclude_include_menu.add_button("exclude_photos_bad", "Remove from queue: bad quality", ButtonColor.RED,
+        self.exclude_include_menu.add_button("exclude_photos_bad", "Mark as 'bad quality'", ButtonColor.RED,
                                              call_back=self.exclude_photos_bad_quality.emit)
-        self.exclude_include_menu.add_button("include_photos", "Put into queue", ButtonColor.GREEN,
+        self.exclude_include_menu.add_button("include_photos", "Mark as 'snowy'", ButtonColor.GREEN,
                                              call_back=self.include_photos.emit)
         self.exclude_include_menu.center_buttons()
 

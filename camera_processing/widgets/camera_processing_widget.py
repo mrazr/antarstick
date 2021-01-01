@@ -101,8 +101,8 @@ class CameraProcessingWidget(QtWidgets.QTabWidget):
 
     def __init__(self):
         QtWidgets.QTabWidget.__init__(self)
-        self.tab_style = TabProxyStyle('')
-        self.tabBar().setStyle(self.tab_style)
+        #self.tab_style = TabProxyStyle('')
+        #self.tabBar().setStyle(self.tab_style)
         self.setTabsClosable(True)
         self.tabCloseRequested.connect(self.handle_tab_close_requested)
         self.currentChanged.connect(self.handle_current_tab_changed)

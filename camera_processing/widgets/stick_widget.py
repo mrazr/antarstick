@@ -176,12 +176,13 @@ class StickWidget(QGraphicsObject):
         self.clearly_visible_btn.setPos(self.mismatch_btn.pos() + QPoint(1.5 * self.mismatch_btn.boundingRect().width(), 0))
 
         self.zero_btn = Button("zero_btn", "0", parent=self)
-        self.zero_btn.set_is_check_button(True)
         self.zero_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
         self.zero_btn.setVisible(False)
         #self.zero_btn.setPos(self.mismatch_btn.pos() + QPointF(0,
         #                                                                  self.mismatch_btn.boundingRect().height()))
-        self.zero_btn.setPos(self.clearly_visible_btn.pos() + QPoint(1.5 * self.clearly_visible_btn.boundingRect().width(), 0))
+        #self.zero_btn.setPos(self.clearly_visible_btn.pos() + QPoint(1.5 * self.clearly_visible_btn.boundingRect().width(), 0))
+        self.zero_btn.setPos(self.boundingRect().center() + QPointF(self.zero_btn.boundingRect().width() * -0.5,
+                                                                    self.boundingRect().height() * 0.5))
         self.zero_btn.clicked.connect(self.handle_zero)
 
     @pyqtSlot()
@@ -317,8 +318,8 @@ class StickWidget(QGraphicsObject):
             self.set_mode(StickMode.EditDelete)
             self.btn_delete.setVisible(False)
         elif mode == StickMode.Measurement:
-            self.misplace_btn.setVisible(True)
-            self.mismatch_btn.setVisible(True)
+            #self.misplace_btn.setVisible(True)
+            #self.mismatch_btn.setVisible(True)
             self.zero_btn.setVisible(True)
             self.setVisible(True)
 
@@ -648,6 +649,7 @@ class StickWidget(QGraphicsObject):
         self.update()
 
     def handle_zero(self):
+        self.measured_height = 0
         self.stick.set_snow_height_px(0)
         self.measurement_corrected.emit(self)
 
