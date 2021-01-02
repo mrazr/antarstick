@@ -1,5 +1,5 @@
-from typing import Callable, Dict, Optional
 from math import ceil
+from typing import Callable, Dict, Optional
 
 from PyQt5.Qt import (QGraphicsItem, QGraphicsObject)
 from PyQt5.QtCore import QRectF, pyqtSignal
@@ -67,11 +67,9 @@ class ButtonMenu(QGraphicsObject):
         visible_buttons = list(self.buttons.values())
 
         if self.close_button_shown:
-            # self.close_button.set_height(visible_buttons[0].boundingRect().height())
             self.close_button.set_height(12)
             if self.layout_direction == 'vertical':
                 self.close_button.set_width(visible_buttons[0].boundingRect().width())
-            # visible_buttons.append(self.close_button)
 
         if len(visible_buttons) == 0:
             return
@@ -108,7 +106,6 @@ class ButtonMenu(QGraphicsObject):
             menu_height = self.scaling * self.ver_padding * (1 + rows) + rows * button_height
             if self.close_button_shown:
                 menu_height += self.close_button.boundingRect().height() + self.ver_padding
-            # menu_width = 2 * self.hor_padding * self.scaling + columns * button_width + max(0, columns - 1) * self.hor_padding * self.scaling
             menu_width = self.scaling * self.hor_padding * (1 + columns) + columns * button_width
 
             self.rect.setHeight(menu_height)
@@ -141,7 +138,6 @@ class ButtonMenu(QGraphicsObject):
             self.scene().removeItem(old_btn)
             old_btn.deleteLater()
         btn = Button(btn_id, label, parent=self)
-        # btn.scale_button(self.scaling)
         btn.set_is_check_button(is_checkable)
         if not is_checkable:
             btn.set_base_color([base_color])
@@ -149,7 +145,6 @@ class ButtonMenu(QGraphicsObject):
         if call_back is not None:
             btn.clicked.connect(call_back)
         self.buttons[btn_id] = btn
-        # self._center_buttons()
         return btn
 
     def is_button_checked(self, button_id: str) -> bool:
