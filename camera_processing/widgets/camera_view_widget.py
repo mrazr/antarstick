@@ -101,6 +101,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.ui.image_list.setItemDelegate(thumbnail_delegate)
         self.ui.image_list.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred))
 
+        #self.ui.viewFilter.setToolTip("For filtering by snow/no-snow conditions after analysis")
+        self.ui.viewFilter.setDisabled(True)
         self.ui.viewFilter.addItem("All photos", 0)
         self.ui.viewFilter.addItem("Snow photos", 1)
         self.ui.viewFilter.addItem("No-snow photos", 2)
@@ -335,6 +337,9 @@ class CameraViewWidget(QtWidgets.QWidget):
             self.camera_view.show_status_message("Extracting timestamps...")
             self.worker_pool.apply_async(self.extract_timestamps, args=(self.camera.image_list, self.camera.folder),
                                          callback=self.timestamps_extracted.emit)
+        if self.camera.measurements.shape[0] > 0:
+            if self.camera.measurements.loc[self.camera.measurements.iloc[:, PD_IMAGE_STATE] == PhotoState.Processed, :].shape[0] > 0:
+                self.ui.viewFilter.setEnabled(True)
         self.sticks_confirmed = self.camera.measurements_initialized()
 
     def initialize_rest_of_gui(self):
@@ -939,6 +944,7 @@ class CameraViewWidget(QtWidgets.QWidget):
     def dispose(self):
         for sw in self.camera_view.stick_widgets:
             sw.prepare_for_deleting()
+        self.image_list.thumbnails.stop()
         self.worker_pool.terminate()
         self.graphics_scene.clear()
         self.graphics_scene.deleteLater()
@@ -1196,6 +1202,8 @@ class CameraViewWidget(QtWidgets.QWidget):
             return
         result: camera_processing.antarstick_processing.Measurement = self.return_queue.get_nowait()
         self.camera.insert_measurements2(result.measurements)
+        if not self.ui.viewFilter.isEnabled():
+            self.ui.viewFilter.setEnabled(True)
         if len(result.measurements) > 0:
             processed = sorted(result.measurements.keys())
             self.image_list.update_items(processed[0], processed[-1])
@@ -1466,6 +1474,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.ui.image_list.setCurrentIndex(index)
 
     def handle_exclude_photos_clicked(self, btn_info: Dict[str, Any]):
+        if not self.ui.viewFilter.isEnabled():
+            self.ui.viewFilter.setEnabled(True)
         sel = self.ui.image_list.selectionModel().selection()
         no_snow = btn_info['btn_id'] == "exclude_photos_no_snow"
         for index in sel.indexes():
@@ -1479,6 +1489,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.show_include_button()
 
     def handle_include_photos_clicked(self):
+        if not self.ui.viewFilter.isEnabled():
+            self.ui.viewFilter.setEnabled(True)
         sel = self.ui.image_list.selectionModel().selection()
         for index in sel.indexes():
             self.camera.measurements.iat[index.row(), PD_IMAGE_STATE] = PhotoState.Unprocessed
