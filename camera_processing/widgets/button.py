@@ -1,11 +1,11 @@
-from typing import Union, Optional, List
 from enum import IntEnum
+from typing import Union, Optional, List
 
 from PyQt5.Qt import (QGraphicsItem, QGraphicsObject, QGraphicsSceneHoverEvent,
                       QGraphicsSceneMouseEvent, QGraphicsSimpleTextItem,
                       pyqtSignal)
 from PyQt5.QtCore import (QEasingCurve, QPointF, QPropertyAnimation, QRectF,
-                          QTimerEvent, pyqtProperty, Qt, QMarginsF)
+                          QTimerEvent, pyqtProperty, QMarginsF)
 from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPixmap
 
 
@@ -29,17 +29,20 @@ class ButtonMode(IntEnum):
     Button = 0
     Label = 1
 
+
 IDLE_COLORS = [
     QColor(50, 50, 50, 200),
     QColor(255, 0, 0, 200),
     QColor(0, 255, 0, 200),
 ]
 
+
 HOVER_COLORS = [
     QColor(255, 125, 0, 150),
     IDLE_COLORS[ButtonColor.RED].lighter(120),
     IDLE_COLORS[ButtonColor.GREEN].lighter(120),
 ]
+
 
 PRESS_COLORS = [
     HOVER_COLORS[ButtonColor.GRAY].darker(120),
@@ -48,13 +51,10 @@ PRESS_COLORS = [
 ]
 
 
-
 class CheckbuttonLogic:
 
     def __init__(self):
         self.down = False
-        #self.color_idle = idle_checked_colors[0]
-        #self.color_checked = idle_checked_colors[1]
         self.colors: List[QColor] = [
             IDLE_COLORS[ButtonColor.GRAY],
             HOVER_COLORS[ButtonColor.GRAY],
@@ -64,13 +64,10 @@ class CheckbuttonLogic:
             HOVER_COLORS[ButtonColor.GREEN],
             PRESS_COLORS[ButtonColor.GREEN],
         ]
-        #self.checked_label = checked_label
 
     def idle_color(self) -> QColor:
         if self.down:
-            #return IDLE_COLORS[self.color_checked]
             return self.colors[ButtonState.CHECKED_DEFAULT]
-        #return IDLE_COLORS[self.color_idle] if self.colors is None else self.colors[0]
         return self.colors[ButtonState.DEFAULT]
 
     def hover_left_color(self) -> QColor:
@@ -79,22 +76,17 @@ class CheckbuttonLogic:
     def hover_enter_color(self) -> QColor:
         if self.down:
             return self.colors[ButtonState.CHECKED_HOVERED]
-            #return HOVER_COLORS[self.color_checked]
         return self.colors[ButtonState.HOVERED]
-        #return HOVER_COLORS[self.color_idle] if self.colors is None else self.colors[1]
 
     def press_color(self) -> QColor:
         if self.down:
             return self.colors[ButtonState.CHECKED_PRESSED]
         return self.colors[ButtonState.PRESSED]
-        #return PRESS_COLORS[ButtonState.PRESSED] if self.colors is None else self.colors[2]
 
     def release_color(self) -> QColor:
         if self.down:
             return self.colors[ButtonState.CHECKED_HOVERED]
-            #return HOVER_COLORS[self.color_checked]
         return self.colors[ButtonState.HOVERED]
-        #return HOVER_COLORS[self.color_idle] if self.colors is None else self.colors[1]
 
     def is_down(self) -> bool:
         return self.down
@@ -123,7 +115,6 @@ class CheckbuttonLogic:
 class PushbuttonLogic:
 
     def __init__(self, color: str):
-        #self.color = color.lower()
         self.colors: List[QColor] = [
             IDLE_COLORS[ButtonColor.GRAY],
             HOVER_COLORS[ButtonColor.GRAY],
@@ -131,23 +122,19 @@ class PushbuttonLogic:
         ]
 
     def idle_color(self) -> QColor:
-        #return IDLE_COLORS[self.color] if self.colors is None else self.colors[0]
         return self.colors[ButtonState.DEFAULT]
 
     def hover_left_color(self) -> QColor:
         return self.idle_color()
 
     def hover_enter_color(self) -> QColor:
-        #return HOVER_COLORS[self.color] if self.colors is None else self.colors[1]
         return self.colors[ButtonState.HOVERED]
 
     def press_color(self) -> QColor:
-        #return PRESS_COLORS[self.color] if self.colors is None else self.colors[2]
         return self.colors[ButtonState.PRESSED]
 
     def release_color(self) -> QColor:
         return self.hover_enter_color()
-        #return HOVER_COLORS[self.color]
 
     def is_down(self) -> bool:
         return False
@@ -181,10 +168,7 @@ class Button(QGraphicsObject):
         self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
         self.scaling = 1.0
         self.label = QGraphicsSimpleTextItem(label, self)
-        #self.font_ = QFont(self.font)
         self.label.setFont(Button.font)
-        #self.label.setDefaultTextColor(QColor(255, 255, 255, 255))
-        #self.label.setTextInteractionFlags(Qt.TextEditable)
         self.text_color_enabled = QColor(255, 255, 255, 255)
         self.text_color_disabled = QColor(200, 200, 200, 255)
         self.fill_color_disabled = QColor(125, 125, 125, 200)
@@ -252,12 +236,9 @@ class Button(QGraphicsObject):
         self._reposition_text()
 
     def scale_button(self, factor: float):
-        #self.scaling = factor
         factor = 1.0
         self.rect.setHeight(int(factor * self.rect.height()))
         self.rect.setWidth(int(factor * self.rect.width()))
-        #self.font.setPointSize(int(factor * self.font.pointSize()))
-        #self.label.setFont(self.font)
         self.label.setScale(self.scaling)
         self.fit_to_contents()
 
@@ -357,11 +338,6 @@ class Button(QGraphicsObject):
             self.current_timer = 0
 
     def set_base_color(self, colors: List[ButtonColor]):
-        #if isinstance(self.logic, CheckbuttonLogic):
-        #    return
-        #if IDLE_COLORS[color] is None:
-        #    return
-        #self.logic.color = color.lower()
         self.logic.set_colors(colors)
         self.fill_color_current = self.logic.idle_color()
 
@@ -413,7 +389,6 @@ class Button(QGraphicsObject):
             text = '\n'.join(list(text))
         self.label.setText(text)
         self._reposition_text()
-        #self.fit_to_contents()
 
     def click_button(self, artificial_emit: bool = False):
         if self.disabled:
@@ -472,7 +447,6 @@ class Button(QGraphicsObject):
                 colors[0].lighter(120),
                 colors[0].darker(120)
             ])
-        #self.logic.set_colors([color, color.lighter(120), color.darker(120)])
         self.fill_color_current = self.logic.idle_color()
         self.update()
 
