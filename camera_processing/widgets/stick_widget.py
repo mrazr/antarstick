@@ -5,13 +5,14 @@ import PyQt5
 import numpy as np
 from PyQt5.Qt import (QPointF)
 from PyQt5.QtCore import QLine, QLineF, Qt, pyqtSignal, pyqtSlot, QMarginsF, QPropertyAnimation, pyqtProperty, QPoint
-from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen, QStaticText
+from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PyQt5.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem,
                              QGraphicsLineItem, QGraphicsObject,
                              QGraphicsRectItem, QGraphicsSceneHoverEvent,
-                             QGraphicsSceneMouseEvent, QGraphicsTextItem,
-                             QStyleOptionGraphicsItem, QGraphicsSimpleTextItem, QGraphicsSceneContextMenuEvent)
+                             QGraphicsSceneMouseEvent, QStyleOptionGraphicsItem, QGraphicsSimpleTextItem,
+                             QGraphicsSceneContextMenuEvent)
 
+from camera import Camera
 from camera_processing.widgets.button import Button, ButtonColor
 from stick import Stick
 
@@ -54,19 +55,18 @@ class StickWidget(QGraphicsObject):
     clearly_visible = pyqtSignal('PyQt_PyObject')
     zero_clicked = pyqtSignal('PyQt_PyObject')
 
-    def __init__(self, stick: Stick, parent: Optional[QGraphicsItem] = None):
+    def __init__(self, stick: Stick, camera: Camera, parent: Optional[QGraphicsItem] = None):
         QGraphicsObject.__init__(self, parent)
+        self.camera = camera
         self.stick = stick
         self.line = QLineF()
         self.gline = QGraphicsLineItem(self.line)
 
         self.stick_label_text = QGraphicsSimpleTextItem("0", self)
         self.stick_label_text.setFont(StickWidget.font)
-        #self.stick_label_text.setPos(-QPointF(0, self.stick_label_text.boundingRect().height()))
         self.stick_label_text.setPos(self.line.p1() - QPoint(0, 24))
         self.stick_label_text.setBrush(QBrush(QColor(0, 255, 0)))
         self.stick_label_text.hide()
-        #self.stick_label_text = QStaticText(self.stick.label)
         self.setZValue(10)
 
         self.mode = StickMode.Display
@@ -77,15 +77,9 @@ class StickWidget(QGraphicsObject):
         self.btn_delete.setVisible(False)
         btn_size = max(int(np.linalg.norm(self.stick.top - self.stick.bottom) / 5.0), 15)
         self.btn_delete.set_height(12)
-        #self.btn_delete.set_height(btn_size)
-        #self.btn_delete.set_width(btn_size)
         self.btn_delete.clicked.connect(self.handle_btn_delete_clicked)
         self.btn_delete.setPos(self.line.p1() - QPointF(0.5 * self.btn_delete.boundingRect().width(), 1.1 * self.btn_delete.boundingRect().height()))
         self.btn_delete.set_opacity(0.7)
-
-        #self.top_handle = QGraphicsRectItem(0, 0, self.handle_size, self.handle_size, self)
-        #self.mid_handle = QGraphicsRectItem(0, 0, self.handle_size, self.handle_size, self)
-        #self.bottom_handle = QGraphicsRectItem(0, 0, self.handle_size, self.handle_size, self)
 
         self.top_handle = QGraphicsEllipseItem(0, 0, self.handle_size, self.handle_size, self)
         self.mid_handle = QGraphicsEllipseItem(0, 0, self.handle_size, self.handle_size, self)
@@ -146,41 +140,9 @@ class StickWidget(QGraphicsObject):
         self.show_measurements: bool = False
         self.proposed_snow_height: int = -1
 
-        self.misplace_btn = Button("misplace_btn", "P", parent=self)
-        self.misplace_btn.clicked.connect(lambda: self.misplaced.emit(self))
-        self.misplace_btn.set_is_check_button(True)
-        self.misplace_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
-        self.misplace_btn.setVisible(False)
-        #self.misplace_btn.setPos(self.bottom_handle.rect().center().x() - self.misplace_btn.boundingRect().width() * 0.5,
-        #                         self.bottom_handle.pos().y() + 3 * self.misplace_btn.boundingRect().height())
-
-        self.misplace_btn.setPos(self.boundingRect().bottomLeft() + QPoint(0, self.misplace_btn.boundingRect().height()))
-
-        self.mismatch_btn = Button("mismatch_btn", "M", parent=self)
-        self.mismatch_btn.clicked.connect(lambda: self.mismatched.emit(self))
-        self.mismatch_btn.set_is_check_button(True)
-        self.mismatch_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
-        self.mismatch_btn.setVisible(False)
-        #self.mismatch_btn.setPos(self.misplace_btn.pos() + QPointF(0,
-        #                                                           self.misplace_btn.boundingRect().height()))
-
-        self.mismatch_btn.setPos(self.misplace_btn.pos() + QPoint(1.5 * self.misplace_btn.boundingRect().width(), 0))
-
-        self.clearly_visible_btn = Button("clearly_visible_btn", "V", parent=self)
-        self.clearly_visible_btn.clicked.connect(lambda: self.clearly_visible.emit(self))
-        self.clearly_visible_btn.set_is_check_button(True)
-        self.clearly_visible_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
-        self.clearly_visible_btn.setVisible(False)
-        #self.clearly_visible_btn.setPos(self.mismatch_btn.pos() + QPointF(0,
-        #                                                                  self.mismatch_btn.boundingRect().height()))
-        self.clearly_visible_btn.setPos(self.mismatch_btn.pos() + QPoint(1.5 * self.mismatch_btn.boundingRect().width(), 0))
-
         self.zero_btn = Button("zero_btn", "0", parent=self)
         self.zero_btn.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
         self.zero_btn.setVisible(False)
-        #self.zero_btn.setPos(self.mismatch_btn.pos() + QPointF(0,
-        #                                                                  self.mismatch_btn.boundingRect().height()))
-        #self.zero_btn.setPos(self.clearly_visible_btn.pos() + QPoint(1.5 * self.clearly_visible_btn.boundingRect().width(), 0))
         self.zero_btn.setPos(self.boundingRect().center() + QPointF(self.zero_btn.boundingRect().width() * -0.5,
                                                                     self.boundingRect().height() * 0.5))
         self.zero_btn.clicked.connect(self.handle_zero)
@@ -200,19 +162,15 @@ class StickWidget(QGraphicsObject):
               widget: Optional[PyQt5.QtWidgets.QWidget] = ...):
         painter.setPen(QPen(self.current_color, 1.0))
 
-        #if self.current_highlight_color is not None:
         brush = QBrush(self.current_highlight_color)
         pen = QPen(brush, 4)
         painter.setPen(pen)
-        #painter.drawLine(self.line.p1(), self.line.p2())
         if self.highlighted:
             painter.fillRect(self.boundingRect(), QBrush(self.current_highlight_color))
 
         if self.frame_color is not None and self.mode != StickMode.Edit and self.mode != StickMode.EditDelete:
             painter.setPen(QPen(self.frame_color, 4))
             painter.drawRect(self.boundingRect())
-
-        #painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)))
 
         pen = QPen(QColor(0, 255, 0, 255))
 
@@ -230,13 +188,8 @@ class StickWidget(QGraphicsObject):
         painter.setPen(pen)
 
         if self.mode != StickMode.EditDelete:
-            #pen.setStyle(Qt.DotLine)
             pen.setWidth(2.0)
-            #painter.setPen(pen)
-            #painter.drawEllipse(self.line.p1(), 6, 6)
-            #painter.drawEllipse(self.line.p2(), 6, 6)
             br = painter.brush()
-            #painter.setBrush(QBrush(QColor(255, 0, 0, 60)))
             painter.setPen(pen)
             painter.drawEllipse(self.line.p1(), 10, 10)
             painter.drawEllipse(self.line.p2(), 10, 10)
@@ -268,8 +221,6 @@ class StickWidget(QGraphicsObject):
             painter.drawRect(self.boundingRect().marginsAdded(QMarginsF(5, 5, 5, 5)))
 
         if self.show_measurements:
-            #painter.setFont(StickWidget.font)
-            #painter.drawStaticText(self.line.p2(), self.stick_label_text)
             painter.fillRect(self.stick_label_text.boundingRect().translated(self.stick_label_text.pos()),
                              QBrush(QColor(0, 0, 0, 120)))
 
@@ -292,6 +243,8 @@ class StickWidget(QGraphicsObject):
             self.link_button.setVisible(False)
             self.available_for_linking = False
             self.link_source = False
+            self.zero_btn.setVisible(False)
+            self.setVisible(self.stick.is_visible)
         elif mode == StickMode.EditDelete:
             self.set_mode(StickMode.Display)
             self.top_handle.setVisible(True)
@@ -301,8 +254,6 @@ class StickWidget(QGraphicsObject):
             self.link_source = False
             self.btn_delete.setVisible(True)
         elif mode == StickMode.LinkSource:
-            #self.set_mode(StickMode.Display)
-            #self.link_button.setVisible(True)
             self.set_mode(StickMode.Display)
             self.link_source = True
             self.available_for_linking = False
@@ -318,8 +269,6 @@ class StickWidget(QGraphicsObject):
             self.set_mode(StickMode.EditDelete)
             self.btn_delete.setVisible(False)
         elif mode == StickMode.Measurement:
-            #self.misplace_btn.setVisible(True)
-            #self.mismatch_btn.setVisible(True)
             self.zero_btn.setVisible(True)
             self.setVisible(True)
 
@@ -409,8 +358,6 @@ class StickWidget(QGraphicsObject):
             self.hovered.emit(True, self)
         elif self.link_source:
             self.link_button.setVisible(True)
-        #self.show_label = True
-        #self.stick_label_text.show()
         self.scene().update()
 
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent):
@@ -420,8 +367,6 @@ class StickWidget(QGraphicsObject):
         if self.available_for_linking:
             self.hovered.emit(False, self)
         self.link_button.setVisible(False)
-        #self.show_label = False
-        #self.stick_label_text.hide()
         self.proposed_snow_height = -1
         self.scene().update()
     
@@ -476,26 +421,13 @@ class StickWidget(QGraphicsObject):
         rect = self.mid_handle.rect()
         rect.moveCenter(self.line.center())
         self.mid_handle.setRect(rect)
-        #self.btn_delete.setPos(self.line.p1() - QPointF(0.5 * self.btn_delete.boundingRect().width(), 1.1 * self.btn_delete.boundingRect().height()))
         self.btn_delete.setPos(self.top_handle.rect().center() - QPointF(self.btn_delete.boundingRect().width() / 2,
                                                                self.btn_delete.boundingRect().height() + self.top_handle.boundingRect().height() / 2))
-        #self.link_button.setPos(self.bottom_handle.rect().bottomRight() - QPointF(self.link_button.boundingRect().width() / 2, 0))
-    
+
     def set_available_for_linking(self, available: bool):
         self.available_for_linking = available
-        #if not self.is_linked:
-        #    #if self.available_for_linking:
-        #    #    #self.set_highlight_color(QColor(0, 255, 0, 100))
-        #    #    #self.highlight(QColor(255, 125, 0, 200), animated=True)
-        #    #else:
-        #    #    #self.set_highlight_color(None)
-        #    #    #self.highlight(None)
 
     def set_is_link_source(self, is_source: bool):
-        #if is_source:
-        #    self.highlight(QColor(255, 125, 0, 100), animated=True)
-        #else:
-        #    self.highlight(None)
         self.link_source = is_source
         self.link_button.setPos(self.boundingRect().topLeft())
         self.link_button.set_width(int(self.boundingRect().width()))
@@ -607,7 +539,6 @@ class StickWidget(QGraphicsObject):
         if self.stick.snow_height_px >= 0:
             snow_txt += str(self.stick.snow_height_cm) + " cm"
             self.stick_label_text.setText(str(self.stick.snow_height_cm))
-            #self.stick_label_text.setVisible(True)
         else:
             snow_txt = "not measured"
             self.stick_label_text.setVisible(False)
@@ -639,9 +570,6 @@ class StickWidget(QGraphicsObject):
             self.clearly_visible_btn.setVisible(not self.stick.is_visible)
         else:
             self.setVisible(self.stick.is_visible)
-        #self.line.setP1(QPoint(*self.stick.top))
-        #self.line.setP2(QPoint(*self.stick.bottom))
-        #self.adjust_line()
 
     def set_show_measurements(self, show: bool):
         self.show_measurements = show
@@ -654,7 +582,4 @@ class StickWidget(QGraphicsObject):
         self.measurement_corrected.emit(self)
 
     def reset_d_btns(self):
-        self.misplace_btn.set_default_state()
-        self.mismatch_btn.set_default_state()
         self.zero_btn.set_default_state()
-        self.clearly_visible_btn.set_default_state()
