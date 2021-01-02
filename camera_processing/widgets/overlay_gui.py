@@ -1,11 +1,11 @@
+import os
 import sys
 from pathlib import Path
 from typing import Dict, Any, List
-import os
 
 from PyQt5.Qt import QBrush, QColor, QPen
-from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QPainter, QPixmap, QFontMetrics
+from PyQt5.QtCore import QPoint, QRectF, Qt, pyqtSignal, pyqtSlot
+from PyQt5.QtGui import QPainter, QPixmap
 from PyQt5.QtWidgets import QGraphicsItem, QGraphicsObject
 
 from camera_processing.widgets.button import ButtonColor
@@ -54,8 +54,6 @@ class OverlayGui(QGraphicsObject):
         self.setAcceptHoverEvents(False)
         self.setAcceptedMouseButtons(Qt.AllButtons)
         self.top_menu = ButtonMenu(1.0, self)
-        self.find_sticks_menu = ButtonMenu(1.0, self.top_menu)
-        self.find_sticks_menu.setVisible(False)
 
         self.exclude_include_menu = ButtonMenu(1.0, self)
         self.exclude_include_menu.setVisible(False)
@@ -67,8 +65,6 @@ class OverlayGui(QGraphicsObject):
         self.mouse_pan_pic = QPixmap()
         self.icons_rect = QRectF(0, 0, 0, 0)
         self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
-        #self.top_menu.setVisible(False)
-        self.loading_screen_shown = True
         self.process_photo_popup = ButtonMenu(1.0, self)
         self.process_photo_popup.set_layout_direction('vertical')
         self.sticks_length_input = TextInputWidget(mode='number', label='Sticks length(cm):', parent=self)
@@ -87,17 +83,12 @@ class OverlayGui(QGraphicsObject):
         self.stick_label_input.setVisible(False)
         self.stick_label_input.adjust_layout()
         self.stick_label_input.setZValue(2)
-        #self.stick_label_input.input_entered.connect(self.set_stick_label.emit)
-        #self.stick_label_input.input_cancelled.connect(self.set_stick_label.emit)
 
         self.stick_widget_menu = ButtonMenu(1.0, self)
         self.stick_widget_menu.show_close_button(True)
         self.stick_widget_menu.setVisible(False)
 
-        self.measurement_menu = ButtonMenu(1.0, self)
-        self.measurement_menu.setVisible(False)
-
-        self.submenus: List[ButtonMenu] = [self.measurement_menu, self.process_menu, self.exclude_include_menu]
+        self.submenus: List[ButtonMenu] = [self.process_menu, self.exclude_include_menu]
 
     def initialize(self):
         path = Path(sys.argv[0]).parent / "camera_processing/gui_resources/"
@@ -109,9 +100,6 @@ class OverlayGui(QGraphicsObject):
         self.mouse_pan_pic = self.mouse_pan_pic.scaledToWidth(80, Qt.SmoothTransformation)
 
         self.top_menu.add_button('find_sticks', 'Find sticks', call_back=self.find_sticks_clicked)
-        # self.top_menu.add_button("find_sticks", "Find sticks",
-        #                          call_back=lambda: self.find_sticks_menu.setVisible(not self.find_sticks_menu.isVisible()),
-        #                          is_checkable=True)
         self.top_menu.add_button("edit_sticks", "Edit sticks", is_checkable=True,
                                  call_back=self.edit_sticks_clicked.emit)
         button = self.top_menu.add_button('sticks_length', 'Sticks length', is_checkable=True,
@@ -140,14 +128,9 @@ class OverlayGui(QGraphicsObject):
         self.process_menu.add_button("process_stop", "Stop processing", ButtonColor.RED,
                                  call_back=self.process_stop_clicked.emit)
         self.process_menu.hide_button("process_stop")
-        #self.top_menu.add_button("measure_snow", "Measure", call_back=self.mes.emit)
-        #self.top_menu.add_button("save_measurements", "Save measurements", call_back=self.save_measurements.emit)
         btn = self.top_menu.add_button("show_measurements", "Show measurements", call_back=self.show_measurements.emit,
                                  is_checkable=True)
         btn.set_base_color([ButtonColor.GRAY, ButtonColor.GREEN])
-
-        #self.top_menu.add_button("use_single_proc", "Use single process", call_back=self.use_single_proc.emit,
-        #                         is_checkable=True)
 
         self.top_menu.add_button("measurement_mode", "Measurement mode",  is_checkable=True,
                                  call_back=self.toggle_measurement_mode)
@@ -162,7 +145,6 @@ class OverlayGui(QGraphicsObject):
                                              call_back=self.include_photos.emit)
         self.exclude_include_menu.center_buttons()
 
-        #self.top_menu.add_button("measure_all", "Measure snow", call_back=self.measure_all.emit)
         self.top_menu.set_height(12)
         self.top_menu.center_buttons()
 
@@ -170,13 +152,6 @@ class OverlayGui(QGraphicsObject):
 
         self.icons_rect = QRectF(5, 5, self.mouse_pan_pic.width() * 1.3,
                                        3 * self.mouse_pan_pic.height())
-
-        self.find_sticks_menu.add_button('detect_thin_sticks', 'Thin sticks',
-                                         call_back=self.detect_thin_sticks_set.emit,
-                                         is_checkable=True)
-        self.find_sticks_menu.add_button('find_sticks', 'Find', call_back=self.find_sticks_clicked.emit)
-        self.find_sticks_menu.setPos(QPoint(0, 40))
-        self.find_sticks_menu.set_height(12)
 
         btn = self.stick_widget_menu.add_button('set_stick_length', 'Set length',
                                                 call_back=self.set_stick_length_clicked.emit, is_checkable=True)
@@ -187,16 +162,7 @@ class OverlayGui(QGraphicsObject):
                                                 call_back=self.set_stick_label_clicked.emit, is_checkable=True)
         self.stick_label_input.input_cancelled.connect(self.hide_stick_label_input)
         self.stick_label_input.input_entered.connect(self.hide_stick_label_input)
-        #self.top_menu.set_height(12)
         self.stick_widget_menu.set_layout_direction('vertical')
-        #self.stick_widget_menu.center_buttons()
-
-        self.measurement_menu.add_button("vertical_offset", "Vertical offset in this picture",
-                                         call_back=self.vertical_offset_clicked.emit)
-        self.measurement_menu.add_button("process_from_this_photo", "Start processing from this photo",
-                                         call_back=self.process_from_this_and_next.emit)
-        self.measurement_menu.add_button("low_quality", "Low quality",
-                                         call_back=self.low_quality_clicked.emit)
 
         self.initialize_process_photos_popup()
 
@@ -208,8 +174,6 @@ class OverlayGui(QGraphicsObject):
         self.exclude_include_menu.setPos(
             self.boundingRect().width() / 2.0 - self.exclude_include_menu.boundingRect().width() / 2.0,
             self.top_menu.pos().y() + self.top_menu.boundingRect().height())
-        #self.process_photo_popup.setPos(self.boundingRect().width() / 2.0 - self.process_photo_popup.boundingRect().width() / 2.0,
-        #                                self.boundingRect().height() / 2.0 - self.process_photo_popup.boundingRect().height() / 2.0)
         self.sticks_length_input.setPos(self.view.size().width() * 0.5, self.view.size().height() * 0.5)
         self.stick_length_input.setPos(self.view.size().width() * 0.5, self.view.size().height() * 0.5)
         self.stick_label_input.setPos(self.view.size().width() * 0.5, self.view.size().height() * 0.5)
@@ -230,12 +194,6 @@ class OverlayGui(QGraphicsObject):
         font = painter.font()
         font.setPointSize(10)
 
-        if self.loading_screen_shown:
-            painter.fillRect(0, 0, self.boundingRect().width(), self.boundingRect().height(), QBrush(QColor(255, 255, 255, 255)))
-            fm = QFontMetrics(font)
-            font.setPixelSize(int(self.boundingRect().width() / 15))
-            painter.setFont(font)
-            painter.drawText(self.boundingRect(), Qt.AlignCenter, 'initializing')
         painter.setWorldMatrixEnabled(True)
         painter.restore()
 
@@ -244,11 +202,6 @@ class OverlayGui(QGraphicsObject):
     
     def link_sticks_button_pushed(self) -> bool:
         return self.top_menu.is_button_checked("link_sticks")
-
-    def show_loading_screen(self, show: bool):
-        self.loading_screen_shown = show
-        self.top_menu.setVisible(not self.loading_screen_shown)
-        self.update()
 
     def enable_delete_sticks_button(self, val: bool):
         self.top_menu.show_button("delete_sticks") if val else self.top_menu.hide_button("delete_sticks")
@@ -297,20 +250,7 @@ class OverlayGui(QGraphicsObject):
     def enable_confirm_sticks_button(self, enable: bool):
         self.process_menu.get_button('confirm_sticks').set_disabled(not enable)
 
-    #def handle_sticks_length_clicked(self, btn_state: Dict[str, Any]):
-    #    self.sticks_length_input.setVisible(btn_state['checked'])
-    #    if btn_state['checked']:
-    #        self.sticks_length_input.set_focus()
-
-    #def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-    #    event.ignore()
-
-    #def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-    #    self.clicked.emit()
-    #    event.ignore()
-
     def handle_confirm_sticks_clicked(self, btn_info: Dict[str, Any]):
-        #if btn_info['checked']:
         self.confirm_sticks_clicked.emit(btn_info)
         btn = self.process_menu.get_button('process_photos')
         if btn is not None:
@@ -436,20 +376,10 @@ class OverlayGui(QGraphicsObject):
         self.exclude_include_menu.setVisible(False)
 
     def toggle_measurement_mode(self):
-        if self.top_menu.get_button("measurement_mode").is_on():
-            self.measurement_menu.setVisible(True)
-            self.measurement_menu.center_buttons()
-            self.measurement_menu.setPos(self.boundingRect().width() / 2.0 - self.measurement_menu.boundingRect().width() / 2.0,
-                                         self.top_menu.pos().y() + self.top_menu.boundingRect().height())
-            self.measurement_mode_toggle.emit(True)
-        else:
-            self.measurement_menu.setVisible(False)
-            self.measurement_mode_toggle.emit(False)
+        self.measurement_mode_toggle.emit(self.top_menu.get_button("measurement_mode").is_on())
 
     def enable_measurement_mode_button(self, enable: bool):
         self.top_menu.get_button("measurement_mode").set_disabled(not enable)
-        if not enable:
-            self.measurement_menu.setVisible(False)
 
     def handle_photo_analysis_clicked(self):
         is_on = self.top_menu.get_button("photo_analysis").is_on()
