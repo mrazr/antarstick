@@ -39,7 +39,6 @@ def thumbnail_load_loop(folder: Path, in_queue: Queue, out_queue: Queue):
             continue
         while not in_queue.empty():
             idx, img_name = in_queue.get_nowait()
-            print(f'loading {img_name}')
             if idx < 0:
                 return
             with open(folder / img_name, "rb") as f:
