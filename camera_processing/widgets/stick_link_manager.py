@@ -10,7 +10,6 @@ from PyQt5.QtWidgets import QGraphicsSceneHoverEvent
 from camera import Camera
 from camera_processing.widgets.button import Button
 from camera_processing.widgets.camera_view import CameraView
-from camera_processing.widgets.split_view import SplitView
 from camera_processing.widgets.stick_widget import StickMode, StickWidget
 from dataset import Dataset
 from stick import Stick
@@ -24,15 +23,12 @@ class StickLink(QGraphicsObject):
         QGraphicsObject.__init__(self, parent)
         self.stick1 = sw1
         self.stick2 = sw2
-        #self.btn_break_link.set_base_color([ButtonColor.RED])
-        #self.btn_break_link.set_custom_color([QColor(50, 50, 50, 200), QColor(200, 0, 0, 200)])
 
         self.color = QColor(0, 255, 0, 255)
         self.line_item = QGraphicsLineItem(0, 0, 0, 0, self)
         self.line_item.setPen(QPen(QColor(0, 255, 0, 255), 1.0))
         self.btn_break_link = Button("unlink", "Break link", tooltip='', parent=self.line_item)
         self.btn_break_link.setVisible(False)
-        #self.btn_break_link.clicked.connect(lambda: self.break_link_clicked.emit(self.stick1))
         self.btn_break_link.clicked.connect(self.handle_break_link_clicked)
 
         self.temporary_target: QPointF = None
@@ -56,7 +52,6 @@ class StickLink(QGraphicsObject):
     def set_color(self, color: QColor):
         self.color = color
         self.line_item.setPen(QPen(color, 4))
-        #self.btn_break_link.set_custom_color([color])
         if self.stick1 is not None:
             self.stick1.set_frame_color(self.color)
         if self.stick2 is not None:
@@ -107,8 +102,6 @@ class StickLink(QGraphicsObject):
     def set_target_stick(self, stick_widget: StickWidget):
         self.temporary_target = None
         self.stick2 = stick_widget
-        #if self.stick2 is not None:
-        #    self.stick2.set_frame_color(self.color)
         self.stick2.stick_changed.connect(self.handle_stick_changed)
         self.update_line()
 
@@ -180,7 +173,6 @@ class StickLinkManager(QGraphicsObject):
 
     def cancel(self):
         if self.current_link_item is not None:
-            #self.stick_links_list.remove(self.current_link_item)
             self.stick_links_list.pop()
             self.scene().removeItem(self.current_link_item)
             self.current_link_item.setEnabled(False)
@@ -230,7 +222,6 @@ class StickLinkManager(QGraphicsObject):
         step = 60
         offset = 0 if num_groups < 6 else step / ((num_groups + 6) // 6)
         hue = int((num_groups % 6) * step + offset)
-        #return QColor.fromHsvF(hue / 360.0, 1.0, 1.0, 1.0)
         return QColor.fromHsv(hue, 255, 255, 255)
 
     def hoverMoveEvent(self, event: QGraphicsSceneHoverEvent) -> None:
@@ -353,9 +344,6 @@ class StickLinkingStrategy:
     def handle_break_link_clicked(self, sw: StickWidget):
         pass
 
-    #def handle_cameras_unlinked(self, cam1: Camera, cam2: Camera):
-    #    pass
-
     def handle_stick_widgets_out_of_sync(self, cam: CameraView):
         pass
 
@@ -420,10 +408,6 @@ class CameraToCameraStickLinkingStrategy(StickLinkingStrategy):
 
     def cancel(self):
         if self.view.current_link_item is not None:
-            #self.view.scene().removeItem(self.view.current_link_item)
-            #self.view.current_link_item.setEnabled(False)
-            #self.view.current_link_item.deleteLater()
-            #self.view.current_link_item = None
             self.view.remove_link(self.view.current_link_item)
         self.highlight_target_sticks(False)
         self.highlight_source_sticks(True)
@@ -446,7 +430,6 @@ class CameraToCameraStickLinkingStrategy(StickLinkingStrategy):
         if stick1.camera_id != self.camera.id and stick2.camera_id != self.camera.id:
             return
         if (self.view.current_link_item is not None) and False: #TODO remove this, I guess
-            #self.view.stick_links.append(self.view.current_link_item)
             self.view.current_link_item = None
         else:
             source = stick2 if stick1.camera_id == self.camera.id else stick1
@@ -460,16 +443,8 @@ class CameraToCameraStickLinkingStrategy(StickLinkingStrategy):
 
             if source_sw is None:
                 return
-            #target_sw = None
 
             target_sw = next(filter(lambda sw: sw.stick.id == target.id, self.primary_camera.stick_widgets))
-
-            #if target.id not in self.stick_links:
-            #    color = self.view.get_new_link_group_color()
-            #    self.stick_links[target.id] = ([], color)
-            #    #self.view.stick_links[target.id] = ([], color)
-
-            #links, color = self.view.stick_links[target.id]
 
             if self.view.current_link_item is not None:
                 link = self.view.confirm()
@@ -478,25 +453,15 @@ class CameraToCameraStickLinkingStrategy(StickLinkingStrategy):
                 self.view.set_target_stick(True, target_sw)
                 self.view.confirm()
             links, color = self.stick_links.setdefault(target.id, ([], link.color))
-            #self.view.scene().addItem(link)
-            #link.btn_break_link.setVisible(True)
-            #link.set_color(color)
             self.view.change_link_color(link, color)
             link.break_link_clicked.connect(self.handle_break_link_clicked)
-            #source_sw.stick_changed.connect(link.handle_stick_changed)
             source_sw.set_is_linked(True)
             target_sw.set_is_linked(True)
-            #self.view.stick_links.append(link)
             links.append(link)
-            #self.view.stick_links[target.id] = (links, color)
-            #self.view.stick_links_list.append(link)
             self.stick_links[target.id] = (links, color)
-            #self.view.stick_links_list.append(link)
             link.setVisible(self.view.isVisible())
-        #self.color_stick_links()
         if self.is_started:
             self.init_state()
-        #self.cancel()
 
     def handle_sticks_unlinked(self, stick1: Stick, stick2: Stick):
         if stick1.camera_id != self.camera.id and stick2.camera_id != self.camera.id:
@@ -520,9 +485,7 @@ class CameraToCameraStickLinkingStrategy(StickLinkingStrategy):
         if primary_stick.id not in self.stick_links:
             return
         secondary_stick = stick2 if primary_stick.id == stick1.id else stick1
-        #link_list, color = self.manager.stick_links[primary_stick.id]
         link_list, color = self.stick_links[primary_stick.id]
-        #link_list: List[StickLink] = list(filter(lambda l: l.stick1.stick.id == stick1.id or l.stick2.stick.id == stick1.id, self.manager.stick_links))
         link = list(filter(lambda l: l.stick1.stick.id == secondary_stick.id, link_list))
         if len(link) == 0:
             return
@@ -541,18 +504,9 @@ class CameraToCameraStickLinkingStrategy(StickLinkingStrategy):
                 link.stick2.set_is_linked(False)
 
             link.stick2.set_is_linked(False)
-            #del self.manager.stick_links[primary_stick.id]
             del self.stick_links[primary_stick.id]
-            #self.view.unused_colors.append(color)
         else:
-            #self.view.stick_links[primary_stick.id] = (link_list, color)
             self.stick_links[primary_stick.id] = (link_list, color)
-        #self.view.scene().removeItem(link)
-        #self.stick_links_list.remove(link)
-        #self.view.stick_links_list.remove(link)
-        #link.setEnabled(False)
-        #link.setParentItem(None)
-        #link.deleteLater()
         self.view.remove_link(link)
         self.view.update()
         if self.is_started:
@@ -585,16 +539,11 @@ class CameraToCameraStickLinkingStrategy(StickLinkingStrategy):
         self.view.setAcceptHoverEvents(False)
         for sw in self.primary_camera.stick_widgets:
             sw.set_available_for_linking(False)
-            #sw.set_mode(StickMode.DISPLAY)
-            #sw.highlight(None)
             sw.hovered.disconnect(self.handle_stick_widget_hovered)
             sw.set_mode((StickMode.Display))
 
         for cam in self.secondary_cameras:
             for sw in cam.stick_widgets:
-                #sw.set_mode(StickMode.Display)
-                #sw.set_available_for_linking(False)
-                #sw.set_is_link_source(False)
                 sw.set_mode(StickMode.Display)
         self.highlight_target_sticks(False)
         self.highlight_source_sticks(False)
@@ -627,12 +576,6 @@ class CameraToCameraStickLinkingStrategy(StickLinkingStrategy):
 
     def handle_stick_widget_link_requested(self, stick: StickWidget):
         super().handle_stick_widget_link_requested(stick)
-        #self.cancel()
-        #self.view.current_link_item = StickLink(stick, parent=None)
-        #self.view.scene().addItem(self.current_link_item)
-        #self.highlight_source_sticks(False)
-        #self.highlight_target_sticks(True)
-        #self.view.update()
 
     def hide_links_from_camera(self, camera: Camera):
         for link in self.view.stick_links_list:
@@ -644,159 +587,4 @@ class CameraToCameraStickLinkingStrategy(StickLinkingStrategy):
             if link.stick1.stick.camera_id == camera.id or link.stick2.stick.camera_id == camera.id:
                 link.setVisible(True)
 
-
-class MovedSticksLinkingStrategy(StickLinkingStrategy):
-    def __init__(self, split_view: Optional[SplitView] = None):
-        self.split_view = split_view
-        self.view: Optional[StickLinkManager] = None
-        self.stick_stick_links: Dict[StickWidget, StickLink] = {}
-
-    def accept(self):
-        if self.view.current_link_item is None:
-            return
-        self.view.current_link_item.update_line()
-        if self.view.anchored:
-            link = self.view.current_link_item
-            link1 = self.stick_stick_links.get(link.stick1, None)
-            link2 = self.stick_stick_links.get(link.stick2, None)
-            if link1 is not None:
-                self.view.remove_link(link1)
-                del self.stick_stick_links[link1.stick1]
-                del self.stick_stick_links[link1.stick2]
-            if link2 is not None:
-                self.view.remove_link(link2)
-                del self.stick_stick_links[link2.stick1]
-                del self.stick_stick_links[link2.stick2]
-            self.view.confirm()
-            self.stick_stick_links[link.stick1] = link
-            self.stick_stick_links[link.stick2] = link
-        else:
-            self.view.remove_link(self.view.current_link_item)
-        for sw in self.split_view.source_widgets:
-            sw.set_available_for_linking(False)
-        for sw in self.split_view.target_widgets:
-            sw.set_available_for_linking(False)
-        #self.highlight_target_sticks(True)
-        #self.highlight_source_sticks(True)
-        self.start()
-        return
-        stick1 = self.manager.current_link_item.stick1.stick
-        stick2 = self.manager.current_link_item.stick2.stick
-        self.dataset.unlink_stick_(self.manager.current_link_item.stick1.stick)
-
-        # Also destroy a potential link between stick2 and some other stick from the same
-        # camera as stick1
-        stick2_view = self.dataset.get_stick_view_from_camera(self.manager.current_link_item.stick2.stick,
-                                                              self.dataset.get_camera(stick1.camera_id))
-        if stick2_view is not None:
-            self.dataset.unlink_sticks(stick2, stick2_view)
-        self.dataset.link_sticks_(self.manager.current_link_item.stick1.stick, self.manager.current_link_item.stick2.stick)
-        self.cancel()
-
-    def cancel(self):
-        super().cancel()
-
-    def set_secondary_cameras(self, cameras: List[CameraView]):
-        #super().set_secondary_cameras(cameras)
-        pass
-
-    def update_links(self):
-        #super().update_links()
-        pass
-
-    def handle_sticks_linked(self, stick1: Stick, stick2: Stick):
-        #super().handle_sticks_linked(stick1, stick2)
-        pass
-
-    def handle_sticks_unlinked(self, stick1: Stick, stick2: Stick):
-        #super().handle_sticks_unlinked(stick1, stick2)
-        pass
-
-    def start(self):
-        self.view.setVisible(True)
-        self.view.setAcceptHoverEvents(True)
-        for link in self.view.stick_links_list:
-            link.setVisible(True)
-
-        for sw in self.split_view.source_widgets:
-            sw.hovered.connect(self.handle_stick_widget_hovered)
-            sw.set_mode(StickMode.LinkSource)
-            #sw.set_available_for_linking(True)
-            #sw.set_is_link_source(True)
-
-        for sw in self.split_view.target_widgets:
-            sw.hovered.connect(self.handle_stick_widget_hovered)
-            #sw.set_mode(StickMode.LinkSource)
-            sw.set_mode(StickMode.LinkTarget)
-            #sw.set_mode(StickMode.LINK)
-            #sw.set_available_for_linking(True)
-            #sw.set_is_link_source(True)
-        #self.highlight_source_sticks(True)
-        #self.highlight_target_sticks(True)
-
-    def stop(self):
-        #super().stop()
-        pass
-
-    def handle_break_link_clicked(self, link: StickLink):
-        self.view.remove_link(link)
-
-    #def handle_cameras_unlinked(self, cam1: Camera, cam2: Camera):
-    #    super().handle_cameras_unlinked(cam1, cam2)
-
-    def handle_stick_widgets_out_of_sync(self, cam: CameraView):
-        #super().handle_stick_widgets_out_of_sync(cam)
-        pass
-
-    def set_view(self, view: StickLinkManager):
-        self.view = view
-
-    def highlight_source_sticks(self, highlight: bool):
-        for sw in self.split_view.source_widgets:
-            sw.highlight(QColor(250, 125, 0, 200) if highlight else None, animated=True)
-
-    def highlight_target_sticks(self, highlight: bool):
-        for sw in self.split_view.target_widgets:
-            sw.highlight(QColor(250, 125, 0, 200) if highlight else None, animated=True)
-
-    def set_split_view(self, split_view: SplitView):
-        self.split_view = split_view
-        for source_sw in self.split_view.source_widgets:
-            target_sw = next(filter(lambda sw: sw.stick == source_sw.stick, self.split_view.target_widgets))
-            source_sw.link_initiated.connect(self.handle_stick_widget_link_requested)
-            target_sw.link_initiated.connect(self.handle_stick_widget_link_requested)
-            #source_sw.set_is_link_source(False)
-            #target_sw.set_is_link_source(False)
-            source_sw.set_mode(StickMode.Display)
-            target_sw.set_mode(StickMode.Display)
-            self.view.set_source_stick(source_sw)
-            self.view.set_target_stick(True, target_sw)
-            self.accept()
-
-    def handle_stick_widget_link_requested(self, stick: StickWidget):
-        super().handle_stick_widget_link_requested(stick)
-        if stick in self.split_view.source_widgets:
-            #self.highlight_source_sticks(False)
-            #self.highlight_target_sticks(True)
-            #for sw in self.split_view.target_widgets:
-            #    #sw.set_available_for_linking(True)
-            #    #sw.set_is_link_source(False)
-            #    sw.set_mode(StickMode.LinkTarget)
-            for sw in self.split_view.source_widgets:
-                #sw.set_is_link_source(False)
-                sw.set_mode(StickMode.Display)
-        else:
-            #self.highlight_source_sticks(True)
-            #self.highlight_target_sticks(False)
-            for sw in self.split_view.source_widgets:
-                sw.set_mode(StickMode.LinkTarget)
-                #sw.set_available_for_linking(True)
-                #sw.set_is_link_source(False)
-            for sw in self.split_view.target_widgets:
-                #sw.set_is_link_source(False)
-                sw.set_mode(StickMode.Display)
-
-    def reset(self):
-        self.stick_stick_links.clear()
-        self.view.remove_all_links()
 

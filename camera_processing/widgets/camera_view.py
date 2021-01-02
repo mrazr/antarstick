@@ -335,7 +335,7 @@ class CameraView(QGraphicsObject):
     def update_stick_widgets(self):
         stick_length = 60
         for stick in self.camera.sticks:
-            sw = StickWidget(stick, self)
+            sw = StickWidget(stick, self.camera, self)
             sw.set_mode(self.stick_widget_mode)
             self.connect_stick_widget_signals(sw)
             self.stick_widgets.append(sw)
@@ -401,7 +401,7 @@ class CameraView(QGraphicsObject):
     def handle_stick_created(self, stick: Stick):
         if stick.camera_id != self.camera.id:
             return
-        sw = StickWidget(stick, self)
+        sw = StickWidget(stick, self.camera, self)
         sw.set_mode(self.stick_widget_mode)
         self.connect_stick_widget_signals(sw)
         self.stick_widgets.append(sw)
@@ -441,7 +441,7 @@ class CameraView(QGraphicsObject):
         if sticks[0].camera_id != self.camera.id:
             return
         for stick in sticks:
-            sw = StickWidget(stick, self)
+            sw = StickWidget(stick, self.camera, self)
             sw.set_mode(self.stick_widget_mode)
             self.connect_stick_widget_signals(sw)
             self.stick_widgets.append(sw)
