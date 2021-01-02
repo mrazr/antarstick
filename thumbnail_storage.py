@@ -1,14 +1,14 @@
+from enum import IntEnum
+from multiprocessing import Process, Queue
 from pathlib import Path
+from time import sleep, time
 from typing import List, Optional, Tuple
-from time import time
 
-from PyQt5 import QtGui, QtCore
-from PyQt5.QtCore import QObject, pyqtSignal, QThread, Qt, QSize, QRect, QRectF, QMargins, QRunnable, QThreadPool, \
-    QPoint, QPointF, QSizeF
-from PyQt5.QtGui import QPixmap, QImage, QColor
 import exifread
-import cv2 as cv
 import numpy as np
+from PyQt5 import QtGui, QtCore
+from PyQt5.QtCore import QObject, pyqtSignal, QThread, Qt, QSize, QRectF, QSizeF, QTimerEvent
+from PyQt5.QtGui import QImage, QColor
 from PyQt5.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QStyle
 
 from camera import Camera
@@ -32,6 +32,28 @@ class ThumbnailLoader(QThread):
         self.finished.emit(self.indexes, self.thumbnails)
 
 
+def thumbnail_load_loop(folder: Path, in_queue: Queue, out_queue: Queue):
+    while True:
+        if in_queue.empty():
+            sleep(0.1)
+            continue
+        while not in_queue.empty():
+            idx, img_name = in_queue.get_nowait()
+            print(f'loading {img_name}')
+            if idx < 0:
+                return
+            with open(folder / img_name, "rb") as f:
+                tags = exifread.process_file(f)
+            out_queue.put_nowait((idx, tags['JPEGThumbnail']))
+
+
+class ThumbnailState(IntEnum):
+    NotLoaded = 0
+    Loading = 1
+    LoadedBytes = 2
+    Decoded = 3
+
+
 class ThumbnailStorage(QObject):
     thumbnails_loaded = pyqtSignal('PyQt_PyObject')
 
@@ -39,7 +61,9 @@ class ThumbnailStorage(QObject):
         QObject.__init__(self, parent)
         self.thumbnail_count = max_thumbnails
         self.camera = None
-        self.thumbnails: List[Optional[bytes]] = []
+        self.thumbnail_bytes: List[Tuple[ThumbnailState, Optional[bytes]]] = []
+        self.thumbnails: List[Optional[QImage]] = []
+        self.thumbnail_hits: List[int] = []
         self.start = 0
         self.end = 0
         self.lowest_index = 0
@@ -47,52 +71,111 @@ class ThumbnailStorage(QObject):
         self.thumbnail_size = QSize()
         self.thumbnail_placeholder = QImage(':/icons/thumbnail.png')
         self.loader = QThread()
+        self.in_queue: Queue = Queue()
+        self.out_queue: Queue = Queue()
+        self.preload_queue: Queue = Queue()
+        self.load_process = Process()
+        self.last_thumbnail_sweep: int = 0
+        self.recent_thumbnail_idxs: List[int] = []
+        self.recent_thumbnail_flags: List[bool] = []
 
     def initialize(self, camera: Camera) -> QSize:
         self.camera = camera
+        self.thumbnail_bytes = [(ThumbnailState.NotLoaded, None) for _ in range(self.camera.get_photo_count())]
         self.thumbnails = [None for _ in range(self.camera.get_photo_count())]
+        self.thumbnail_hits = [0 for _ in range(self.camera.get_photo_count())]
+        self.recent_thumbnail_flags = [False for _ in range(self.camera.get_photo_count())]
         self.load_thumbnail(0)
+        self.load_process = Process(target=thumbnail_load_loop,
+                                    args=(self.camera.folder, self.in_queue, self.out_queue))
+        self.load_process.start()
+        self.startTimer(50)
         dec = QImage()
-        dec.loadFromData(self.thumbnails[0])
+        dec.loadFromData(self.thumbnail_bytes[0][1])
         self.thumbnail_size = dec.size()
         self.thumbnail_placeholder = self.thumbnail_placeholder.scaledToHeight(self.thumbnail_size.height(), Qt.SmoothTransformation)
+        self.last_thumbnail_sweep = time()
         return self.thumbnail_size
 
     def get_thumbnail(self, idx: int, dragging: bool) -> Optional[QImage]:
-        if self.thumbnails[idx] is None:
+        if self.thumbnail_bytes[idx][0] == ThumbnailState.NotLoaded:
             if not dragging:
-                self.load_thumbnail(idx)
-            else:
-                return self.thumbnail_placeholder
-        thumb = self.thumbnails[idx]
+                self.load_thumbnails(idx, idx)
+            return self.thumbnail_placeholder
+        state, thumb = self.thumbnail_bytes[idx]
+        if state == ThumbnailState.Decoded:
+            self.thumbnail_hits[idx] += 1
+            if not self.recent_thumbnail_flags[idx]:
+                self.recent_thumbnail_idxs.append(idx)
+                self.recent_thumbnail_flags[idx] = True
+            return self.thumbnails[idx]
+        if state == ThumbnailState.Loading:
+            return self.thumbnail_placeholder
         pix = QImage()
         pix.loadFromData(thumb)
+        self.thumbnails[idx] = pix
+        self.thumbnail_hits[idx] += 1
+        self.thumbnail_bytes[idx] = (ThumbnailState.Decoded, self.thumbnail_bytes[idx][1])
+        if not self.recent_thumbnail_flags[idx]:
+            self.recent_thumbnail_idxs.append(idx)
+            self.recent_thumbnail_flags[idx] = True
         return pix
 
     def load_thumbnail(self, idx: int):
         with open(self.camera.folder / self.camera.image_list[idx], "rb") as f:
             tags = exifread.process_file(f)
         thumb = tags['JPEGThumbnail']
-        self.thumbnails[idx] = thumb
+        self.thumbnail_bytes[idx] = (ThumbnailState.LoadedBytes, thumb)
 
     def load_thumbnails(self, first_idx: int, last_idx: int):
-        images: List[str] = []
-        indexes = []
-        for idx in range(first_idx - 10, last_idx + 10):
-            if self.thumbnails[idx] is not None or first_idx < 0 or last_idx >= len(self.camera.image_list):
+        for idx in range(first_idx, last_idx+1):
+            if idx < 0 or last_idx >= len(self.camera.image_list):
                 continue
-            images.append(self.camera.image_list[idx])
-            indexes.append(idx)
-        if len(indexes) == 0:
-            return
-        self.loader = ThumbnailLoader(indexes, images, self.camera.folder)
-        self.loader.finished.connect(self.handle_load_finished)
-        self.loader.start()
+            if self.thumbnail_bytes[idx][0] != ThumbnailState.NotLoaded or first_idx < 0 or last_idx >= len(self.camera.image_list):
+                continue
+            self.preload_queue.put_nowait((idx, self.camera.image_list[idx]))
 
     def handle_load_finished(self, indexes: List[int], thumbnails: List[bytes]):
         for idx, thumb in zip(indexes, thumbnails):
-            self.thumbnails[idx] = thumb
+            self.thumbnail_bytes[idx] = (ThumbnailState.LoadedBytes, thumb)
         self.thumbnails_loaded.emit(indexes)
+
+    def timerEvent(self, a0: QTimerEvent) -> None:
+        if not self.out_queue.empty():
+            indexes: List[int] = []
+            while not self.out_queue.empty():
+                idx, thumb = self.out_queue.get_nowait()
+                self.thumbnail_bytes[idx] = (ThumbnailState.LoadedBytes, thumb)
+                indexes.append(idx)
+                self.thumbnail_hits[idx] = 10
+            self.thumbnails_loaded.emit(indexes)
+        while not self.preload_queue.empty():
+            thumbs_to_load = set()
+            j = 0
+            while j < 50 and not self.preload_queue.empty():
+                idx, th = self.preload_queue.get_nowait()
+                s = self.thumbnail_bytes[idx][0]
+                if s == ThumbnailState.NotLoaded:
+                    self.thumbnail_bytes[idx] = (ThumbnailState.Loading, None)
+                    thumbs_to_load.add((idx, th))
+                    j += 1
+            thumbs_to_load = sorted(list(thumbs_to_load), key=lambda t: t[0])
+            for t in thumbs_to_load:
+                self.in_queue.put_nowait(t)
+        if time() - self.last_thumbnail_sweep > 10:
+            recent_thumbnail_idxs = self.recent_thumbnail_idxs[-200:]
+            min_idx = min(recent_thumbnail_idxs)
+            max_idx = max(recent_thumbnail_idxs)
+            for i in range(len(self.thumbnails)):
+                if min_idx <= i <= max_idx or self.thumbnail_bytes[i][0] != ThumbnailState.Decoded:
+                    continue
+                self.recent_thumbnail_flags[i] = False
+                self.thumbnail_bytes[i] = (ThumbnailState.LoadedBytes, self.thumbnail_bytes[i][1])
+                self.thumbnails[i] = None
+            self.last_thumbnail_sweep = time()
+
+    def stop(self):
+        self.load_process.kill()
 
 
 class ThumbnailDelegate(QStyledItemDelegate):

@@ -159,7 +159,7 @@ class ImageListModel(QAbstractListModel):
 
     def handle_slider_released(self, first_index: QModelIndex, last_index: QModelIndex):
         self.dragging = False
-        self.thumbnails.load_thumbnails(first_index.row(), last_index.row())
+        self.thumbnails.load_thumbnails(first_index.row() - 50, last_index.row() + 50)
 
     def handle_thumbnails_loaded(self, indices: List[int]):
         fidx = self.index(indices[0], 0)
