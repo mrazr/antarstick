@@ -48,7 +48,7 @@ used as a reference to estimate the snow height at the place of each stake.
 2.  Navigate terminal/command line to the root directory(antarstick) of the project
 
 3.  Install requirements
-    1.  On Linux it should suffice to run the script antarstick<sub>install</sub><sub>linux.sh</sub>
+    1.  On Linux it should suffice to run the script antarstick\_install\_linux.sh
     
     2.  Windows:
         1.  Create a new python virtual environment:
