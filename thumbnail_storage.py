@@ -163,8 +163,11 @@ class ThumbnailStorage(QObject):
                 self.in_queue.put_nowait(t)
         if time() - self.last_thumbnail_sweep > 10:
             recent_thumbnail_idxs = self.recent_thumbnail_idxs[-200:]
-            min_idx = min(recent_thumbnail_idxs)
-            max_idx = max(recent_thumbnail_idxs)
+            min_idx = min(recent_thumbnail_idxs, default=-1)
+            max_idx = max(recent_thumbnail_idxs, default=-1)
+            if min_idx < 0 or max_idx < 0:
+                self.last_thumbnail_sweep = time()
+                return
             for i in range(len(self.thumbnails)):
                 if min_idx <= i <= max_idx or self.thumbnail_bytes[i][0] != ThumbnailState.Decoded:
                     continue
