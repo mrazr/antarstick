@@ -1,16 +1,11 @@
-from PyQt5.Qt import QAbstractListModel, QWidget, QModelIndex, QAbstractTableModel
-from PyQt5.QtCore import Qt, QSize
-from typing import List, Optional
 from pathlib import Path
-import random
-from os import scandir
-import sys
+from typing import List, Optional
 
-from PyQt5.QtGui import QBrush, QColor, QFontDatabase, QFont, QIcon, QImage, QPixmap, QPainter
-from PyQt5.QtCore import QThread
+from PyQt5.Qt import QAbstractListModel, QWidget, QModelIndex
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QBrush, QColor, QIcon, QPixmap, QPainter
 
-from camera import Camera, PhotoState, PD_IMAGE_STATE
-#import resources_rc
+from camera import Camera, PhotoState
 from thumbnail_storage import ThumbnailStorage
 
 
@@ -22,20 +17,12 @@ class ImageListModel(QAbstractListModel):
         self.image_names: List[Path] = []
         self.processed_images_count: int = 0
         self.camera: Optional[Camera] = None
-        #family_id = QFontDatabase.addApplicationFont(':/fonts/camera_processing/TwitterEmoji.ttf')
-        #fam = QFontDatabase.applicationFontFamilies(family_id)[0]
-        #self.emoji_font = QFont(fam)
-        #self.emoji_font.setPointSize(16)
-        #self.snow = "❄"
         self.snow_level1 = QPixmap(':/icons/snowflake.svg')
         self.snow_level1 = self.snow_level1.scaledToWidth(24)
         self.snow_level2 = QPixmap()
         self.snow_level3 = QPixmap()
         self.sun = QIcon(':/icons/sun.svg')
         self.moon = QIcon(':/icons/moon.svg')
-        #self.sun = "☀"
-        #self.moon = "🌙"
-        #self.hourglass = "⏳"
         self.quality_colors = {
             'BAD': QColor(200, 0, 0),
             'OK': QColor(200, 100, 0),
@@ -68,9 +55,7 @@ class ImageListModel(QAbstractListModel):
         if not folder.exists():
             raise FileNotFoundError("This should not happen")
         self.thumbnails.initialize(self.camera)
-        #only_images = filter(lambda f: not f.is_dir(), scandir(folder))
         self.beginResetModel()
-        #self.image_names = list(map(lambda f: Path(f.path), sorted(only_images, key=lambda f: f.name)))
         self.image_names = list(map(lambda name: self.camera.folder / name, self.camera.image_list))
         self.endResetModel()
 
@@ -134,7 +119,6 @@ class ImageListModel(QAbstractListModel):
 
         if role == Qt.UserRole + 1:
             return self.camera.is_snowy(self.image_names[index.row()].name)
-            #return self.camera.measurements.iat[index.row(), 5]
 
         if role == Qt.UserRole + 2:
             return 'snow' if self.camera.is_snowy(self.image_names[index.row()].name) else 'ground'
