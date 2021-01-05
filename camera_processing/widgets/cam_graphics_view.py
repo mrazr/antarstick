@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QEvent, QPointF
+from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QPointF
 from PyQt5.QtGui import QPainter, QWheelEvent, QResizeEvent, QMouseEvent, QKeyEvent
 from PyQt5.QtWidgets import QGraphicsView, QWidget, QSizePolicy
 
@@ -11,7 +11,7 @@ class CamGraphicsView(QGraphicsView):
     rubber_band_started = pyqtSignal()
     mouse_move = pyqtSignal(QPointF)
 
-    def __init__(self, link_manager: StickLinkingStrategy, link2: StickLinkingStrategy, parent: QWidget = None):
+    def __init__(self, link_manager: StickLinkingStrategy, parent: QWidget = None):
         QGraphicsView.__init__(self, parent)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -20,42 +20,11 @@ class CamGraphicsView(QGraphicsView):
         self.setRenderHint(QPainter.Antialiasing)
 
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
-        #self.gui = QGraphicsRectItem()
-        #self.gui.setBrush(QBrush(QColor(255, 255, 255, 20)))
-        #self.gui.setZValue(999)
 
         self.verticalScrollBar().valueChanged.connect(lambda _: self.view_changed.emit())
         self.horizontalScrollBar().valueChanged.connect(lambda _: self.view_changed.emit())
         
         self.stick_link_manager = link_manager
-        self.link2 = link2
-        #self.setInteractive(True)
-
-    def drawForeground(self, painter: QPainter, rect: QRectF) -> None:
-        pass
-        #painter.save()
-
-        #painter.setWorldMatrixEnabled(False)
-        #painter.setPen(Qt.NoPen)
-        #painter.setBrush(QBrush(QColor("#aa555555")))
-        #painter.setRenderHint(QPainter.Antialiasing, True)
-        #painter.setRenderHint(QPainter.TextAntialiasing, True)
-        #painter.drawRoundedRect(QRectF(5, 5, self.mouse_pan_pic.width() * 1.3,
-        #                               3 * self.mouse_pan_pic.height()), 20, 20)
-
-        #painter.setPen(QPen(QColor("#e5c15f")))
-        #painter.drawPixmap(QPointF(15, 5), self.mouse_pan_pic, QRectF(self.mouse_pan_pic.rect()))
-        #rect = QRectF(self.mouse_pan_pic.rect())
-        #painter.drawPixmap(QPointF(15, 1.5 * rect.height()), self.mouse_zoom_pic,
-        #                   QRectF(self.mouse_zoom_pic.rect()))
-        #font = painter.font()
-        #font.setPointSize(10)
-        #painter.drawText(QRectF(15, 1.1 * rect.height(), rect.width(), 30),
-        #                 Qt.AlignHCenter, "Pan view")
-        #painter.drawText(QRectF(15, 2.6 * rect.height(), rect.width(), 30),
-        #                 Qt.AlignHCenter, "Zoom in/out")
-        #painter.setWorldMatrixEnabled(True)
-        #painter.restore()
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         delta = 1
@@ -95,10 +64,8 @@ class CamGraphicsView(QGraphicsView):
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.RightButton:
             self.stick_link_manager.cancel()
-            self.link2.cancel()
         elif event.button() == Qt.LeftButton:
             self.stick_link_manager.accept()
-            self.link2.accept()
         elif event.button() == Qt.MidButton:
             self.viewport().setCursor(Qt.OpenHandCursor)
             handmade_event = QMouseEvent(QEvent.MouseButtonRelease, QPointF(event.pos()), Qt.LeftButton,
@@ -108,9 +75,7 @@ class CamGraphicsView(QGraphicsView):
         super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
-        #if not self.stick_link_manager.anchored:
         self.stick_link_manager.set_target(self.mapToScene(event.pos()))
-        self.link2.set_target(self.mapToScene(event.pos()))
         self.mouse_move.emit(self.mapToScene(event.pos()))
         QGraphicsView.mouseMoveEvent(self, event)
 

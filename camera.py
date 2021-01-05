@@ -1,20 +1,16 @@
-import os
+import json
 from enum import IntEnum
 from os import listdir, mkdir
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Union
-from datetime import datetime
 
-import pandas as pd
-import numpy as np
 import cv2 as cv
-from PyQt5.QtCore import QObject, pyqtSignal
-from PyQt5.QtWidgets import QMessageBox
 import exifread
+import numpy as np
+import pandas as pd
+from PyQt5.QtCore import QObject, pyqtSignal
 
 from stick import Stick
-
-import json
 
 PD_DATE = 0
 PD_ORIG_DATE = 1
@@ -101,15 +97,6 @@ class Camera(QObject):
         if not (self.folder / self.measurements_path).exists():
             mkdir(str(self.folder / self.measurements_path))  # TODO handle possible exceptions
         self.photo_daytime_snow = pd.DataFrame()
-        # if measurements_path:
-        #    self.measurements_path = measurements_path
-        #    self.__load_measurements()
-        # else:
-        #    self.measurements = pd.DataFrame()
-        #    self.measurements_path = None
-        # self.rep_image_path = self.folder / Path(listdir(self.folder)[0]) #TODO listdir - filter out non image files
-        # self.rep_image: np.ndarray = cv.resize(cv.imread(str(self.rep_image_path)), (0, 0), fx=0.25, fy=0.25,
-        #                                      interpolation=cv.INTER_NEAREST)
         self.image_list: List[str] = list(
             sorted(filter(lambda f: f[-4:].lower() == 'jpeg' or f[-3:].lower() == 'jpg', listdir(self.folder))))
         self.rep_image_path: str = self.image_list[0]
@@ -210,17 +197,6 @@ class Camera(QObject):
     def stick_count(self) -> int:
         return len(self.sticks)
 
-    # @staticmethod
-    # def build_from_state(state: Dict) -> 'Camera':
-    #    path = state['folder']
-    #    sticks = state['sticks']
-    #    _id = state['id']
-    #    measurements_path = state['measurements_path']
-    #    camera = Camera(path, _id, measurements_path)
-    #    camera.sticks = sticks
-    #    camera.rep_image_path = state['rep_image_path']
-    #    return camera
-
     def add_stick(self, stick: Stick):
         stick.camera_id = self.id
         self.sticks.append(stick)
@@ -234,12 +210,6 @@ class Camera(QObject):
         self.unused_stick_ids.sort(reverse=True)
         self._update_stick_labels_id()
         self.stick_removed.emit(stick)
-
-    # def add_sticks(self, sticks: List[Stick]):
-    #    for stick in sticks:
-    #        stick.camera_id = self.id
-    #        self.sticks.append(stick)
-    #    self.sticks_added.emit(sticks)
 
     def remove_sticks(self, sticks: Optional[List[Stick]] = None):
         if len(self.sticks) == 0:
@@ -258,8 +228,6 @@ class Camera(QObject):
     def save(self):
         stick_states = list(map(lambda s: s.get_state(), self.sticks))
         state = {
-            # 'folder': str(self.folder),
-            # 'rep_image_path': str(self.rep_image_path),
             'rep_image': self.rep_image_path,
             'sticks': stick_states,
             'measurements_path': str(self.measurements_path),
@@ -269,20 +237,6 @@ class Camera(QObject):
             'timestamps_available': self.timestamps_available,
             'standard_image_size': self.standard_image_size,
         }
-
-        # if len(self.measurements.columns) == 0: #or (len(self.measurements.columns) - 1) / 4 != len(self.sticks):
-        #    data = {
-        #        'image_name': [],
-        #        'processed': [],
-        #    }
-
-        #    for stick in self.sticks:
-        #        data[stick.label + '_top'] = []
-        #        data[stick.label + '_bottom'] = []
-        #        data[stick.label + '_height_px'] = []
-        #        data[stick.label + '_snow_height'] = []
-
-        #    self.measurements = pd.DataFrame(data=data)
 
         if self.needs_to_save:
             self.save_measurements()
@@ -297,11 +251,8 @@ class Camera(QObject):
         camera = None
         with open(str(camera_json), 'r') as f:
             state: Dict[str, Any] = json.load(f)
-            # camera = Camera(Path(state['folder']))
             camera = Camera(folder)
-            # camera.rep_image_path = Path(state['rep_image_path'])
             camera.rep_image_path = state['rep_image']
-            # camera.measurements_path = Path(state['measurements_path'])
             camera.measurements_path = Path(state['measurements_path'])
             camera.next_stick_id = state['next_stick_id']
             camera.unused_stick_ids = state['unused_stick_ids']
@@ -448,7 +399,6 @@ class Camera(QObject):
         for col, val in stick_data.items():
             self.measurements.insert(self.measurements.shape[1], col, val)
 
-        #self.measurements = pd.concat((self.measurements, pd.DataFrame(data=stick_data)), axis=1)
         self.sticks.sort(key=lambda stick: stick.local_id)
 
         image_id = self.image_names_ids[self.sticks[0].view]
@@ -608,10 +558,7 @@ class Camera(QObject):
     def repair_timestamps(self):
         diff = self.measurements['date_time'].diff()
         problem_id = diff.argmin()
-        last_correct_img = self.image_list[problem_id - 1]
         last_correct_date = self.measurements['date_time'].iloc[problem_id - 1]
-        problem_img = self.image_list[problem_id]
-        problem_date = self.measurements['date_time'].iloc[problem_id]
         proposed_date = last_correct_date + (
                 self.measurements['date_time'].iloc[problem_id - 1] - self.measurements['date_time'].iloc[
             problem_id - 2])
@@ -619,8 +566,6 @@ class Camera(QObject):
         self.measurements.iat[problem_id, PD_DATE] = proposed_date
         offsets = self.measurements['orig_date_time'].iloc[problem_id:].diff()[1:]
         indices = self.measurements.index[problem_id+1:]
-        # self.measurements['date_time'].iloc[problem_id+1:] = offsets.cumsum().add(proposed_date)
-        #self.measurements.iat[problem_id + 1:, PD_DATE] = offsets.cumsum().add(proposed_date)
         self.measurements.loc[indices, 'date_time'] = offsets.cumsum().add(proposed_date)
         self.check_for_temporal_monotonicity()
 
@@ -629,6 +574,11 @@ class Camera(QObject):
 
     def reset_measurements(self):
         self.initialize_results()
+
+    def photo_state(self, img_id: int) -> PhotoState:
+        if not self.timestamps_available:
+            return PhotoState.Unprocessed
+        return self.measurements.iat[img_id, PD_IMAGE_STATE]
 
     def update_stick(self, stick: Stick):
         self.needs_to_save = True

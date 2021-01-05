@@ -1,11 +1,10 @@
-import math
 from typing import Optional, Callable, Any
 
 from PyQt5 import QtGui
+from PyQt5.QtCore import QRectF, pyqtSignal, Qt, QPointF
 from PyQt5.QtGui import QPainter, QKeyEvent, QBrush, QColor, QTextCursor, QFont
 from PyQt5.QtWidgets import QGraphicsTextItem, QGraphicsObject, QGraphicsItem, QGraphicsRectItem, QWidget, \
     QStyleOptionGraphicsItem
-from PyQt5.QtCore import QRectF, pyqtSignal, Qt, QPointF
 
 from camera_processing.widgets.button import Button, ButtonColor
 
@@ -46,19 +45,11 @@ class NumberInputItem(QGraphicsTextItem):
             cursor.movePosition(QTextCursor.Right)
             self.setTextCursor(cursor)
         else:
-            #if event.key() == Qt.Key_0:
-            #    if len(self.toPlainText()) == 0 or self.textCursor().position() == 0:
-            #        return
             super().keyPressEvent(event)
             self.text_changed.emit()
 
     def keyReleaseEvent(self, event: QKeyEvent) -> None:
         pass
-        #if event.text() not in ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']:
-        #    return
-        #value = self.toPlainText()
-        #self.setPlainText(f"{value} cm")
-        #self.update()
 
     def get_value(self) -> Optional[int]:
         text = self.toPlainText()
@@ -100,7 +91,6 @@ class TextInputWidget(QGraphicsObject):
         self.validator: Callable[[Any], bool] = validator
         self.accept_button = Button("btn_accept", "Accept", parent=self)
         self.accept_button.set_base_color([ButtonColor.GREEN])
-        #self.accept_button.clicked.connect(lambda: self.input_entered.emit(self.text_field.toPlainText()))
         self.accept_button.clicked.connect(self.handle_input_accepted)
         self.cancel_button = Button("btn_cancel", "Cancel", parent=self)
         self.cancel_button.set_base_color([ButtonColor.RED])
@@ -119,7 +109,6 @@ class TextInputWidget(QGraphicsObject):
         if self.getter is not None:
             self.text_field.setPlainText(str(self.getter()))
             self.adjust_layout()
-        #self.text_field.document().contentsChanged.connect(self.adjust_layout)
         self.text_field.accepted.connect(lambda: self.accept_button.click_button(artificial_emit=True))
         self.text_field.cancelled.connect(lambda: self.cancel_button.click_button(artificial_emit=True))
         self.text_label = QGraphicsTextItem(self)
@@ -136,9 +125,6 @@ class TextInputWidget(QGraphicsObject):
             .united(self.cancel_button.boundingRect())
 
     def adjust_layout(self):
-        #total_width = 5 * self.hor_padding + self.text_field.boundingRect().width() \
-        #              + self.accept_button.boundingRect().width() + self.cancel_button.boundingRect().width() \
-        #              + self.text_label.boundingRect().width()
         self.accept_button.fit_to_contents()
         self.cancel_button.fit_to_contents()
         total_width = 3 * self.hor_padding + self.text_field.boundingRect().width() \
@@ -149,20 +135,11 @@ class TextInputWidget(QGraphicsObject):
                        + 3 * self.hor_padding
         self.background_rect.setRect(0, 0, total_width, total_height)
         self.setTransformOriginPoint(QPointF(0.5 * total_width, 0.5 * total_height))
-        #viewport = self.scene().views()[0].viewport().rect()
-        #center = self.scene().views()[0].mapToScene(viewport.center())
-        #self.setPos(QPointF(center.x(),
-        #                    center.y()))
         self.text_label.setPos(-0.5 * total_width + self.hor_padding,
                                -0.5 * total_height + self.hor_padding)
-        #self.text_field.setPos(-0.5 * total_width + self.hor_padding,
-        #                       -total_height * 0.5)
         self.text_field.setPos(self.hor_padding + self.text_label.pos().x() + self.text_label.boundingRect().width(),
                                self.text_label.pos().y())
         self.background_rect.setPos(-0.5 * total_width, -0.5 * total_height)
-        #self.accept_button.setPos(QPointF(self.hor_padding + self.text_field.boundingRect().width() + self.text_field.pos().x(), -0.5 * self.accept_button.boundingRect().height()))
-        #self.cancel_button.setPos(QPointF(self.hor_padding + self.accept_button.pos().x() + self.accept_button.boundingRect().width(),
-        #                                  -0.5 * self.cancel_button.boundingRect().height()))
         self.accept_button.set_width((total_width - 3 * self.hor_padding) * 0.5)
         self.cancel_button.set_width((total_width - 3 * self.hor_padding) * 0.5)
         self.accept_button.setPos(-0.5 * total_width + self.hor_padding, 2 * self.hor_padding)

@@ -114,7 +114,7 @@ class ImageListModel(QAbstractListModel):
             return self.thumbnails.get_thumbnail(index.row(), self.dragging)
 
         if role == Qt.BackgroundRole:
-            photo_state = self.camera.measurements.iat[index.row(), PD_IMAGE_STATE]
+            photo_state = self.camera.photo_state(index.row())
             if photo_state == PhotoState.Processed:
                 quality = self.camera.image_quality(self.image_names[index.row()].name)
                 if quality < 0.33:
@@ -126,7 +126,8 @@ class ImageListModel(QAbstractListModel):
                 return QBrush(color)
             elif photo_state == PhotoState.Skipped:
                 return QBrush(QColor(150, 150, 150, 255))
-            return None
+            else:
+                QBrush(QColor(0, 0, 0, 200))
 
         if role == Qt.UserRole:
             return self.image_names[index.row()]
@@ -135,6 +136,8 @@ class ImageListModel(QAbstractListModel):
             return self.camera.is_snowy(self.image_names[index.row()].name)
             #return self.camera.measurements.iat[index.row(), 5]
 
+        if role == Qt.UserRole + 2:
+            return 'snow' if self.camera.is_snowy(self.image_names[index.row()].name) else 'ground'
 
         if role == Qt.ForegroundRole and index.row() < self.processed_images_count:
             return QBrush(QColor(0, 150, 0))
@@ -156,7 +159,7 @@ class ImageListModel(QAbstractListModel):
 
     def handle_slider_released(self, first_index: QModelIndex, last_index: QModelIndex):
         self.dragging = False
-        self.thumbnails.load_thumbnails(first_index.row(), last_index.row())
+        self.thumbnails.load_thumbnails(first_index.row() - 50, last_index.row() + 50)
 
     def handle_thumbnails_loaded(self, indices: List[int]):
         fidx = self.index(indices[0], 0)
