@@ -76,6 +76,10 @@ used as a reference to estimate the snow height at the place of each stake.
         ./venv/Scripts/python.exe mainwindow.py
     
     in Powershell on Windows.
+    
+    **WARNING:** For some unknown reason, on Windows, the application consumes huge amount of RAM (2.5GB+) and might crash at some point if not enough RAM is available. The Linux
+version does not suffer from this problem.
+
 
 2.  You&rsquo;ll be presented with options to open a camera or a dataset. Press **Add camera** and choose a folder
     that contains photos.
