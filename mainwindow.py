@@ -1,34 +1,23 @@
 # This Python file uses the following encoding: utf-8
+import json
+import os
 import sys
 import typing
 from pathlib import Path
-import json
-from typing import List, Optional, Dict
-import os
+from typing import List, Dict
 
+from PyQt5.Qt import Qt
+from PyQt5.QtCore import QThreadPool
+from PyQt5.QtGui import QCloseEvent, QIcon, QPixmap, QColor
 from PyQt5.QtWidgets import (QAction, QApplication, QFileDialog, QMainWindow,
-                             QToolBar, QMenu, QToolButton, QMessageBox, QPushButton, QWidget, QSizePolicy, QStyle,
+                             QMenu, QToolButton, QMessageBox, QWidget, QSizePolicy, QStyle,
                              QProgressBar, QSystemTrayIcon, QLabel, QHBoxLayout, QProxyStyle)
-from PyQt5.QtCore import QThreadPool, QRunnable, QResource
-from PyQt5.Qt import QKeySequence, Qt
-from PyQt5.QtGui import QCloseEvent, QIcon, QFontDatabase, QFont, QPicture, QPixmap, QColor
 
 from camera_processing.widgets.camera_processing_widget import \
     CameraProcessingWidget
 from dataset import Dataset
 from ui_mainwindow import Ui_MainWindow
 from ui_startup_page import Ui_StartupPage
-
-
-class CameraLoadWorker(QRunnable):
-
-    def __init__(self, dataset: Dataset, folder: Path) -> None:
-        QRunnable.__init__(self)
-        self.dataset = dataset
-        self.folder = folder
-
-    def run(self) -> None:
-        self.dataset.add_camera(self.folder)
 
 
 class MainWindow(QMainWindow):
@@ -68,9 +57,6 @@ class MainWindow(QMainWindow):
         self.recent_datasets_menu.setToolTipsVisible(True)
         self.recent_dataset_qactions = []
 
-        #self.startup_page_ui.verticalLayout_recentDatasets.removeWidget(self.startup_page_ui.label_noRecentDatasets)
-        #self.startup_page_ui.label_noRecentDatasets.hide()
-
         for ds in self.state['recent_datasets']:
             self.add_dataset_entry_to_recent(Path(ds))
 
@@ -88,8 +74,6 @@ class MainWindow(QMainWindow):
         self.recent_cameras_menu.setToolTipsVisible(True)
         self.recent_cameras_qactions: Dict[str, QAction] = {}
 
-        #self.startup_page_ui.verticalLayout_recentCameras.removeWidget(self.startup_page_ui.label_noRecentCameras)
-        #self.startup_page_ui.label_noRecentCameras.hide()
 
         for cam in self.state['recent_cameras']:
             self.add_camera_entry_to_recent(Path(cam))
@@ -120,7 +104,6 @@ class MainWindow(QMainWindow):
         self.ui.stackedWidget.setCurrentIndex(0)
         self.setCentralWidget(self.ui.stackedWidget)
         self.ui.toolBar.hide()
-
 
         self.progress_bar = QProgressBar()
         self.progress_bar.hide()
@@ -201,7 +184,6 @@ class MainWindow(QMainWindow):
             file_path = Path(file_dialog.selectedFiles()[0])
             if not self.open_dataset(file_path):
                 return
-            #self.dataset.load_from(Path(file_path))  # TODO handle the bool return value
             self.setWindowTitle(str(self.dataset.path))
             self.add_dataset_entry_to_recent(file_path)
             self.ui.actionOpen_dataset.setMenu(self.recent_datasets_menu)
@@ -335,9 +317,7 @@ class MainWindow(QMainWindow):
             return False
 
         self.dataset = Dataset()
-        #self.analyzer_widget.cleanup()
         self.processing_widget.set_dataset(self.dataset)
-        #self.ui.stackedWidget.setCurrentIndex(1)
         if not self.dataset.load_from(path):
             self.processing_widget.cleanup()
             self.ui.stackedWidget.setCurrentIndex(0)
@@ -363,8 +343,6 @@ class MainWindow(QMainWindow):
         if self.processing_widget is not None:
             self.processing_widget.cleanup()
         self.save_state()
-        #os.remove('process.log')
-        #QMainWindow.closeEvent(self, event)
         super().closeEvent(event)
 
     def handle_close_dataset_triggered(self):
@@ -406,9 +384,16 @@ class MainWindow(QMainWindow):
         self.statusBar().hide()
 
     def handle_export_to_json_triggered(self):
-        dat = self.processing_widget.dataset.get_json_data()
-        with open("/home/radoslav/datajson.json", "w") as f:
-            f.write(dat)
+        file_dialog = QFileDialog(self)
+        file_dialog.setWindowTitle("Save measurements")
+        file_dialog.setFileMode(QFileDialog.AnyFile)
+        file_dialog.setNameFilter("*.json")
+        file_dialog.setAcceptMode(QFileDialog.AcceptSave)
+        if file_dialog.exec_():
+            file_path = Path(file_dialog.selectedFiles()[0])
+            dat = self.processing_widget.dataset.get_json_data()
+            with open(file_path, "w") as f:
+                f.write(dat)
 
 
 class TooltipProxyStyle(QProxyStyle):
