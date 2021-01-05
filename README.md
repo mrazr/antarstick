@@ -57,7 +57,7 @@ used as a reference to estimate the snow height at the place of each stake.
         
         2.  Install requirements:
             
-                ./venv/bin/pip3.exe install -r requirements.txt
+                ./venv/Scripts/pip3.exe install -r requirements.txt
             
             If you use command line instead of powershell/windows 10 terminal then substitute forward slashes
             with backward slashes
@@ -65,7 +65,7 @@ used as a reference to estimate the snow height at the place of each stake.
 
 <a id="org62d4578"></a>
 
-## User guide
+## Brief user guide
 
 1.  Still inside the root directory, run the application by executing
     
@@ -73,7 +73,7 @@ used as a reference to estimate the snow height at the place of each stake.
     
     in terminal on Linux, or
     
-        ./venv/bin/python.exe mainwindow.py
+        ./venv/Scripts/python.exe mainwindow.py
     
     in Powershell on Windows.
 
@@ -96,13 +96,6 @@ used as a reference to estimate the snow height at the place of each stake.
     
     A menu will appear, where you&rsquo;ll have an option to choose how many processes you want to spawn.
     Considering the analysis procedure is relatively computationally demanding, bear in mind that choosing a number of processes that matches the number of processes/cores of your CPU will have an effect on the responsiveness of the whole system.
+8. The **Measurement mode** allows you to adjust incorrect measurements. Incorrect measurements can be corrected by clicking at the appropriate level in the sticks that have been assigned erroneous measurements.
 
-8.  During the analysis procedure, the application might require you to confirm an alignment of stakes after
-    a significant camera movement.
-    1.  You&rsquo;ll be presented with two images. On the top is the image where the application still tracked the stakes, and on the bottom is an image where the stakes ceased to be tracked due to a camera movement.
-    2.  On each image there will be stakes and each stake from the top will be linked with a stake from the bottom. If the stakes from top stakes match the bottom stakes, simply press the green **Confirm** button.
-    3.  If there are some incorrect matchings, press **Edit sticks** and edit them accordingly and press **Confirm**.
-    4.  If the matchings are particularly bad and it is not possible to make a proper matching press **Skip**
-    5.  Finally, if the bottom image depicts some unexpected anomally, such as a total misalignment of the camera where it is not possible to see the sticks anymore, it is better to press **Skip this batch** button
-        so as to not waste your and CPU&rsquo;s time on these images.
 
