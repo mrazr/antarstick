@@ -1,4 +1,3 @@
-import json
 from enum import IntEnum
 from multiprocessing import Pool
 from pathlib import Path
@@ -20,7 +19,6 @@ import camera_processing.antarstick_processing
 import camera_processing.antarstick_processing as snow
 import camera_processing.stick_detection as antar
 from camera import Camera, PD_IMAGE_STATE, PhotoState, PD_WEATHER_CONDITIONS, WeatherCondition
-from camera_processing import antarstick_processing
 from camera_processing.widgets import ui_camera_view
 from camera_processing.widgets.button import Button, ButtonColor
 from camera_processing.widgets.button_menu import ButtonMenu
@@ -32,7 +30,6 @@ from camera_processing.widgets.stick_widget import StickMode, StickWidget
 from dataset import Dataset, CameraSynchronization
 from image_list_model import ImageListModel
 from stick import Stick
-from stick_detection_dialog import StickDetectionDialog
 from thumbnail_storage import ThumbnailDelegate
 
 

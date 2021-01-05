@@ -189,7 +189,7 @@ class ThumbnailDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QtCore.QModelIndex) -> QtCore.QSize:
         sz = QSize(self.thumbnails.thumbnail_size)
-        sz.setHeight(sz.height())# + int(round(1.66 * option.font.pointSize())))
+        sz.setHeight(sz.height())
         sz.setWidth(sz.width())
         return sz
 
