@@ -77,9 +77,6 @@ used as a reference to estimate the snow height at the place of each stake.
     
     in Powershell on Windows.
     
-    **WARNING:** For some unknown reason, on Windows, the application consumes huge amount of RAM (2.5GB+) and might crash at some point if not enough RAM is available. The Linux
-version does not suffer from this problem.
-
 
 2.  You&rsquo;ll be presented with options to open a camera or a dataset. Press **Add camera** and choose a folder
     that contains photos.
@@ -100,6 +97,9 @@ version does not suffer from this problem.
     
     A menu will appear, where you&rsquo;ll have an option to choose how many processes you want to spawn.
     Considering the analysis procedure is relatively computationally demanding, bear in mind that choosing a number of processes that matches the number of processes/cores of your CPU will have an effect on the responsiveness of the whole system.
+    
+    For now, due to the way Windows creates processes and handles their memory, the Windows version is limited to 2
+    processes per camera to avoid huge consumption of RAM.
 8. The **Measurement mode** allows you to adjust incorrect measurements. Incorrect measurements can be corrected by clicking at the appropriate level in the sticks that have been assigned erroneous measurements.
 
 
