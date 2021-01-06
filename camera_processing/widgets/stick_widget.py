@@ -564,6 +564,7 @@ class StickWidget(QGraphicsObject):
         self.adjust_handles()
         self.set_snow_height(stick.snow_height_px)
         self.update_tooltip()
+        self.set_show_measurements(self.show_measurements)
         if self.mode == StickMode.Measurement:
             self.set_frame_color(QColor(200, 100, 0, 100) if not self.stick.is_visible else None)
             self.setVisible(True)
@@ -573,7 +574,11 @@ class StickWidget(QGraphicsObject):
 
     def set_show_measurements(self, show: bool):
         self.show_measurements = show
-        self.stick_label_text.setVisible(show)
+        if self.show_measurements:
+            self.stick_label_text.setText(str(self.stick.snow_height_cm) if self.stick.snow_height_cm >= 0 else
+                                          "n/a")
+        else:
+            self.stick_label_text.setText(self.stick.label)
         self.update()
 
     def handle_zero(self):
