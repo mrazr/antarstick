@@ -31,8 +31,7 @@ used as a reference to estimate the snow height at the place of each stake.
 -   stake editing
 -   option to link cameras that capture scene from different point of view potentially
     resulting in one stake being captured multiple times
--   automatic stake aligning after small camera movements
--   semi-automatic stake aligning after significant camera movements
+-   automatic stake aligning after stick and camera movements
 
 
 <a id="org233d2ed"></a>
