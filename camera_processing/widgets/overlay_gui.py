@@ -205,7 +205,8 @@ class OverlayGui(QGraphicsObject):
 
     def initialize_process_photos_popup(self):
         self.process_photo_popup.set_width(100)
-        for i in range(os.cpu_count()):
+        max_process_count = os.cpu_count() if sys.platform.startswith('linux') else 2
+        for i in range(max_process_count):
             self.process_photo_popup.add_button(str(i+1), f'Assign {i+1} cores',
                                                 call_back=self.handle_process_jobs_count_clicked)
 

@@ -161,6 +161,8 @@ class Camera(QObject):
                         lambda x: x.apply(ENDPOINT_COLUMN_CONVERTER) if x.name.endswith(('bottom', 'top')) else x)
                     self.photos_state = {img_name: processed for img_name, processed in
                                          zip(self.measurements['image_name'], self.measurements['state'])}
+                    self.processed_photos_count = sum(map(lambda state: 1 if state != PhotoState.Unprocessed else 0,
+                                                          self.photos_state.values()))
         except FileNotFoundError:
             self.measurements = pd.DataFrame()
             self.initialize_results()
@@ -416,6 +418,7 @@ class Camera(QObject):
         self.needs_to_save = not save_immediately
 
     def initialize_results(self):
+        self.processed_photos_count = 0
         if self.measurements.shape[1] > PD_FIRST_STICK_COLUMN:
             self.measurements = self.measurements.iloc[:, PD_DATE:PD_FIRST_STICK_COLUMN]
             self.measurements.iloc[:, PD_IMAGE_STATE] = PhotoState.Unprocessed

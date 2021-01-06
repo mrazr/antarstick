@@ -2,6 +2,7 @@ from enum import IntEnum
 from multiprocessing import Pool
 from pathlib import Path
 from queue import Queue
+import sys
 from typing import List, Dict, Optional, Any, Tuple
 
 import cv2 as cv
@@ -173,7 +174,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.result_timer = QTimer()
         self.result_timer.setInterval(1000)
         self.result_timer.timeout.connect(self.process_result_queue)
-        self.worker_pool = Pool(processes=16)
+        self.worker_pool: Optional[Pool] = None
         self.image_loading_time: float = -1.0
 
         self.photo_count_to_process: int = 0
@@ -279,6 +280,7 @@ class CameraViewWidget(QtWidgets.QWidget):
         self.overlay_gui.stick_length_input.set_value(str(self.camera.default_stick_length_cm))
         if not self.camera.timestamps_available:
             self.camera_view.show_status_message("Extracting timestamps...")
+            self.worker_pool = Pool(processes=1)
             self.worker_pool.apply_async(self.extract_timestamps, args=(self.camera.image_list, self.camera.folder),
                                          callback=self.timestamps_extracted.emit)
         if self.camera.measurements.shape[0] > 0:
@@ -772,9 +774,10 @@ class CameraViewWidget(QtWidgets.QWidget):
 
     def handle_process_photos_clicked_mp(self, batch_count: int):
         self.processing_should_continue = True
+        self.worker_pool = Pool(processes=batch_count)
         batches, count = self.camera.get_batch(1, 0)
         self.current_batch = batches[0]
-        self.processing_started.emit(self, count)
+        self.processing_started.emit(self, self.camera.get_photo_count())
         self.job_counter_lock.lock() # this should not be needed, better safe than sorry
         self.running_jobs = 0
         self.job_counter_lock.unlock()
@@ -788,6 +791,9 @@ class CameraViewWidget(QtWidgets.QWidget):
                                          callback=self.handle_worker_returned)
             self.current_batch = self.current_batch[100:]
             self.running_jobs += 1
+        self.overlay_gui.enable_reset_measurements(False)
+        self.processing_updated.emit(self.camera.processed_photos_count, self.camera.get_photo_count(),
+                                     self.running_jobs, not self.processing_should_continue)
         self.result_timer.setSingleShot(False)
         self.result_timer.start()
         self.overlay_gui.hide_process_photos()
@@ -801,7 +807,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         for sw in self.camera_view.stick_widgets:
             sw.prepare_for_deleting()
         self.image_list.thumbnails.stop()
-        self.worker_pool.terminate()
+        if self.worker_pool is not None:
+            self.worker_pool.terminate()
         self.graphics_scene.clear()
         self.graphics_scene.deleteLater()
 
@@ -960,6 +967,8 @@ class CameraViewWidget(QtWidgets.QWidget):
         else:
             self.processing_stopped.emit(self)
             self.overlay_gui.enable_reset_measurements(True)
+            if self.worker_pool is not None:
+                self.worker_pool.close()
         self.job_counter_lock.unlock()
 
     def handle_process_stop_clicked(self):
@@ -984,6 +993,8 @@ class CameraViewWidget(QtWidgets.QWidget):
 
     def handle_timestamps_extracted(self, timestamps: pd.Series):
         self.camera_timestamp_lock.lock()
+        if self.worker_pool is not None:
+            self.worker_pool.close()
         self.camera.insert_timestamps(timestamps)
         self.camera_view.show_status_message(None)
         if len(self.camera.sticks) > 0:
