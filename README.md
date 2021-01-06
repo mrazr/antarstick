@@ -49,6 +49,9 @@ used as a reference to estimate the snow height at the place of each stake.
     
     For Linux, please refer to the OpenCV installation guide at: https://docs.opencv.org/master/d7/d9f/tutorial_linux_install.html
     and replace occurrences of `https://github.com/opencv/opencv/archive/master.zip` with `https://github.com/opencv/opencv/archive/4.2.0.zip`
+   
+3. Install Python 3
+    https://www.python.org/downloads/release/python-391/
 
 ## Installation
 
