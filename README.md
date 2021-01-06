@@ -37,6 +37,19 @@ used as a reference to estimate the snow height at the place of each stake.
 
 <a id="org233d2ed"></a>
 
+## Pre-requisities
+1. Install Qt5
+   
+    Windows: download from https://www.qt.io/download-qt-installer
+   
+    Ubuntu-based OS: `sudo apt-get install qt5-default`
+    
+2. Install OpenCV
+    Windows: download `opencv-4.2.0-vc14_vc15.exe` from https://github.com/opencv/opencv/releases/download/4.2.0/opencv-4.2.0-vc14_vc15.exe
+    
+    For Linux, please refer to the OpenCV installation guide at: https://docs.opencv.org/master/d7/d9f/tutorial_linux_install.html
+    and replace occurrences of `https://github.com/opencv/opencv/archive/master.zip` with `https://github.com/opencv/opencv/archive/4.2.0.zip`
+
 ## Installation
 
 1.  Clone this repo by running
