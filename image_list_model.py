@@ -71,18 +71,7 @@ class ImageListModel(QAbstractListModel):
         if role == Qt.DisplayRole:
             if index.column() == 0:
                 return self.image_names[index.row()].name
-            elif index.column() == 1:
-                return None
-                text = ""
-                daytime = self.camera.photo_is_daytime(self.image_names[index.row()].name)
-                if daytime is None:
-                    text = self.hourglass
-                else:
-                    text += self.sun if daytime else self.moon
-                    snow = self.camera.photo_is_snow(self.image_names[index.row()].name)
-                    text += " " + self.snow_level1 if snow else ""
-
-                return text
+            return None
 
         if role == Qt.DecorationRole and index.column() == 1:
             average_snow_height = self.camera.average_snow_height(self.image_names[index.row()].name)

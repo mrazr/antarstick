@@ -105,18 +105,9 @@ class Camera(QObject):
         self.stick_labels_column_ids = dict({})
         self.measurements = pd.DataFrame()
         if self.measurements_path is None:
-            self.photo_daytime_snow = pd.DataFrame(data={
-                'image': self.image_list,
-                'day': ['-'] * len(self.image_list),
-                'snow': ['-'] * len(self.image_list),
-            })
             self.initialize_results()
         else:
             self.__load_measurements()
-
-        self.next_photo_daytime_snow = self.photo_daytime_snow.index[self.photo_daytime_snow['day'] == '-'].tolist()
-        self.next_photo_daytime_snow = self.next_photo_daytime_snow[0] if len(
-            self.next_photo_daytime_snow) > 0 else len(self.image_list)
 
         self.image_names_ids: Dict[str, int] = {image_name: image_id for image_id, image_name in
                                                 enumerate(self.image_list)}
@@ -168,23 +159,13 @@ class Camera(QObject):
             self.initialize_results()
             self._update_stick_labels_id()
 
-        try:
-            with open(str(self.measurements_path / IMAGE_STATS_FILE)) as meas_file:
-                self.photo_daytime_snow = pd.read_csv(meas_file)
-        except FileNotFoundError:
-            self.photo_daytime_snow = pd.DataFrame(data={
-                'image': self.image_list,
-                'day': ['-'] * len(self.image_list),
-                'snow': ['-'] * len(self.image_list),
-            })
-
     def save_measurements(self, path: Optional[Path] = None, filename: str = 'results.csv'):
         if path is None:
             path = self.folder / self.measurements_path
         with open(str(path / filename), 'w') as output:
             self.measurements.to_csv(output, index=False)
-        with open(str(path / IMAGE_STATS_FILE), 'w') as output:
-            self.photo_daytime_snow.to_csv(output, index=False)
+        #with open(str(path / IMAGE_STATS_FILE), 'w') as output:
+        #    self.photo_daytime_snow.to_csv(output, index=False)
         self.needs_to_save = False
 
     def get_state(self):
@@ -326,32 +307,6 @@ class Camera(QObject):
 
     def get_photo_count(self) -> int:
         return len(self.image_list)
-
-    def photo_is_daytime(self, img_name: str) -> Optional[bool]:
-        idx = self.image_names_ids[img_name]
-        day = self.photo_daytime_snow.iloc[idx, PD_DAY]
-        if day == '-':
-            return None
-        return day == 'y'
-
-    def photo_is_snow(self, img_name: str) -> Optional[bool]:
-        idx = self.image_names_ids[img_name]
-        snow = self.photo_daytime_snow.iloc[idx, PD_SNOW]
-        if snow == '-':
-            return None
-        return snow == 'y'
-
-    def set_photo_daytime_snow(self, img_name: str, daytime: bool, snow: bool) -> int:
-        idx = self.image_names_ids[img_name]
-        self.photo_daytime_snow.iloc[idx, 1:] = ['y' if daytime else 'n', 'y' if snow else 'n']
-        self.next_photo_daytime_snow += 1
-        return idx
-
-    def get_next_photo_daytime_snow(self, count: int = 2) -> List[Path]:
-        if self.next_photo_daytime_snow >= len(self.image_list):
-            return []
-        until = min(self.next_photo_daytime_snow + count, len(self.image_list))
-        return list(map(lambda img: self.folder / img, self.image_list[self.next_photo_daytime_snow:until]))
 
     def get_sticks_in_image(self, image: str, output_sticks: Optional[List[Stick]] = None) -> List[Stick]:
         image_id = self.image_names_ids[image]
